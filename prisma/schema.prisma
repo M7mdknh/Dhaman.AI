@@ -1,0 +1,216 @@
+// Daman — initial schema (Sprint 0).
+// Deliberately absent until their sprint: FinancialAnalysis (Sprint 5),
+// AI/memo tables (Sprint 6), Guarantee registry (Sprint 8),
+// Open Banking / SIMAH (Future — never tables, only provider interfaces).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  CONTRACTOR
+  RISK_OFFICER
+  ADMIN
+}
+
+// Full case lifecycle vocabulary from day one (avoids enum migration churn).
+// Sprint 0–3 code only ever uses DRAFT and SUBMITTED.
+enum CaseStatus {
+  DRAFT
+  SUBMITTED
+  PARSING
+  ANALYSIS_READY
+  UNDER_REVIEW
+  INFO_REQUESTED
+  APPROVED
+  DECLINED
+  ISSUED
+}
+
+enum GuaranteeType {
+  BID_BOND
+  PERFORMANCE
+  ADVANCE_PAYMENT
+  RETENTION
+}
+
+enum BeneficiaryType {
+  GOVERNMENT
+  PRIVATE
+}
+
+enum DocumentType {
+  FINANCIAL_STATEMENT
+  CONTRACT
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  fullName     String   @map("full_name")
+  passwordHash String   @map("password_hash")
+  role         UserRole
+  // A contractor user belongs to their company (Company 1 → N Users).
+  // Nullable: bank staff (RISK_OFFICER, ADMIN) have no company.
+  companyId    String?  @map("company_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  company   Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  cases     UnderwritingCase[]
+  documents Document[]
+  auditLogs AuditLog[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  crNumber  String   @unique @map("cr_number")
+  sector    String
+  city      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  users User[]
+  cases UnderwritingCase[]
+
+  @@index([name])
+  @@map("companies")
+}
+
+model UnderwritingCase {
+  id          String     @id @default(cuid())
+  // Internal race-free counter. NEVER displayed — the application-layer case
+  // service formats the human-readable `reference` from it at creation.
+  seq         Int        @default(autoincrement()) @unique
+  // Human-readable case number, e.g. UC-2026-000001 (assigned by the case service).
+  reference   String     @unique
+  companyId   String     @map("company_id")
+  createdById String     @map("created_by_id")
+  status      CaseStatus @default(DRAFT)
+  submittedAt DateTime?  @map("submitted_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  company             Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy           User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  contractDetails     ContractDetails?
+  documents           Document[]
+  financialStatements FinancialStatement[]
+  auditLogs           AuditLog[]
+
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("underwriting_cases")
+}
+
+model ContractDetails {
+  id              String          @id @default(cuid())
+  caseId          String          @unique @map("case_id")
+  beneficiary     String
+  beneficiaryType BeneficiaryType @map("beneficiary_type")
+  contractTitle   String          @map("contract_title")
+  sector          String
+  projectLocation String          @map("project_location")
+  contractValue   Decimal         @map("contract_value") @db.Decimal(18, 2)
+  guaranteeAmount Decimal         @map("guarantee_amount") @db.Decimal(18, 2)
+  guaranteeType   GuaranteeType   @map("guarantee_type")
+  durationMonths  Int             @map("duration_months")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("contract_details")
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  caseId       String       @map("case_id")
+  uploadedById String?      @map("uploaded_by_id")
+  // Original client filename — display metadata ONLY, never used as a path.
+  fileName     String       @map("file_name")
+  // Server-generated object key inside the storage adapter.
+  storageKey   String       @unique @map("storage_key")
+  mimeType     String       @map("mime_type")
+  fileSize     Int          @map("file_size")
+  docType      DocumentType @default(FINANCIAL_STATEMENT) @map("doc_type")
+  createdAt    DateTime     @default(now()) @map("created_at")
+
+  case                UnderwritingCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  uploadedBy          User?                @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  financialStatements FinancialStatement[]
+
+  @@index([caseId])
+  @@map("documents")
+}
+
+// One row per parsed fiscal year (populated by the Sprint 4 IFRS parser).
+// Canonical figures are typed Decimal columns so they are queryable and
+// precise; raw parser output/provenance lives in sourceJson.
+model FinancialStatement {
+  id         String  @id @default(cuid())
+  caseId     String  @map("case_id")
+  documentId String? @map("document_id")
+  fiscalYear Int     @map("fiscal_year")
+  currency   String  @default("SAR")
+  audited    Boolean @default(true)
+
+  revenue            Decimal? @db.Decimal(18, 2)
+  cogs               Decimal? @db.Decimal(18, 2)
+  operatingIncome    Decimal? @map("operating_income") @db.Decimal(18, 2)
+  netIncome          Decimal? @map("net_income") @db.Decimal(18, 2)
+  ebitda             Decimal? @db.Decimal(18, 2)
+  interestExpense    Decimal? @map("interest_expense") @db.Decimal(18, 2)
+  cash               Decimal? @db.Decimal(18, 2)
+  receivables        Decimal? @db.Decimal(18, 2)
+  inventory          Decimal? @db.Decimal(18, 2)
+  currentAssets      Decimal? @map("current_assets") @db.Decimal(18, 2)
+  totalAssets        Decimal? @map("total_assets") @db.Decimal(18, 2)
+  currentLiabilities Decimal? @map("current_liabilities") @db.Decimal(18, 2)
+  totalLiabilities   Decimal? @map("total_liabilities") @db.Decimal(18, 2)
+  totalDebt          Decimal? @map("total_debt") @db.Decimal(18, 2)
+  totalEquity        Decimal? @map("total_equity") @db.Decimal(18, 2)
+  operatingCashFlow  Decimal? @map("operating_cash_flow") @db.Decimal(18, 2)
+  capex              Decimal? @db.Decimal(18, 2)
+  annualDebtService  Decimal? @map("annual_debt_service") @db.Decimal(18, 2)
+
+  sourceJson Json?    @map("source_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // Provenance: which upload these figures were parsed from. SetNull so the
+  // parsed evidence outlives removal of the source document row.
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@unique([caseId, fiscalYear])
+  @@map("financial_statements")
+}
+
+// Append-only. No service exposes update or delete for this table.
+// Case/actor links are SetNull so audit history survives entity removal.
+model AuditLog {
+  id        String   @id @default(cuid())
+  caseId    String?  @map("case_id")
+  actorId   String?  @map("actor_id")
+  action    String
+  detail    Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  case  UnderwritingCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  actor User?             @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

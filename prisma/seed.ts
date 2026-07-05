@@ -1,0 +1,63 @@
+/**
+ * Seed: demo users (one per role) and the three demo contractor companies.
+ * Idempotent — safe to run repeatedly (upserts by unique keys).
+ */
+import "dotenv/config";
+import bcrypt from "bcryptjs";
+
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient, UserRole } from "../src/generated/prisma/client";
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg(process.env.DATABASE_URL!),
+});
+
+const DEMO_PASSWORD = "Daman!2026";
+
+const USERS: { email: string; fullName: string; role: UserRole }[] = [
+  { email: "admin@daman.local", fullName: "Abdullah Al-Rashid", role: "ADMIN" },
+  { email: "officer@daman.local", fullName: "Sara Al-Otaibi", role: "RISK_OFFICER" },
+  { email: "contractor@daman.local", fullName: "Khalid Al-Harbi", role: "CONTRACTOR" },
+];
+
+const COMPANIES = [
+  { crNumber: "1010111111", name: "Rawabi Contracting Co.", sector: "General Construction", city: "Riyadh" },
+  { crNumber: "2050222222", name: "Nimah Construction & Trading", sector: "Infrastructure", city: "Jeddah" },
+  { crNumber: "4030333333", name: "Faisal Trading & Contracting Est.", sector: "Building Materials", city: "Dammam" },
+];
+
+async function main() {
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+
+  // Companies first — the demo contractor belongs to one.
+  const companies = [];
+  for (const company of COMPANIES) {
+    companies.push(
+      await prisma.company.upsert({
+        where: { crNumber: company.crNumber },
+        update: { name: company.name, sector: company.sector, city: company.city },
+        create: company,
+      }),
+    );
+  }
+
+  for (const user of USERS) {
+    // Contractors belong to their company; bank staff have none.
+    const companyId = user.role === "CONTRACTOR" ? companies[0].id : null;
+    await prisma.user.upsert({
+      where: { email: user.email },
+      update: { fullName: user.fullName, role: user.role, companyId },
+      create: { ...user, passwordHash, companyId },
+    });
+  }
+
+  console.log(`Seeded ${USERS.length} users and ${COMPANIES.length} companies.`);
+  console.log(`Demo password for all users: ${DEMO_PASSWORD}`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
