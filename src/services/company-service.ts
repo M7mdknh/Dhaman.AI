@@ -1,0 +1,61 @@
+/**
+ * Company profile business logic (wizard Step 1).
+ *
+ * A contractor user may register before their company exists in Daman, so
+ * the first save creates the Company and links the user to it. Subsequent
+ * saves update the same company.
+ */
+import { prisma } from "@/lib/prisma";
+import { recordAudit } from "@/services/audit-service";
+
+import type { CompanyInfoInput } from "@/lib/validation/case";
+import type { Company } from "@/generated/prisma/client";
+
+export function getCompanyForUser(userId: string): Promise<Company | null> {
+  return prisma.company
+    .findFirst({ where: { users: { some: { id: userId } } } });
+}
+
+export async function upsertCompanyForUser(
+  userId: string,
+  input: CompanyInfoInput,
+): Promise<{ ok: true; company: Company } | { ok: false; error: string }> {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.role !== "CONTRACTOR") {
+    return { ok: false, error: "Only contractors can manage a company profile." };
+  }
+
+  // The CR number is nationally unique — reject if another company owns it.
+  const crOwner = await prisma.company.findUnique({ where: { crNumber: input.crNumber } });
+  if (crOwner && crOwner.id !== user.companyId) {
+    return {
+      ok: false,
+      error: "This Commercial Registration number is already registered to another company.",
+    };
+  }
+
+  if (user.companyId) {
+    const company = await prisma.company.update({
+      where: { id: user.companyId },
+      data: input,
+    });
+    await recordAudit({
+      action: "company.profile_updated",
+      actorId: userId,
+      detail: { companyId: company.id },
+    });
+    return { ok: true, company };
+  }
+
+  const company = await prisma.$transaction(async (tx) => {
+    const created = await tx.company.create({ data: input });
+    await tx.user.update({ where: { id: userId }, data: { companyId: created.id } });
+    return created;
+  });
+  await recordAudit({
+    action: "company.created",
+    actorId: userId,
+    detail: { companyId: company.id },
+  });
+  return { ok: true, company };
+}

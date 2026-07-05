@@ -21,9 +21,33 @@ const USERS: { email: string; fullName: string; role: UserRole }[] = [
 ];
 
 const COMPANIES = [
-  { crNumber: "1010111111", name: "Rawabi Contracting Co.", sector: "General Construction", city: "Riyadh" },
-  { crNumber: "2050222222", name: "Nimah Construction & Trading", sector: "Infrastructure", city: "Jeddah" },
-  { crNumber: "4030333333", name: "Faisal Trading & Contracting Est.", sector: "Building Materials", city: "Dammam" },
+  {
+    crNumber: "1010111111",
+    name: "Rawabi Contracting Co.",
+    sector: "General Construction",
+    city: "Riyadh",
+    contactPerson: "Khalid Al-Harbi",
+    contactEmail: "contractor@daman.local",
+    phone: "+966 50 111 1111",
+  },
+  {
+    crNumber: "2050222222",
+    name: "Nimah Construction & Trading",
+    sector: "Infrastructure",
+    city: "Jeddah",
+    contactPerson: "Mona Al-Zahrani",
+    contactEmail: "info@nimah.example",
+    phone: "+966 55 222 2222",
+  },
+  {
+    crNumber: "4030333333",
+    name: "Faisal Trading & Contracting Est.",
+    sector: "Building Materials",
+    city: "Dammam",
+    contactPerson: "Faisal Al-Dossary",
+    contactEmail: "office@faisal-est.example",
+    phone: "+966 53 333 3333",
+  },
 ];
 
 async function main() {
@@ -35,7 +59,7 @@ async function main() {
     companies.push(
       await prisma.company.upsert({
         where: { crNumber: company.crNumber },
-        update: { name: company.name, sector: company.sector, city: company.city },
+        update: { ...company },
         create: company,
       }),
     );

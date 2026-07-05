@@ -5,15 +5,17 @@ Every sprint ends with a deployable application.
 
 | Sprint | Name | Delivers |
 | --- | --- | --- |
-| 0 | Foundation | Repo, PostgreSQL + Prisma schema, authentication, app shell, design system |
-| 1 | Authentication hardening | Completes any auth scope not landed in Sprint 0 |
-| 2 | Enterprise Dashboard | Statistics cards, recent cases, role-aware navigation |
-| 3 | Underwriting Case Wizard | Case lifecycle (draft → submitted), contract details, IFRS upload |
-| 4 | IFRS Parsing | Deterministic statement extraction into structured figures |
-| 5 | Financial Intelligence Engine | Ratios, trends, flags, capacity, risk score — pure TS, unit-tested |
-| 6 | AI Underwriter | Memo, summary, recommendation surfacing (LLM explains, never calculates) |
-| 7 | Risk Officer Workspace | Queue, review page, approve / decline / request-info, audit timeline |
-| 8 | Letter of Guarantee | Guarantee registry, professional PDF, audit report |
+| 0 ✅ | Foundation | Repo, PostgreSQL + Prisma schema, authentication, app shell, design system |
+| 1 ✅ | Contractor Workspace | Dashboard (stats, search, filters) + full case wizard: company info, contract details, IFRS upload, review, submit, case details, audit trail |
+| 2 | IFRS Parsing | Deterministic statement extraction into structured figures |
+| 3 | Financial Intelligence Engine | Ratios, trends, flags, capacity, risk score — pure TS, unit-tested |
+| 4 | AI Underwriter | Memo, summary, recommendation surfacing (LLM explains, never calculates) |
+| 5 | Risk Officer Workspace | Queue, review page, approve / decline / request-info, audit timeline |
+| 6 | Letter of Guarantee | Guarantee registry, professional PDF, audit report |
+
+Sprint 1 was re-scoped by user directive (2026-07-06): it absorbed the former
+"Enterprise Dashboard" and "Underwriting Case Wizard" sprints; auth hardening
+moved to the backlog in `TODO.md`.
 
 ## Phase discipline
 

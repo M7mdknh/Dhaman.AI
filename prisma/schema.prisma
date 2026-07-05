@@ -72,13 +72,18 @@ model User {
 }
 
 model Company {
-  id        String   @id @default(cuid())
-  name      String
-  crNumber  String   @unique @map("cr_number")
-  sector    String
-  city      String
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  name          String
+  crNumber      String   @unique @map("cr_number")
+  sector        String
+  city          String
+  // Contact block shown in wizard Step 1; nullable because seeded/legacy
+  // companies predate these fields.
+  contactPerson String?  @map("contact_person")
+  contactEmail  String?  @map("contact_email")
+  phone         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   users User[]
   cases UnderwritingCase[]
@@ -115,19 +120,26 @@ model UnderwritingCase {
 }
 
 model ContractDetails {
-  id              String          @id @default(cuid())
-  caseId          String          @unique @map("case_id")
-  beneficiary     String
-  beneficiaryType BeneficiaryType @map("beneficiary_type")
-  contractTitle   String          @map("contract_title")
-  sector          String
-  projectLocation String          @map("project_location")
-  contractValue   Decimal         @map("contract_value") @db.Decimal(18, 2)
-  guaranteeAmount Decimal         @map("guarantee_amount") @db.Decimal(18, 2)
-  guaranteeType   GuaranteeType   @map("guarantee_type")
-  durationMonths  Int             @map("duration_months")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  id                   String          @id @default(cuid())
+  caseId               String          @unique @map("case_id")
+  beneficiary          String
+  beneficiaryType      BeneficiaryType @map("beneficiary_type")
+  contractTitle        String          @map("contract_title")
+  contractDescription  String?         @map("contract_description")
+  sector               String
+  projectLocation      String          @map("project_location")
+  contractValue        Decimal         @map("contract_value") @db.Decimal(18, 2)
+  currency             String          @default("SAR")
+  guaranteeAmount      Decimal         @map("guarantee_amount") @db.Decimal(18, 2)
+  guaranteeType        GuaranteeType   @map("guarantee_type")
+  // Optional: % of contract value the guarantee covers (0–100, informational).
+  guaranteePercentage  Decimal?        @map("guarantee_percentage") @db.Decimal(5, 2)
+  projectStartDate     DateTime        @map("project_start_date") @db.Date
+  projectEndDate       DateTime        @map("project_end_date") @db.Date
+  expectedPaymentTerms String?         @map("expected_payment_terms")
+  additionalNotes      String?         @map("additional_notes")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
 
   case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
@@ -145,6 +157,8 @@ model Document {
   mimeType     String       @map("mime_type")
   fileSize     Int          @map("file_size")
   docType      DocumentType @default(FINANCIAL_STATEMENT) @map("doc_type")
+  // Fiscal year the statement covers (financial statements only).
+  fiscalYear   Int?         @map("fiscal_year")
   createdAt    DateTime     @default(now()) @map("created_at")
 
   case                UnderwritingCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)

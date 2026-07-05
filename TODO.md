@@ -53,10 +53,68 @@ seeded data + audit trail confirmed in PostgreSQL.
 
 ---
 
-# Sprint 1 — Authentication (re-baselined)
+# Sprint 1 — Contractor Workspace ✅ (completed 2026-07-06)
 
-Core auth shipped early in Sprint 0 ⏩. Remaining hardening candidates —
-scope to be confirmed before starting:
+Re-scoped by user directive (2026-07-06): Sprint 1 became the full Contractor
+Workspace, absorbing the former Sprint 2 (Enterprise Dashboard) and Sprint 3
+(Underwriting Case Wizard). Auth hardening moved to the Backlog below.
+
+## Dashboard
+
+- [x] Welcome section + "New Underwriting Case" CTA
+- [x] Statistics cards (drafts, submitted, under review, approved)
+- [x] Cases table (reference, contract, beneficiary, guarantee, status, updated)
+- [x] Instant search + status filter (client-side; see TECH_DEBT #13)
+- [x] Empty states, loading skeletons, toasts
+- [x] SAR currency + date + file-size formatters (`lib/format.ts`)
+- [x] Officer/Admin placeholder (their workspace is a later sprint)
+
+## Case Lifecycle
+
+- [x] Create case (4-step wizard: Company → Contract → Statements → Review)
+- [x] Draft auto-saved on every step transition; resume any time
+- [x] Edit case (while draft), persistent clickable stepper, state kept across steps
+- [x] Delete case (while draft) with confirmation dialog + file cleanup
+- [x] Submit case (`DRAFT → SUBMITTED`, enforced in service; sets `submittedAt`)
+- [x] Submitted cases read-only for contractors (edit route redirects)
+
+## Company Information (Step 1)
+
+- [x] Auto-populated from the authenticated company; edits update the profile
+- [x] First-time contractors create their company here (name, CR, sector, city, contact)
+
+## Contract Details (Step 2)
+
+- [x] Beneficiary + type, title, description, sector, location
+- [x] Contract value + currency, guarantee amount/type/percentage
+- [x] Project start/end dates, payment terms, notes (Decimal money, never float)
+- [x] zod validation: guarantee ≤ contract value, end after start, % in (0,100]
+
+## IFRS Upload (Step 3)
+
+- [x] Per-year PDF upload (2025/2024/2023) with real progress + remove
+- [x] Validation: PDF only (mime + magic bytes), 10 MB cap, one file per year
+- [x] Server-generated storage keys; storage adapter (local disk now, cloud later)
+- [x] Authenticated download route (no public URLs); "Uploaded · Pending Analysis" badges
+
+## Case Details Page
+
+- [x] Status, company info, contract details, documents
+- [x] Growable lifecycle timeline (Created / Draft Saved / Submitted + upcoming stages)
+
+## Audit Logging
+
+- [x] case.created / case.draft_saved / case.draft_updated / case.submitted /
+      case.draft_deleted / document.uploaded / document.removed /
+      company.created / company.profile_updated (stored only — no UI yet)
+
+**Verified:** production build clean; 28/28 browser E2E checks (full wizard flow,
+validation, uploads, submit, read-only, delete, search, ownership isolation);
+server-side upload rejections (fake PDF, bad year, duplicate year, oversize).
+
+---
+
+# Backlog — Auth hardening (formerly Sprint 1)
 
 - [ ] Login rate limiting / temporary lockout (brute-force protection)
 - [ ] Session revocation strategy (stateless JWT cannot be invalidated server-side today)
@@ -64,55 +122,9 @@ scope to be confirmed before starting:
 - [ ] Password reset flow
 - [ ] Mobile navigation drawer (sidebar is hidden below `md`)
 
-**Deployable:** hardened auth; everything in Sprint 0 still green.
-
 ---
 
-# Sprint 2 — Enterprise Dashboard
-
-- [x] App shell: sidebar navigation + top bar (user menu, role badge) ⏩ Sprint 0
-- [ ] Statistics cards (total cases, drafts, submitted, total requested amount)
-- [ ] Recent cases table
-- [ ] Empty states, loading skeletons, error states
-- [ ] Role-aware navigation (contractor vs officer items as features land)
-- [ ] SAR currency + date formatters (shared lib)
-
-**Deployable:** login lands on a working dashboard with live data.
-
----
-
-# Sprint 3 — Underwriting Case Wizard
-
-## Case Lifecycle
-
-- [ ] Create case (multi-step wizard)
-- [ ] Save draft / resume draft
-- [ ] Edit case (while draft)
-- [ ] Delete case (while draft)
-- [ ] Submit case (status: `draft` → `submitted`, state machine enforced)
-
-## Contract Details (wizard step)
-
-- [ ] Beneficiary + beneficiary type (government / private)
-- [ ] Contract title, sector, project location
-- [ ] Contract value, requested guarantee amount, guarantee type
-- [ ] Duration (months)
-- [ ] Validation: guarantee ≤ contract value, positive amounts (zod + react-hook-form)
-
-## IFRS Upload (wizard step)
-
-- [ ] Multiple PDF upload
-- [ ] Validation: file type allowlist, size limit
-- [ ] Server-generated storage keys (never client filename)
-- [ ] Storage adapter interface (local disk now; cloud later)
-- [ ] Case detail page (contract summary + uploaded documents)
-- [ ] Case list page (contractor sees own cases only)
-
-**Deployable:** full case creation flow, end to end, with ownership enforced.
-
----
-
-# Sprint 4 — IFRS Parsing
+# Sprint 2 — IFRS Parsing
 
 - [ ] Deterministic PDF text extraction (no LLM)
 - [ ] Statement detection (financial position, profit or loss, cash flows)
@@ -128,7 +140,7 @@ scope to be confirmed before starting:
 
 ---
 
-# Sprint 5 — Financial Intelligence Engine
+# Sprint 3 — Financial Intelligence Engine
 
 Pure TypeScript, fully unit-tested. The LLM is never involved.
 
@@ -146,7 +158,7 @@ Pure TypeScript, fully unit-tested. The LLM is never involved.
 
 ---
 
-# Sprint 6 — AI Underwriter
+# Sprint 4 — AI Underwriter
 
 The AI explains and drafts. It never calculates and never decides.
 
@@ -162,7 +174,7 @@ The AI explains and drafts. It never calculates and never decides.
 
 ---
 
-# Sprint 7 — Risk Officer Workspace
+# Sprint 5 — Risk Officer Workspace
 
 - [ ] Officer queue: tabs (pending / all / issued), risk filter, search, pagination
 - [ ] Review page: analysis panel + documents + audit timeline + sticky decision sidebar
@@ -177,7 +189,7 @@ The AI explains and drafts. It never calculates and never decides.
 
 ---
 
-# Sprint 8 — Letter of Guarantee Generation
+# Sprint 6 — Letter of Guarantee Generation
 
 - [ ] `Guarantee` entity + registry (reference `LG-YYYY-NNNNNN`, issue date, expiry from duration)
 - [ ] Professional LG PDF (bank letterhead layout)

@@ -1,0 +1,50 @@
+/**
+ * Shared display formatters. Formatting converts Decimal → number for
+ * DISPLAY ONLY — money arithmetic stays in Decimal everywhere else.
+ */
+
+const currencyFormatters = new Map<string, Intl.NumberFormat>();
+
+export function formatMoney(
+  value: string | number | { toString(): string },
+  currency = "SAR",
+): string {
+  let formatter = currencyFormatters.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      currencyDisplay: "code",
+    });
+    currencyFormatters.set(currency, formatter);
+  }
+  return formatter.format(Number(value.toString()));
+}
+
+const dateFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+
+const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function formatDate(value: Date | string): string {
+  return dateFormatter.format(new Date(value));
+}
+
+export function formatDateTime(value: Date | string): string {
+  return dateTimeFormatter.format(new Date(value));
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

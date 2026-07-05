@@ -54,18 +54,20 @@ The Risk Officer receives a decision-ready underwriting package.
 
 ## Current MVP Scope
 
-Delivered (Sprint 0)
+Delivered (Sprint 0 — Foundation)
 
 - Authentication (register, login, logout — roles: Contractor, Risk Officer, Admin)
 - Application shell (sidebar, top bar, protected routes, banking design system)
 - Database foundation (7 core models, initial migration, seed data)
 
-In progress
+Delivered (Sprint 1 — Contractor Workspace)
 
-- Company Dashboard
-- Underwriting Case Creation
-- Contract Details Form
-- IFRS Financial Statement Upload
+- Contractor dashboard (statistics, cases table, instant search + filters)
+- Underwriting case wizard (company info → contract details → IFRS upload → review)
+- Draft lifecycle (save, resume, edit, delete) and submission (read-only after)
+- Audited IFRS statement upload (PDF, per fiscal year, authenticated download)
+- Case details page with a growable lifecycle timeline
+- Full audit trail for every business action
 
 Coming next
 
