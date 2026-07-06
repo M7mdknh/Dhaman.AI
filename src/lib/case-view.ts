@@ -7,7 +7,12 @@
  * (identical to the zod input types, so saved data round-trips).
  */
 import type { CompanyInfoInput, ContractDetailsInput } from "@/lib/validation/case";
-import type { Company, ContractDetails, Document } from "@/generated/prisma/client";
+import type {
+  Company,
+  ContractDetails,
+  Document,
+  FinancialStatement,
+} from "@/generated/prisma/client";
 import type { CaseStatus } from "@/generated/prisma/enums";
 import type { CaseListItem } from "@/services/case-service";
 
@@ -84,4 +89,40 @@ export function toDocumentView(document: Document): DocumentView {
     fiscalYear: document.fiscalYear,
     createdAt: document.createdAt.toISOString(),
   };
+}
+
+/** Figure keys shown in the extracted-data review table, in display order. */
+export const EXTRACTED_FIGURE_LABELS: [keyof FinancialStatement & string, string][] = [
+  ["revenue", "Revenue"],
+  ["grossProfit", "Gross Profit"],
+  ["operatingIncome", "Operating Income"],
+  ["netIncome", "Net Income"],
+  ["cash", "Cash & Equivalents"],
+  ["receivables", "Trade Receivables"],
+  ["inventory", "Inventories"],
+  ["currentAssets", "Total Current Assets"],
+  ["totalAssets", "Total Assets"],
+  ["currentLiabilities", "Total Current Liabilities"],
+  ["totalLiabilities", "Total Liabilities"],
+  ["totalEquity", "Total Equity"],
+  ["operatingCashFlow", "Operating Cash Flow"],
+  ["investingCashFlow", "Investing Cash Flow"],
+  ["financingCashFlow", "Financing Cash Flow"],
+  ["capex", "Capital Expenditure"],
+];
+
+export interface StatementFiguresView {
+  fiscalYear: number;
+  currency: string;
+  /** Canonical key → decimal string (null = not extracted). */
+  figures: Record<string, string | null>;
+}
+
+export function toStatementFigures(row: FinancialStatement): StatementFiguresView {
+  const figures: Record<string, string | null> = {};
+  for (const [key] of EXTRACTED_FIGURE_LABELS) {
+    const value = row[key as keyof FinancialStatement];
+    figures[key] = value === null || value === undefined ? null : String(value);
+  }
+  return { fiscalYear: row.fiscalYear, currency: row.currency, figures };
 }

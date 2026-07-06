@@ -12,8 +12,14 @@ import {
 } from "@/components/cases/summary-sections";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ExtractedFigures } from "@/components/cases/extracted-figures";
 import { getSession } from "@/lib/auth/session";
-import { toCompanyInput, toContractInput, toDocumentView } from "@/lib/case-view";
+import {
+  toCompanyInput,
+  toContractInput,
+  toDocumentView,
+  toStatementFigures,
+} from "@/lib/case-view";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
@@ -28,6 +34,9 @@ export const metadata: Metadata = { title: "Underwriting Case" };
  */
 function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
   const submitted = underwritingCase.submittedAt;
+  const analysisReady =
+    underwritingCase.financialStatements.length > 0 &&
+    underwritingCase.status !== "DRAFT";
   return [
     {
       label: "Created",
@@ -44,7 +53,7 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
       timestamp: submitted ? formatDateTime(submitted) : undefined,
       state: submitted ? "complete" : "upcoming",
     },
-    { label: "Financial Analysis", state: "upcoming" },
+    { label: "Financial Analysis", state: analysisReady ? "complete" : "upcoming" },
     { label: "AI Underwriter", state: "upcoming" },
     { label: "Officer Review", state: "upcoming" },
     { label: "Approval", state: "upcoming" },
@@ -71,6 +80,14 @@ export default async function CaseDetailsPage({
   const documents = underwritingCase.documents
     .filter((d) => d.docType === "FINANCIAL_STATEMENT")
     .map(toDocumentView);
+  const extractedStatements = underwritingCase.financialStatements.map(toStatementFigures);
+  const extractionWarnings = underwritingCase.documents.flatMap((d) => {
+    const validation = d.extraction?.validation as
+      | { warnings?: { message: string }[] }
+      | null
+      | undefined;
+    return (validation?.warnings ?? []).map((w) => `${d.fileName}: ${w.message}`);
+  });
 
   return (
     <div className="space-y-6">
@@ -141,6 +158,20 @@ export default async function CaseDetailsPage({
               <DocumentsSummary documents={documents} withDownload />
             </CardContent>
           </Card>
+
+          {extractedStatements.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Extracted Financial Data</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ExtractedFigures
+                  statements={extractedStatements}
+                  warnings={extractionWarnings}
+                />
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div>

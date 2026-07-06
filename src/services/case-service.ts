@@ -6,6 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
+import { processCaseDocuments } from "@/services/extraction-service";
 
 import type { ContractDetailsInput } from "@/lib/validation/case";
 import type { Prisma } from "@/generated/prisma/client";
@@ -14,7 +15,11 @@ export type CaseWithRelations = Prisma.UnderwritingCaseGetPayload<{
   include: {
     company: true;
     contractDetails: true;
-    documents: { orderBy: { fiscalYear: "desc" } };
+    documents: {
+      orderBy: { fiscalYear: "desc" };
+      include: { extraction: { select: { validation: true; error: true; currency: true; scale: true; detectedStatements: true } } };
+    };
+    financialStatements: { orderBy: { fiscalYear: "desc" } };
   };
 }>;
 
@@ -77,7 +82,21 @@ export async function getOwnedCase(
     include: {
       company: true,
       contractDetails: true,
-      documents: { orderBy: { fiscalYear: "desc" } },
+      documents: {
+        orderBy: { fiscalYear: "desc" },
+        include: {
+          extraction: {
+            select: {
+              validation: true,
+              error: true,
+              currency: true,
+              scale: true,
+              detectedStatements: true,
+            },
+          },
+        },
+      },
+      financialStatements: { orderBy: { fiscalYear: "desc" } },
     },
   });
 }
@@ -170,7 +189,13 @@ export async function saveContractDetails(
   return { ok: true };
 }
 
-/** DRAFT → SUBMITTED. Requires contract details and ≥1 financial statement. */
+/**
+ * DRAFT → SUBMITTED → PARSING → ANALYSIS_READY, in one request.
+ *
+ * IFRS extraction runs BEFORE the case leaves DRAFT: an unusable document
+ * (scanned, password-protected, missing statements) rejects the submission
+ * with a per-file message so the contractor can replace it immediately.
+ */
 export async function submitCase(userId: string, caseId: string): Promise<ActionResult> {
   const existing = await getOwnedCase(userId, caseId);
   if (!existing) return { ok: false, error: "Case not found." };
@@ -184,6 +209,19 @@ export async function submitCase(userId: string, caseId: string): Promise<Action
     return { ok: false, error: "Upload at least one audited financial statement before submitting." };
   }
 
+  const pipeline = await processCaseDocuments(caseId, userId);
+  if (!pipeline.ok) {
+    const details = pipeline.failures
+      .map((f) => `${f.fileName}: ${f.message}`)
+      .join(" ");
+    return {
+      ok: false,
+      error:
+        details ||
+        "No usable financial figures could be extracted from the uploaded statements.",
+    };
+  }
+
   await prisma.underwritingCase.update({
     where: { id: caseId },
     data: { status: "SUBMITTED", submittedAt: new Date() },
@@ -192,7 +230,24 @@ export async function submitCase(userId: string, caseId: string): Promise<Action
     action: "case.submitted",
     actorId: userId,
     caseId,
-    detail: { reference: existing.reference },
+    detail: { reference: existing.reference, extractedYears: pipeline.years },
+  });
+
+  // Extraction already succeeded; PARSING is recorded as a real (if brief)
+  // lifecycle stage, then the case becomes ready for analysis.
+  await prisma.underwritingCase.update({
+    where: { id: caseId },
+    data: { status: "PARSING" },
+  });
+  await prisma.underwritingCase.update({
+    where: { id: caseId },
+    data: { status: "ANALYSIS_READY" },
+  });
+  await recordAudit({
+    action: "case.analysis_ready",
+    actorId: userId,
+    caseId,
+    detail: { years: pipeline.years, warnings: pipeline.warnings.length },
   });
   return { ok: true };
 }

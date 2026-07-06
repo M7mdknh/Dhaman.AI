@@ -50,6 +50,15 @@ enum DocumentType {
   OTHER
 }
 
+// Lifecycle of the IFRS extraction pipeline for one uploaded document.
+enum DocumentProcessingStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -159,14 +168,54 @@ model Document {
   docType      DocumentType @default(FINANCIAL_STATEMENT) @map("doc_type")
   // Fiscal year the statement covers (financial statements only).
   fiscalYear   Int?         @map("fiscal_year")
+  // IFRS pipeline status; set to QUEUED at case submission.
+  processingStatus DocumentProcessingStatus @default(UPLOADED) @map("processing_status")
+  // Content hash, computed at processing time — used for duplicate detection.
+  sha256       String?
   createdAt    DateTime     @default(now()) @map("created_at")
 
   case                UnderwritingCase     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   uploadedBy          User?                @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   financialStatements FinancialStatement[]
+  extraction          DocumentExtraction?
 
   @@index([caseId])
   @@map("documents")
+}
+
+// Latest extraction run for a document (raw output + provenance).
+// Only the most recent run is kept: the unique on documentId enforces it.
+// Parser versioning later = add a parserVersion column and widen the unique
+// to (documentId, parserVersion) — no structural refactor needed.
+model DocumentExtraction {
+  id          String    @id @default(cuid())
+  documentId  String    @unique @map("document_id")
+  parserName  String    @map("parser_name")
+  startedAt   DateTime  @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  durationMs  Int?      @map("duration_ms")
+
+  currency           String?
+  // Multiplier the source used ("SAR '000" → 1000); normalized values are absolute.
+  scale              Int      @default(1)
+  fiscalYears        Int[]    @map("fiscal_years")
+  detectedStatements String[] @map("detected_statements")
+  companyName        String?  @map("company_name")
+
+  // Full raw pipeline output: line items with original label/value AND
+  // normalized key/value, per statement. Never post-processed.
+  raw        Json?
+  // Validation outcome: { errors: [...], warnings: [...] }.
+  validation Json?
+  // Terminal failure reason (user-facing message).
+  error      String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("document_extractions")
 }
 
 // One row per parsed fiscal year (populated by the Sprint 4 IFRS parser).
@@ -182,6 +231,7 @@ model FinancialStatement {
 
   revenue            Decimal? @db.Decimal(18, 2)
   cogs               Decimal? @db.Decimal(18, 2)
+  grossProfit        Decimal? @map("gross_profit") @db.Decimal(18, 2)
   operatingIncome    Decimal? @map("operating_income") @db.Decimal(18, 2)
   netIncome          Decimal? @map("net_income") @db.Decimal(18, 2)
   ebitda             Decimal? @db.Decimal(18, 2)
@@ -193,14 +243,19 @@ model FinancialStatement {
   totalAssets        Decimal? @map("total_assets") @db.Decimal(18, 2)
   currentLiabilities Decimal? @map("current_liabilities") @db.Decimal(18, 2)
   totalLiabilities   Decimal? @map("total_liabilities") @db.Decimal(18, 2)
+  shortTermDebt      Decimal? @map("short_term_debt") @db.Decimal(18, 2)
+  longTermDebt       Decimal? @map("long_term_debt") @db.Decimal(18, 2)
   totalDebt          Decimal? @map("total_debt") @db.Decimal(18, 2)
   totalEquity        Decimal? @map("total_equity") @db.Decimal(18, 2)
   operatingCashFlow  Decimal? @map("operating_cash_flow") @db.Decimal(18, 2)
+  investingCashFlow  Decimal? @map("investing_cash_flow") @db.Decimal(18, 2)
+  financingCashFlow  Decimal? @map("financing_cash_flow") @db.Decimal(18, 2)
   capex              Decimal? @db.Decimal(18, 2)
   annualDebtService  Decimal? @map("annual_debt_service") @db.Decimal(18, 2)
 
   sourceJson Json?    @map("source_json")
   createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
   case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
   // Provenance: which upload these figures were parsed from. SetNull so the

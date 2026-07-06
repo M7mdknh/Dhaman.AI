@@ -124,19 +124,21 @@ server-side upload rejections (fake PDF, bad year, duplicate year, oversize).
 
 ---
 
-# Sprint 2 — IFRS Parsing
+# Sprint 2 — IFRS Parsing ✅ (completed 2026-07-06)
 
-- [ ] Deterministic PDF text extraction (no LLM)
-- [ ] Statement detection (financial position, profit or loss, cash flows)
-- [ ] Line-item normalization to canonical figures (`revenue`, `current_assets`, …)
-- [ ] Multi-year extraction
-- [ ] `FinancialStatement` table (one row per fiscal year) + parser provenance
-- [ ] Parsing pipeline with real status (no fake progress)
-- [ ] Extracted-figures review UI on the case page
-- [ ] Unusable-document flagging
-- [ ] Parser unit tests against sample statements
+- [x] Deterministic PDF text extraction (MuPDF WASM; no LLM, no OCR — scanned PDFs rejected with a clear message)
+- [x] Statement detection (financial position, profit or loss, cash flows; auditor report/TOC excluded; 2-page spans)
+- [x] Line-item normalization to canonical figures (statement-scoped regex synonym table; unmapped labels kept in provenance)
+- [x] Multi-year extraction (year column headers + single-year fallback; scale "'000"/millions; parenthesised negatives; decimal strings — no floats)
+- [x] `FinancialStatement` rows (one per fiscal year) + `DocumentExtraction` provenance (raw line items, validation, timings)
+- [x] Parsing pipeline with real status: runs at submission BEFORE leaving DRAFT; failures reject with per-file messages; `SUBMITTED → PARSING → ANALYSIS_READY`; `Document.processingStatus` + sha256
+- [x] Extracted-figures review UI on the case page (per-year table + validation warnings)
+- [x] Unusable-document flagging (password/corrupted/scanned/missing statements)
+- [x] Parser unit tests (20 assertions incl. real-PDF integration) + shared fixtures + demo-case seeding script
 
-**Deployable:** uploaded statements produce structured, visible financial data.
+**Verified:** unit tests green; full pipeline exercised through the real
+services for all three demo profiles (2 fiscal years each, exact figures,
+ANALYSIS_READY). See `docs/IFRS_ENGINE.md`.
 
 ---
 
