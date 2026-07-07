@@ -11,12 +11,15 @@ Every sprint ends with a deployable application.
 | 3 ✅ | Financial Intelligence Engine | Ratios, trends, flags, capacity, risk score — pure TS, unit-tested |
 | 4 ✅ | AI Underwriter | Memo, summary, recommendation surfacing (LLM explains, never calculates) |
 | 5 ✅ | Underwriting Workspace | Officer queue, review workspace, decisions + internal notes, audit — PLUS Letter of Guarantee generation (absorbed from Sprint 6 by user directive 2026-07-07) |
-| 6 | Guarantee Registry & Audit Reporting | Registry list, guarantee detail page, exportable per-case audit report |
+| ~~6~~ | ~~Guarantee Registry & Audit Reporting~~ | Cancelled by user decision 2026-07-07 — the MVP is complete at Sprint 5 |
 
 Sprint 1 was re-scoped by user directive (2026-07-06): it absorbed the former
 "Enterprise Dashboard" and "Underwriting Case Wizard" sprints; auth hardening
 moved to the backlog in `TODO.md`. Sprint 5 was re-scoped by user directive
 (2026-07-07): it absorbed Letter of Guarantee generation from Sprint 6.
+Sprint 6 was cancelled by user decision (2026-07-07): **the roadmap ends at
+Sprint 5** — the guarantee registry and exportable audit report will not be
+built.
 
 ## Phase discipline
 

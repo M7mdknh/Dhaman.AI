@@ -108,9 +108,8 @@ Delivered (Sprint 5 — Underwriting Workspace)
   rendered on demand behind an authenticated route
   (see `docs/UNDERWRITING_WORKSPACE.md`)
 
-Coming next
-
-- Guarantee registry & exportable audit report
+This completes the MVP scope (the formerly planned guarantee registry &
+exportable audit report were cancelled by user decision, 2026-07-07).
 
 Future
 

@@ -98,7 +98,8 @@ deliberately parked.
 
 ## Postponed features (by design — do NOT build early)
 
-- Guarantee registry list + per-case audit report export (Sprint 6)
+- ~~Guarantee registry list + per-case audit report export (Sprint 6)~~ —
+  Sprint 6 CANCELLED by user decision (2026-07-07); these will not be built
 - Document `sha256` checksum — explicitly deferred until external object
   storage is introduced (user decision)
 - Admin user-management UI; profile pages

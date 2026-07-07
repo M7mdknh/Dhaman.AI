@@ -208,15 +208,13 @@ issued, downloadable Letter of Guarantee.
 
 ---
 
-# Sprint 6 — Guarantee Registry & Audit Reporting
+# ~~Sprint 6 — Guarantee Registry & Audit Reporting~~ CANCELLED (2026-07-07)
 
-(LG generation itself shipped early in Sprint 5 by user directive.)
-
-- [ ] Guarantee registry list (all issued LGs: reference, case, company, amount, issue/expiry, officer)
-- [ ] Guarantee detail page
-- [ ] Audit report per case (full trail, exportable)
-
-**Deployable:** the bank has a browsable guarantee registry — MVP complete.
+Cancelled by user decision on Sprint 5 approval: **there is no Sprint 6 —
+the MVP roadmap ends at Sprint 5.** LG generation itself had already shipped
+in Sprint 5; the registry list, guarantee detail page, and exportable
+per-case audit report will not be built. (Audit data itself is fully
+recorded in `AuditLog`; only the reporting UI was cut.)
 
 ---
 

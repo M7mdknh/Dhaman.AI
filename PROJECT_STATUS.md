@@ -5,9 +5,10 @@
 
 Current Sprint
 
-**Sprint 5 — Underwriting Workspace (Risk Officer): ✅ COMPLETE.** Awaiting
-approval to start Sprint 6 (Guarantee Registry & Audit Reporting — LG
-generation itself shipped early, inside Sprint 5, by user directive).
+**None — the MVP is COMPLETE.** Sprint 5 (Underwriting Workspace) was
+approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
+day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
+committed on `main`.
 
 ---
 
@@ -174,9 +175,11 @@ sprints (auth hardening → backlog).
 
 ## Next
 
-Sprint 6 — Guarantee Registry & Audit Reporting (see `TODO.md`): registry
-list of issued LGs, guarantee detail page, exportable per-case audit
-report. LG generation itself already shipped in Sprint 5.
+Nothing scheduled — Sprint 6 (Guarantee Registry & Audit Reporting) was
+cancelled by user decision (2026-07-07). If work resumes, the candidates
+are the auth-hardening backlog in `TODO.md` and the register in
+`TECH_DEBT.md` (notably: committed E2E suite, CI, object storage before any
+cloud deployment).
 
 ---
 
