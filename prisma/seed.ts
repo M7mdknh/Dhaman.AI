@@ -12,7 +12,10 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg(process.env.DATABASE_URL!),
 });
 
-const DEMO_PASSWORD = "Daman!2026";
+// The demo password is a DEVELOPMENT convenience only. Never let it reach a
+// production database — override with SEED_PASSWORD if this seed is ever run
+// against a non-dev environment on purpose.
+const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
 
 const USERS: { email: string; fullName: string; role: UserRole }[] = [
   { email: "admin@daman.local", fullName: "Abdullah Al-Rashid", role: "ADMIN" },
@@ -51,6 +54,17 @@ const COMPANIES = [
 ];
 
 async function main() {
+  // Guard: these are well-known demo accounts (incl. ADMIN) with a password
+  // that lives in this committed file. They must NEVER be created in a
+  // production database. Running the seed there requires a deliberate
+  // ALLOW_PROD_SEED=true, which a real production pipeline should never set.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PROD_SEED !== "true") {
+    throw new Error(
+      "Refusing to seed demo accounts in a production environment. " +
+        "Set ALLOW_PROD_SEED=true only if you fully intend to.",
+    );
+  }
+
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
 
   // Companies first — the demo contractor belongs to one.
