@@ -13,6 +13,7 @@ import "dotenv/config";
 import { prisma } from "@/lib/prisma";
 import { addFinancialStatement } from "@/services/document-service";
 import { createDraftCase, saveContractDetails, submitCase } from "@/services/case-service";
+import { runCaseProcessing } from "@/services/case-processing-service";
 
 import { ALL_PROFILES, type CompanyProfile } from "../tests/fixtures/company-profiles";
 import { textPagesToPdf } from "../tests/fixtures/pdf-writer";
@@ -116,8 +117,23 @@ async function main() {
     const upload = await addFinancialStatement(contractor.id, caseId, file, 2025);
     if (!upload.ok) throw new Error(`addFinancialStatement(${key}): ${upload.error}`);
 
+    // Workflow 1 — submission is synchronous and must NOT run the pipeline:
+    // it saves the case as PROCESSING with a QUEUED job, and returns fast.
     const submitted = await submitCase(contractor.id, caseId);
     if (!submitted.ok) throw new Error(`submitCase(${key}): ${submitted.error}`);
+    const armed = await prisma.underwritingCase.findUniqueOrThrow({
+      where: { id: caseId },
+      include: { processing: true },
+    });
+    if (armed.status !== "PROCESSING" || armed.processing?.state !== "QUEUED") {
+      throw new Error(
+        `${key}: submit should leave PROCESSING/QUEUED, got ${armed.status}/${armed.processing?.state}`,
+      );
+    }
+
+    // Workflow 2 — the async pipeline (here driven inline; in the app it runs
+    // out-of-band via after()) takes it to ANALYSIS_READY.
+    await runCaseProcessing(caseId);
 
     const result = await prisma.underwritingCase.findUniqueOrThrow({
       where: { id: caseId },

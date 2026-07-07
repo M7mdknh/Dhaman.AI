@@ -10,6 +10,64 @@ approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
 day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
 committed on `main`.
 
+### Post-MVP redesign — Async Financial Processing (2026-07-07)
+
+Critical product fix: submission was blocking the user on OCR/parsing/AI and,
+worse, a processing failure lost the case (it never left DRAFT). Submission and
+processing are now two **completely independent** workflows.
+
+- Submission is synchronous (seconds): one atomic transaction saves the case
+  (`DRAFT → PROCESSING`, `submittedAt`), marks documents `QUEUED`, and enqueues
+  a durable `CaseProcessing` job — then redirects. No OCR in the request.
+- Processing is asynchronous: `runCaseProcessing` (self-claiming, idempotent) is
+  triggered via Next.js `after()` and drives Reading → Detecting → Extracting →
+  Financial Analysis → AI Underwriting → `ANALYSIS_READY`, writing live stage
+  progress to the job row.
+- The case page is the processing dashboard: `ProcessingDashboard` polls
+  `GET /api/cases/[caseId]/processing` (also self-heals a lost trigger) and
+  renders the ordered step checklist; refresh on success.
+- Failure never loses work: gating-stage failures set `PROCESSING_FAILED` +
+  the real reason on the job; the case and documents stay saved; **Retry
+  Analysis** re-runs on the same documents (no re-upload). AI underwriting is
+  best-effort (assists, never gates) — its failure still reaches ANALYSIS_READY
+  and the officer generates the memo on demand.
+- Migration `20260707134922_sprint7_async_processing` (adds `PROCESSING` /
+  `PROCESSING_FAILED` case statuses, `ProcessingStage` / `ProcessingState`
+  enums, `case_processing` table). See `docs/ASYNC_PROCESSING.md`.
+- Verified: 89/89 unit tests (incl. new pure step-derivation suite); typecheck
+  + lint + production build clean; both workflows exercised end-to-end against
+  the real DB via `scripts/seed-demo-cases.mts` (submit → PROCESSING/QUEUED,
+  pipeline → ANALYSIS_READY) plus a fail-path script (bad PDF → PROCESSING_FAILED
+  with case + document retained → retry re-arms, no re-upload).
+
+### RC1 pre-production hardening (2026-07-07)
+
+Full engineering/security/deployment audit (RC1). Outcome: no Critical issues;
+"Needs Minor Fixes" driven almost entirely by serverless operational hardening.
+The stale ledger items were reconciled (rate limiting, security headers, and
+object storage were already DONE; the seed-password risk is guarded by
+`NODE_ENV`). Two HIGH deployment items were then fixed:
+
+- **Durable async execution.** The pipeline previously ran only inside the
+  request-time `after()`, which is bound to the serverless invocation budget
+  (heavy OCR + AI could be killed mid-run, stranding the job). Added
+  `reclaimStalledJobs` + `drainProcessingQueue` to `case-processing-service`,
+  a `CRON_SECRET`-guarded `/api/cron/process` route (`maxDuration=300`,
+  excluded from auth middleware), and a `vercel.json` cron (every 2 min, Pro).
+  The cron is now the authoritative executor: it re-queues jobs a killed runner
+  left RUNNING and runs the backlog. The poll route also got `maxDuration=300`.
+- **OCR packaging.** Declared `sharp` as a direct dependency (was only a
+  transitive/optional dep of `next`); added `sharp` + `tesseract.js` to
+  `serverExternalPackages`; made the tesseract core/lang/cache paths
+  env-configurable (`TESSERACT_*`) with the writable-cache default at `/tmp`,
+  removing the hard reliance on a read-only FS and on runtime CDN resolution
+  for the WASM core.
+- Docs reconciled: `TECH_DEBT.md` (#2/#9/#11 resolved, #4 mitigated, new #23/#24
+  + Neon environment note), stale service comments, README deploy section,
+  `.env.example`.
+- Verified: 89/89 unit tests; typecheck + lint + production build clean
+  (`/api/cron/process` registered as a dynamic function).
+
 ---
 
 ## Stack (decided 2026-07-05)
@@ -185,12 +243,11 @@ cloud deployment).
 
 ## Blockers / environment constraints
 
-- The `daman` DB role STILL lacks `CREATEDB` (sudo needs a password, could not
-  grant it non-interactively). Sprint 1 migration was generated with
-  `prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script`
-  + `migrate deploy` (note: Prisma 7 removed `--from-url`). Before the next
-  schema change, ideally run: `sudo -u postgres psql -c "ALTER ROLE daman CREATEDB;"`
-- Docker daemon not accessible → PostgreSQL runs as the native system service.
+- The database is now **Neon cloud Postgres** (pooled). The normal Prisma flow
+  works: `prisma migrate deploy` applies migrations and `migrate dev
+  --create-only` authors them — the old local shadow-DB / `CREATEDB` workaround
+  is no longer needed. Neon is remote, so CLI round-trips are slower and can hit
+  a transient `ETIMEDOUT` (retry); this is not app latency.
 - Node via nvm (`v24.18.0`) — not on the default non-interactive PATH.
 - **Next.js 15.5 production bug:** a client-side `router.replace` that changes
   only searchParams silently never commits (RSC fetch succeeds, URL/UI don't

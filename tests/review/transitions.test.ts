@@ -15,6 +15,8 @@ import type { CaseStatus, OfficerDecisionType } from "@/generated/prisma/enums";
 const ALL_STATUSES: CaseStatus[] = [
   "DRAFT",
   "SUBMITTED",
+  "PROCESSING",
+  "PROCESSING_FAILED",
   "PARSING",
   "ANALYSIS_READY",
   "UNDER_REVIEW",

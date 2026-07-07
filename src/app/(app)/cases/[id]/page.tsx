@@ -5,6 +5,7 @@ import { ArrowLeft, BarChart3, PencilLine } from "lucide-react";
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
 import { DecisionStatusCard } from "@/components/cases/decision-status";
 import { DeleteDraftDialog } from "@/components/cases/delete-draft-dialog";
+import { ProcessingDashboard } from "@/components/cases/processing-dashboard";
 import { StatusBadge } from "@/components/cases/status-badge";
 import {
   CompanySummary,
@@ -24,6 +25,7 @@ import {
 import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
+import { toProcessingSnapshot } from "@/services/case-processing-service";
 
 import type { Metadata } from "next";
 
@@ -98,6 +100,9 @@ export default async function CaseDetailsPage({
   if (!underwritingCase) notFound();
 
   const isDraft = underwritingCase.status === "DRAFT";
+  const isProcessing =
+    underwritingCase.status === "PROCESSING" ||
+    underwritingCase.status === "PROCESSING_FAILED";
   const contract = underwritingCase.contractDetails
     ? toContractInput(underwritingCase.contractDetails)
     : null;
@@ -158,6 +163,13 @@ export default async function CaseDetailsPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {isProcessing && underwritingCase.processing && (
+            <ProcessingDashboard
+              caseId={id}
+              initial={toProcessingSnapshot(underwritingCase.processing)}
+            />
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Company Information</CardTitle>

@@ -124,9 +124,10 @@ function userFacingError(error: unknown): string {
 }
 
 /**
- * Generates (or returns the cached) underwriting memo for a submitted case.
+ * Officer-triggered generation (or cache reuse) of the underwriting memo.
  * Officer-only since Sprint 5 — the memo is a bank-internal work product
  * (see docs/UNDERWRITING_WORKSPACE.md); contractors never trigger or read it.
+ * Delegates to the guard-free core once the role gate passes.
  */
 export async function generateDecisionIntelligence(
   userId: string,
@@ -136,7 +137,20 @@ export async function generateDecisionIntelligence(
   if (!officer) {
     return { ok: false, error: "Only bank staff can generate decision intelligence." };
   }
+  return runDecisionIntelligence(caseId, userId);
+}
 
+/**
+ * Guard-free memo generation. Callers: the officer wrapper above (after the
+ * role gate) and the async processing pipeline, which pre-generates the memo
+ * as its final stage so it is ready and cached when an officer opens the case.
+ * `requestedById` is the officer for a manual run, or null for a
+ * system/pipeline run (SetNull on the row keeps the memo if the user is gone).
+ */
+export async function runDecisionIntelligence(
+  caseId: string,
+  requestedById: string | null,
+): Promise<DecisionResult> {
   const underwritingCase = await prisma.underwritingCase.findFirst({
     where: { id: caseId, status: { not: "DRAFT" } },
     include: {
@@ -182,7 +196,7 @@ export async function generateDecisionIntelligence(
   } catch (error) {
     await recordAudit({
       action: "case.decision_failed",
-      actorId: userId,
+      actorId: requestedById,
       caseId,
       detail: {
         provider: provider.name,
@@ -201,7 +215,7 @@ export async function generateDecisionIntelligence(
   const decision = await prisma.decisionIntelligence.create({
     data: {
       caseId,
-      requestedById: userId,
+      requestedById,
       inputSnapshot: input as unknown as Prisma.InputJsonValue,
       inputHash,
       provider: provider.name,
@@ -225,7 +239,7 @@ export async function generateDecisionIntelligence(
 
   await recordAudit({
     action: "case.decision_generated",
-    actorId: userId,
+    actorId: requestedById,
     caseId,
     detail: {
       provider: provider.name,

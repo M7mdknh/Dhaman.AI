@@ -14,6 +14,8 @@ import type { RiskBand } from "@/lib/finance/types";
 /** Statuses that appear in the officer queue at all (post-submission). */
 export const QUEUE_STATUSES: CaseStatus[] = [
   "SUBMITTED",
+  "PROCESSING",
+  "PROCESSING_FAILED",
   "PARSING",
   "ANALYSIS_READY",
   "UNDER_REVIEW",

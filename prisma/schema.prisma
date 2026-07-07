@@ -24,10 +24,16 @@ enum UserRole {
 }
 
 // Full case lifecycle vocabulary from day one (avoids enum migration churn).
-// Sprint 0–3 code only ever uses DRAFT and SUBMITTED.
+// A case is SAVED at SUBMITTED and immediately enters PROCESSING; the async
+// financial-processing pipeline (CaseProcessing) then drives it to
+// ANALYSIS_READY on success or PROCESSING_FAILED on failure — the case row is
+// never lost either way. PARSING is the legacy pre-async marker, kept only so
+// the enum stays additive.
 enum CaseStatus {
   DRAFT
   SUBMITTED
+  PROCESSING
+  PROCESSING_FAILED
   PARSING
   ANALYSIS_READY
   UNDER_REVIEW
@@ -35,6 +41,25 @@ enum CaseStatus {
   APPROVED
   DECLINED
   ISSUED
+}
+
+// Ordered stages of the async financial-processing pipeline. Surfaced live on
+// the case page as the processing dashboard.
+enum ProcessingStage {
+  READING_STATEMENTS
+  DETECTING_STATEMENTS
+  EXTRACTING_DATA
+  FINANCIAL_ANALYSIS
+  AI_UNDERWRITING
+}
+
+// Lifecycle of a case's processing job (durable, retryable — independent of
+// the submission request that created it).
+enum ProcessingState {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 enum GuaranteeType {
@@ -141,6 +166,7 @@ model UnderwritingCase {
   officerDecisions     OfficerDecision[]
   notes                CaseNote[]
   guarantee            Guarantee?
+  processing           CaseProcessing?
 
   @@index([status])
   @@index([createdById])
@@ -396,6 +422,39 @@ model CaseNote {
 
   @@index([caseId, createdAt])
   @@map("case_notes")
+}
+
+// The async financial-processing job for a case (1:1). Created QUEUED at
+// submission and driven by the processing orchestrator — completely
+// independent of the request that submitted the case. It is the durable
+// record that makes processing observable (live dashboard) and retryable:
+// a failure sets `state=FAILED` + `error`/`failedStage`, the case row stays
+// intact, and a retry re-runs the pipeline on the SAME uploaded documents.
+model CaseProcessing {
+  id     String @id @default(cuid())
+  caseId String @unique @map("case_id")
+
+  state ProcessingState @default(QUEUED)
+  // The stage currently running, last completed on success, or the one that
+  // failed. Interpreted against `state` to render the live dashboard.
+  stage       ProcessingStage?
+  // The stage a FAILED run died in (null while queued/running/completed).
+  failedStage ProcessingStage? @map("failed_stage")
+  // Number of runs attempted (a retry increments this). Powers "attempt N".
+  attempts    Int              @default(0)
+  // User-facing failure reason on a FAILED run (never a raw stack trace).
+  error       String?
+
+  queuedAt    DateTime  @default(now()) @map("queued_at")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([state])
+  @@map("case_processing")
 }
 
 // Issued Letter of Guarantee (Sprint 5). One per case; the PDF is rendered

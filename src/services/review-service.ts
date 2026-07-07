@@ -19,7 +19,9 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "a draft",
-  SUBMITTED: "awaiting extraction",
+  SUBMITTED: "awaiting processing",
+  PROCESSING: "still being processed",
+  PROCESSING_FAILED: "blocked by a processing failure",
   PARSING: "still parsing",
   ANALYSIS_READY: "ready for review",
   UNDER_REVIEW: "under review",

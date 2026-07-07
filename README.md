@@ -71,9 +71,11 @@ Delivered (Sprint 1 — Contractor Workspace)
 
 Delivered (Sprint 2 — IFRS Parsing)
 
-- Deterministic PDF statement extraction (MuPDF WASM — no LLM, no OCR)
+- Deterministic PDF statement extraction (MuPDF WASM; OCR fallback via
+  tesseract.js for scanned/Arabic pages — never an LLM)
 - Line-item normalization into structured figures, one row per fiscal year
-- Parsing runs at submission; per-file failure messages; extraction provenance
+- Extraction runs asynchronously after submission (see the async-processing
+  note below); per-file failure messages; extraction provenance
 - Extracted-figures review UI (see `docs/IFRS_ENGINE.md`)
 
 Delivered (Sprint 3 — Financial Intelligence Engine)
@@ -150,7 +152,9 @@ Deployment
 
 ## Getting Started
 
-Prerequisites: Node.js 20+, PostgreSQL 14+ with a `daman` role and database:
+Prerequisites: Node.js 20+ and a PostgreSQL 14+ database. Any managed Postgres
+works (the project runs on Neon); for a local instance, create a role/database
+and point `DATABASE_URL` at it:
 
 ```sql
 CREATE ROLE daman LOGIN PASSWORD 'daman_dev' CREATEDB;
@@ -159,14 +163,28 @@ CREATE DATABASE daman OWNER daman;
 
 ```bash
 npm install
-cp .env.example .env        # set SESSION_SECRET (openssl rand -base64 32)
+cp .env.example .env        # set DATABASE_URL + SESSION_SECRET (openssl rand -base64 32)
 npx prisma migrate deploy   # apply migrations
-npm run db:seed             # demo users + companies
+npm run db:seed             # demo users + companies (blocked in production)
 npm run dev                 # http://localhost:3000
 ```
 
 AI is optional: set `OPENAI_API_KEY` to use OpenAI; without it the app runs
 with a clearly-labeled deterministic mock provider (see `.env.example`).
+
+### Deploying (Vercel + managed Postgres + object storage)
+
+Financial processing (OCR → parsing → analysis → AI memo) runs asynchronously,
+decoupled from submission. On serverless hosts the request-time trigger is
+best-effort, so a scheduled cron drains the durable job queue:
+
+- Set `S3_BUCKET` (+ credentials) — the read-only serverless filesystem cannot
+  persist uploads; production refuses to boot on local disk otherwise.
+- Set `CRON_SECRET`; `vercel.json` already registers the `/api/cron/process`
+  cron that reclaims and runs queued jobs (the 2-minute cadence needs a Vercel
+  Pro plan).
+- Optionally set `TESSERACT_LANG_PATH` to a private traineddata mirror to drop
+  the runtime CDN dependency for OCR. See `.env.example` for the full list.
 
 ### Demo accounts
 

@@ -86,7 +86,7 @@ export function CaseWizard(props: CaseWizardProps) {
   async function submitCase() {
     const result = await submitCaseAction(props.caseId!);
     if (result.ok) {
-      toast.success("Underwriting case submitted");
+      toast.success("Case submitted — financial processing started");
       router.push(`/cases/${props.caseId}`);
     } else if (result.error) {
       toast.error(result.error);

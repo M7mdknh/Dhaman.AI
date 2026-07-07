@@ -1,7 +1,10 @@
 /**
- * IFRS extraction pipeline orchestration. Runs at case submission, BEFORE
- * the case leaves DRAFT: hard failures reject the submission so the
- * contractor can replace the offending file immediately.
+ * IFRS extraction pipeline orchestration. Runs inside the async processing
+ * job (case-processing-service), never in the submission request — the case
+ * is already SAVED and PROCESSING before any document is read. A hard failure
+ * here leaves the case + documents intact and the job retryable (no re-upload);
+ * it never rolls back the submission. Stage progress is reported to the caller
+ * via `onStage` so the live dashboard can advance.
  *
  * Persistence rules (deterministic, documented in docs/IFRS_ENGINE.md):
  *  - One DocumentExtraction row per document (latest run only).
@@ -21,6 +24,14 @@ import { recordAudit } from "@/services/audit-service";
 import type { CanonicalKey } from "@/lib/ifrs/normalizer";
 import type { ValidationIssue } from "@/lib/ifrs/types";
 import type { Document, Prisma } from "@/generated/prisma/client";
+import type { ProcessingStage } from "@/generated/prisma/enums";
+
+/**
+ * Reports pipeline progress to the caller (the processing orchestrator) so it
+ * can persist the live stage. Reports may repeat or arrive out of order across
+ * documents; the caller advances the dashboard monotonically.
+ */
+export type StageReporter = (stage: ProcessingStage) => Promise<void>;
 
 export interface DocumentFailure {
   documentId: string;
@@ -97,7 +108,8 @@ function describeCause(cause: unknown): string {
 /** Runs extraction for every financial statement on the case. */
 export async function processCaseDocuments(
   caseId: string,
-  actorId: string,
+  actorId: string | null,
+  onStage?: StageReporter,
 ): Promise<PipelineOutcome> {
   const documents = await prisma.document.findMany({
     where: { caseId, docType: "FINANCIAL_STATEMENT" },
@@ -117,11 +129,14 @@ export async function processCaseDocuments(
     logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
 
     try {
+      await onStage?.("READING_STATEMENTS");
       const bytes = await storage.read(document.storageKey);
       logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
 
       const sha256 = createHash("sha256").update(bytes).digest("hex");
+      await onStage?.("DETECTING_STATEMENTS");
       const extraction = await extractIfrs(bytes, { enableOcr: true });
+      await onStage?.("EXTRACTING_DATA");
       const blocking = extraction.validation.errors;
       logStage("extracted", document.id, startedAt, {
         textSource: extraction.meta.textSource,

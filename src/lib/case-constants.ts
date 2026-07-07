@@ -47,6 +47,8 @@ export const MAX_STATEMENT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per PDF
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   DRAFT: "Draft",
   SUBMITTED: "Submitted",
+  PROCESSING: "Processing",
+  PROCESSING_FAILED: "Processing Failed",
   PARSING: "Processing",
   ANALYSIS_READY: "Analysis Ready",
   UNDER_REVIEW: "Under Review",

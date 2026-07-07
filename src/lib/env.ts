@@ -57,6 +57,23 @@ const envSchema = z.object({
   // Force a provider regardless of key presence ("mock" | "openai").
   LLM_PROVIDER: z.enum(["openai", "mock"]).optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
+
+  // ---- Async financial-processing drainer. The scheduled cron endpoint
+  // (/api/cron/process) is the DURABLE executor of the processing pipeline
+  // on serverless hosts, where the request-time `after()` trigger is bound
+  // to the invocation budget. Set CRON_SECRET and a Vercel Cron to enable it;
+  // the endpoint refuses to run without a matching bearer token.
+  CRON_SECRET: z.string().min(1).optional(),
+
+  // ---- OCR (tesseract.js). The WASM core resolves from node_modules; only
+  // the language traineddata is fetched, and by default from a public CDN.
+  // To remove that runtime CDN dependency, point TESSERACT_LANG_PATH at a
+  // directory/URL that hosts `ara.traineddata.gz` + `eng.traineddata.gz`.
+  // TESSERACT_CACHE_PATH MUST be writable (Vercel's only writable dir is /tmp)
+  // or tesseract re-downloads on every cold start and errors writing its cache.
+  TESSERACT_LANG_PATH: z.string().min(1).optional(),
+  TESSERACT_CORE_PATH: z.string().min(1).optional(),
+  TESSERACT_CACHE_PATH: z.string().min(1).default("/tmp/tessdata"),
 });
 
 export const env = envSchema.parse({
@@ -73,4 +90,8 @@ export const env = envSchema.parse({
   OPENAI_MODEL: process.env.OPENAI_MODEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
   LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
+  CRON_SECRET: process.env.CRON_SECRET,
+  TESSERACT_LANG_PATH: process.env.TESSERACT_LANG_PATH,
+  TESSERACT_CORE_PATH: process.env.TESSERACT_CORE_PATH,
+  TESSERACT_CACHE_PATH: process.env.TESSERACT_CACHE_PATH,
 });

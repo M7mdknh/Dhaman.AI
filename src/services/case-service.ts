@@ -6,7 +6,7 @@
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
-import { processCaseDocuments } from "@/services/extraction-service";
+import { enqueueProcessing } from "@/services/case-processing-service";
 
 import type { ContractDetailsInput } from "@/lib/validation/case";
 import type { Prisma } from "@/generated/prisma/client";
@@ -28,6 +28,7 @@ export type CaseWithRelations = Prisma.UnderwritingCaseGetPayload<{
       select: { id: true; decision: true; reason: true; conditions: true; createdAt: true };
     };
     guarantee: { select: { reference: true; issueDate: true; expiryDate: true } };
+    processing: true;
   };
 }>;
 
@@ -110,6 +111,7 @@ export async function getOwnedCase(
         select: { id: true, decision: true, reason: true, conditions: true, createdAt: true },
       },
       guarantee: { select: { reference: true, issueDate: true, expiryDate: true } },
+      processing: true,
     },
   });
 }
@@ -203,11 +205,17 @@ export async function saveContractDetails(
 }
 
 /**
- * DRAFT → SUBMITTED → PARSING → ANALYSIS_READY, in one request.
+ * Submission — the FIRST of two independent workflows. It only SAVES the case
+ * and ARMS processing; it never runs OCR/parsing/AI. Everything below commits
+ * atomically in one short transaction, then the caller triggers the async
+ * pipeline out-of-band (see `submitCaseAction`).
  *
- * IFRS extraction runs BEFORE the case leaves DRAFT: an unusable document
- * (scanned, password-protected, missing statements) rejects the submission
- * with a per-file message so the contractor can replace it immediately.
+ *   DRAFT → PROCESSING   (submittedAt set, documents QUEUED, job enqueued)
+ *
+ * The heavy financial processing runs afterwards in `case-processing-service`
+ * and drives the case to ANALYSIS_READY or PROCESSING_FAILED. A processing
+ * failure never rolls this back: the case and its documents stay saved and the
+ * work is retryable.
  */
 export async function submitCase(userId: string, caseId: string): Promise<ActionResult> {
   const existing = await getOwnedCase(userId, caseId);
@@ -222,45 +230,24 @@ export async function submitCase(userId: string, caseId: string): Promise<Action
     return { ok: false, error: "Upload at least one audited financial statement before submitting." };
   }
 
-  const pipeline = await processCaseDocuments(caseId, userId);
-  if (!pipeline.ok) {
-    const details = pipeline.failures
-      .map((f) => `${f.fileName}: ${f.message}`)
-      .join(" ");
-    return {
-      ok: false,
-      error:
-        details ||
-        "No usable financial figures could be extracted from the uploaded statements.",
-    };
-  }
-
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
-    data: { status: "SUBMITTED", submittedAt: new Date() },
+  // One fast, atomic write: the case is saved and processing is armed together.
+  await prisma.$transaction(async (tx) => {
+    await tx.underwritingCase.update({
+      where: { id: caseId },
+      data: { status: "PROCESSING", submittedAt: new Date() },
+    });
+    await tx.document.updateMany({
+      where: { caseId, docType: "FINANCIAL_STATEMENT" },
+      data: { processingStatus: "QUEUED" },
+    });
+    await enqueueProcessing(tx, caseId);
   });
+
   await recordAudit({
     action: "case.submitted",
     actorId: userId,
     caseId,
-    detail: { reference: existing.reference, extractedYears: pipeline.years },
-  });
-
-  // Extraction already succeeded; PARSING is recorded as a real (if brief)
-  // lifecycle stage, then the case becomes ready for analysis.
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
-    data: { status: "PARSING" },
-  });
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
-    data: { status: "ANALYSIS_READY" },
-  });
-  await recordAudit({
-    action: "case.analysis_ready",
-    actorId: userId,
-    caseId,
-    detail: { years: pipeline.years, warnings: pipeline.warnings.length },
+    detail: { reference: existing.reference },
   });
   return { ok: true };
 }

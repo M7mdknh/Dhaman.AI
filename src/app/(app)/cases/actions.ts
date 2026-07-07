@@ -1,11 +1,13 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth/session";
 import { companyInfoSchema, contractDetailsSchema } from "@/lib/validation/case";
 import { createDraftCase, deleteDraftCase, saveContractDetails, submitCase } from "@/services/case-service";
+import { retryProcessing, runCaseProcessing } from "@/services/case-processing-service";
 import { upsertCompanyForUser } from "@/services/company-service";
 import { removeFinancialStatement } from "@/services/document-service";
 
@@ -89,12 +91,29 @@ export async function removeDocumentAction(
   return { ok: true };
 }
 
-/** Step 4: DRAFT → SUBMITTED. */
+/**
+ * Step 4: submit the case. This returns as soon as the case is SAVED and the
+ * processing job is QUEUED (a few seconds at most) — the async pipeline is
+ * kicked off with `after()`, so it runs once the response has been sent and
+ * the contractor never waits for OCR/parsing/AI.
+ */
 export async function submitCaseAction(caseId: string): Promise<CaseActionState> {
   const session = await requireSession();
   const result = await submitCase(session.userId, caseId);
   if (!result.ok) return { ok: false, error: result.error };
 
+  after(() => runCaseProcessing(caseId));
+  revalidateCase(caseId);
+  return { ok: true };
+}
+
+/** Re-runs the processing pipeline on a failed/stalled case — no re-upload. */
+export async function retryProcessingAction(caseId: string): Promise<CaseActionState> {
+  const session = await requireSession();
+  const result = await retryProcessing(session.userId, caseId);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  after(() => runCaseProcessing(caseId));
   revalidateCase(caseId);
   return { ok: true };
 }

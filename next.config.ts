@@ -20,9 +20,11 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
-  // MuPDF ships a WASM binary that must be loaded from node_modules by the
-  // Node runtime — bundling it breaks the wasm file path resolution.
-  serverExternalPackages: ["mupdf"],
+  // Native/WASM packages that must load from node_modules at runtime rather
+  // than be traced into the bundle: MuPDF (WASM path resolution), sharp
+  // (native binary), and tesseract.js (loads its WASM core + worker from
+  // node_modules). Keep these external so the server build resolves them.
+  serverExternalPackages: ["mupdf", "sharp", "tesseract.js"],
   experimental: {
     // Every request (statement uploads included) passes through the auth
     // middleware, and Next caps middleware-buffered bodies at 10 MiB by

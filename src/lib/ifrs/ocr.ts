@@ -10,6 +10,7 @@
  */
 import sharp from "sharp";
 
+import { env } from "@/lib/env";
 import { toWesternDigits } from "@/lib/ifrs/vocab";
 
 import type { RasterPage } from "@/lib/ifrs/raster";
@@ -27,7 +28,16 @@ let workerPromise: Promise<Worker> | null = null;
 async function getWorker(): Promise<Worker> {
   workerPromise ??= (async () => {
     const { createWorker } = await import("tesseract.js");
-    return createWorker(["ara", "eng"]);
+    // The WASM core resolves from the bundled `tesseract.js-core` package, so
+    // only the language traineddata is fetched. `cachePath` MUST be writable
+    // (on Vercel the sole writable dir is /tmp) or tesseract errors caching the
+    // download and re-fetches on every cold start. `langPath`/`corePath` can be
+    // pointed at a private mirror to remove the public-CDN dependency entirely.
+    return createWorker(["ara", "eng"], undefined, {
+      cachePath: env.TESSERACT_CACHE_PATH,
+      langPath: env.TESSERACT_LANG_PATH,
+      corePath: env.TESSERACT_CORE_PATH,
+    });
   })();
   return workerPromise;
 }

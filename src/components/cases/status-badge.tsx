@@ -8,6 +8,8 @@ import type { CaseStatus } from "@/generated/prisma/enums";
 const DOT_CLASSES: Record<CaseStatus, string> = {
   DRAFT: "bg-muted-foreground/60",
   SUBMITTED: "bg-blue-500",
+  PROCESSING: "bg-blue-500",
+  PROCESSING_FAILED: "bg-red-500",
   PARSING: "bg-blue-500",
   ANALYSIS_READY: "bg-indigo-500",
   UNDER_REVIEW: "bg-amber-500",

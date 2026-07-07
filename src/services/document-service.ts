@@ -1,7 +1,8 @@
 /**
  * Financial statement documents (wizard Step 3). Files are stored through
  * the storage adapter under server-generated keys; the client filename is
- * metadata only. Sprint 1 stores files — parsing is Sprint 4.
+ * metadata only. Uploading only STORES the file; extraction/parsing happens
+ * later in the async processing job, after the case is submitted.
  */
 import { MAX_STATEMENT_FILE_BYTES } from "@/lib/case-constants";
 import { prisma } from "@/lib/prisma";
