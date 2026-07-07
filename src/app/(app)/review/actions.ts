@@ -1,0 +1,100 @@
+"use server";
+
+/**
+ * Officer workspace server actions (Sprint 5). Thin by rule: validate the
+ * shape with zod, call the service, revalidate. Role and state checks live
+ * in the services, never here.
+ */
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+
+import { getSession } from "@/lib/auth/session";
+import { generateDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
+import { issueGuarantee } from "@/services/guarantee-service";
+import { addCaseNote } from "@/services/note-service";
+import { recordDecision, resumeReview, startReview } from "@/services/review-service";
+
+export interface ReviewActionState {
+  ok: boolean;
+  error?: string;
+}
+
+const decisionSchema = z
+  .object({
+    decision: z.enum(["APPROVE", "APPROVE_WITH_CONDITIONS", "REJECT", "REQUEST_INFO"]),
+    reason: z.string().trim().min(1, "A reason is required.").max(4_000),
+    conditions: z.string().trim().max(4_000).optional(),
+  })
+  .refine((input) => input.decision !== "APPROVE_WITH_CONDITIONS" || !!input.conditions, {
+    message: "Conditions are required when approving with conditions.",
+    path: ["conditions"],
+  });
+
+async function requireSession() {
+  const session = await getSession();
+  if (!session) redirect("/login");
+  return session;
+}
+
+function revalidateReview(caseId: string) {
+  revalidatePath("/dashboard");
+  revalidatePath(`/review/${caseId}`);
+}
+
+export async function startReviewAction(caseId: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await startReview(session.userId, caseId);
+  if (!result.ok) return result;
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+export async function resumeReviewAction(caseId: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await resumeReview(session.userId, caseId);
+  if (!result.ok) return result;
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+export async function decideAction(
+  caseId: string,
+  input: { decision: string; reason: string; conditions?: string },
+): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const parsed = decisionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid decision." };
+  }
+  const result = await recordDecision(session.userId, caseId, parsed.data);
+  if (!result.ok) return result;
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+export async function addNoteAction(caseId: string, content: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await addCaseNote(session.userId, caseId, content);
+  if (!result.ok) return result;
+  revalidatePath(`/review/${caseId}`);
+  return { ok: true };
+}
+
+export async function issueGuaranteeAction(caseId: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await issueGuarantee(session.userId, caseId);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+/** Generates (or reuses the cached) AI underwriting memo — bank staff only. */
+export async function generateDecisionAction(caseId: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await generateDecisionIntelligence(session.userId, caseId);
+  if (!result.ok) return { ok: false, error: result.error };
+  revalidatePath(`/review/${caseId}`);
+  revalidatePath(`/cases/${caseId}/package`);
+  return { ok: true };
+}

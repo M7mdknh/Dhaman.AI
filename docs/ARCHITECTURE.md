@@ -26,8 +26,22 @@ components/
   ui/           shadcn primitives
   layout/       app shell (sidebar, top nav)
 lib/            infrastructure: prisma client, session, password, env, utils
+lib/ai/         LLM provider abstraction (interface + OpenAI/Mock providers
+                + factory) — the ONLY vendor-aware code in the app
 lib/validation/ zod schemas (single source of truth for input shapes)
+lib/finance/    financial engine primitives: types, null-safe Decimal math,
+                thresholds (EVERY tunable business constant lives here)
+lib/review.ts   pure officer-workflow rules: transition legality, decision →
+                status mapping, deterministic queue priority (unit-tested)
+lib/pdf/        document layouts (Letter of Guarantee) — pure data → bytes
 services/       business logic — the ONLY layer that touches Prisma
+services/finance/ pure deterministic engines (ratios, trends, flags,
+                capacity, risk) + orchestrator; no I/O, no AI
+services/decision/ Decision Intelligence: versioned prompt builder +
+                service (cache, retries, zod validation, persistence);
+                prompts NEVER live in UI
+                (officer-case / review / note / guarantee services: the
+                bank-side workflow — role-gated, never ownership-scoped)
 middleware.ts   route protection (session check + redirect)
 ```
 
@@ -55,13 +69,33 @@ ContractDetails 1:1 with case — beneficiary(+type), title, sector, value,
 Document        uploaded file metadata (fileName, mimeType, fileSize,
                 server-generated storageKey)
 FinancialStatement  one row per fiscal year of parsed IFRS figures (populated
-                Sprint 4); FK provenance link to its source Document (SetNull)
+                by the Sprint 2 parser); FK provenance link to its source
+                Document (SetNull)
+DecisionIntelligence  append-only AI memo rows (Sprint 4): frozen input
+                snapshot + hash (response cache), provider/model/prompt
+                provenance, validated memo fields, policy recommendation +
+                flagged AI divergence
+OfficerDecision append-only officer decisions (Sprint 5): officer, decision,
+                mandatory reason, conditions, id of the memo reviewed
+CaseNote        bank-internal notes (Sprint 5) — never in contractor queries
+Guarantee       issued Letter of Guarantee (Sprint 5): 1:1 case, LG reference
+                minted from internal seq, particulars frozen at issue time;
+                PDF rendered on demand, never stored
 AuditLog        append-only actor/action/detail trail (no update/delete paths)
 ```
 
-Deliberately absent until their sprint: FinancialAnalysis (Sprint 5), AI/memo
-tables (Sprint 6), Guarantee registry (Sprint 8), Open Banking / SIMAH
-(Future — interfaces + mocks only).
+Deliberately absent: Open Banking / SIMAH (Future — interfaces + mocks only).
+
+## Financial analysis is computed on demand (decision 2026-07-06)
+
+There is **no `FinancialAnalysis` table**. The Financial Intelligence Engine
+(`services/finance/`, see `docs/FINANCIAL_ENGINE.md`) is a set of cheap,
+pure, deterministic functions — the same `FinancialStatement` +
+`ContractDetails` rows always produce the same analysis, so it is recomputed
+on every page view and can never be stale. When the AI Underwriter and
+officer decisions arrive, they need an immutable record of what they looked
+at — that sprint introduces persisted **Analysis Snapshots** (not built yet,
+by decision).
 
 ## The case status state machine
 
@@ -69,8 +103,18 @@ tables (Sprint 6), Guarantee registry (Sprint 8), Open Banking / SIMAH
 (APPROVED → ISSUED) | DECLINED | INFO_REQUESTED (→ UNDER_REVIEW)`
 
 The full enum exists from Sprint 0 (it is core domain vocabulary and avoids
-migration churn), but Sprint 0–3 code only ever uses DRAFT/SUBMITTED.
-Transitions are enforced in the case service, never in UI.
+migration churn). DRAFT/SUBMITTED arrived in Sprint 1; the Sprint 2 parsing
+pipeline drives SUBMITTED → PARSING → ANALYSIS_READY; the Sprint 5 officer
+workspace drives everything after (ANALYSIS_READY → UNDER_REVIEW →
+APPROVED/DECLINED/INFO_REQUESTED → ISSUED). Transition legality is pure code
+in `lib/review.ts`; the case and review services enforce it — never UI.
+
+Access is two disjoint paths: contractors are **ownership-scoped**
+(`case-service`), bank staff are **role-gated** (`officer-case-service` and
+friends) and see every post-submission case. The AI memo, internal notes,
+and the Underwriting Package are bank-internal — contractor queries never
+include them (decision status, request-info messages, and approval
+conditions are the applicant-visible surface).
 
 ## Security posture (lessons from V1 — do not regress)
 
@@ -82,6 +126,19 @@ Transitions are enforced in the case service, never in UI.
 - Files are served through authenticated routes, never public URLs.
 - Secrets only via environment variables; `.env` is git-ignored,
   `.env.example` documents every variable.
+
+## Decision Intelligence (Sprint 4)
+
+The AI layer explains the deterministic analysis; it never calculates and
+never decides. Pipeline, provider abstraction, prompt design, validation,
+and failure handling: `docs/DECISION_INTELLIGENCE.md`. Key invariants:
+
+- The model receives structured engine-output JSON only — never PDFs, never
+  raw statements, never personal contact data.
+- Every response passes a strict zod contract or is rejected and retried.
+- The recommendation of record is bank policy (risk band mapping in
+  `lib/finance/thresholds.ts`); model divergence is stored and flagged.
+- No API key → MockProvider; the app is always deployable without AI.
 
 ## Future integration sockets
 

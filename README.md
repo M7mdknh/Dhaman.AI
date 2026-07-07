@@ -69,13 +69,48 @@ Delivered (Sprint 1 — Contractor Workspace)
 - Case details page with a growable lifecycle timeline
 - Full audit trail for every business action
 
+Delivered (Sprint 2 — IFRS Parsing)
+
+- Deterministic PDF statement extraction (MuPDF WASM — no LLM, no OCR)
+- Line-item normalization into structured figures, one row per fiscal year
+- Parsing runs at submission; per-file failure messages; extraction provenance
+- Extracted-figures review UI (see `docs/IFRS_ENGINE.md`)
+
+Delivered (Sprint 3 — Financial Intelligence Engine)
+
+- Pure deterministic TypeScript engines: 19 ratios, YoY growth, trends,
+  13 rule-based risk flags — every threshold configurable, no AI in any figure
+- Underwriting Capacity (primary KPI) + Risk Score with five risk bands
+- Analysis dashboard: capacity, risk gauge, KPI strip, flags, trend charts,
+  ratio tables (see `docs/FINANCIAL_ENGINE.md`)
+
+Delivered (Sprint 4 — AI Underwriter / Decision Intelligence)
+
+- Provider-agnostic LLM layer: OpenAI or a deterministic mock — no API key
+  needed, the app always runs
+- AI underwriting memo (executive summary, strengths, weaknesses, risks,
+  missing information, next steps), strictly validated before persistence
+- Recommendation derived deterministically from the risk band by bank
+  policy — never by the model; divergence is stored and flagged
+- Professional Underwriting Package report with Computed vs AI-drafted
+  provenance labels (see `docs/DECISION_INTELLIGENCE.md`)
+
+Delivered (Sprint 5 — Underwriting Workspace)
+
+- Risk Officer review queue (pending/all/decided, search, pagination,
+  deterministic priority) and a three-column review workspace: timeline,
+  full financial intelligence + AI memo, sticky decision sidebar
+- Officer decisions as data: Approve / Approve with Conditions / Reject /
+  Request More Information — mandatory reason, confirmation, full audit
+- Internal notes (bank-only); contractors see decision status, request-info
+  messages, and approval conditions — never internal reasoning or the memo
+- Letter of Guarantee: unique LG reference, professional PDF with QR stamp,
+  rendered on demand behind an authenticated route
+  (see `docs/UNDERWRITING_WORKSPACE.md`)
+
 Coming next
 
-- IFRS Parsing
-- Financial Intelligence Engine
-- AI Underwriter
-- Officer Dashboard
-- Letter of Guarantee Generation
+- Guarantee registry & exportable audit report
 
 Future
 
@@ -103,7 +138,9 @@ Database
 
 AI
 
-- OpenAI GPT (explanations and memo drafting only — never calculations)
+- Provider-agnostic LLM layer (`lib/ai/`) — OpenAI today, deterministic mock
+  when no key is configured; explanations and memo drafting only — never
+  calculations, never the final decision
 
 Deployment
 
@@ -129,6 +166,9 @@ npm run db:seed             # demo users + companies
 npm run dev                 # http://localhost:3000
 ```
 
+AI is optional: set `OPENAI_API_KEY` to use OpenAI; without it the app runs
+with a clearly-labeled deterministic mock provider (see `.env.example`).
+
 ### Demo accounts
 
 | Email | Role | Password |
@@ -147,7 +187,9 @@ npm run dev                 # http://localhost:3000
 | `npm run db:migrate` / `db:seed` / `db:studio` | Prisma workflows |
 
 Project documentation: `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`,
-`docs/PHASES.md`, `TODO.md`, `PROJECT_STATUS.md`, `TECH_DEBT.md`.
+`docs/PHASES.md`, `docs/IFRS_ENGINE.md`, `docs/FINANCIAL_ENGINE.md`,
+`docs/DECISION_INTELLIGENCE.md`, `docs/UNDERWRITING_WORKSPACE.md`,
+`TODO.md`, `PROJECT_STATUS.md`, `TECH_DEBT.md`.
 
 ---
 

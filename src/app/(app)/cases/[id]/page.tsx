@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, PencilLine } from "lucide-react";
+import { ArrowLeft, BarChart3, PencilLine } from "lucide-react";
 
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
+import { DecisionStatusCard } from "@/components/cases/decision-status";
 import { DeleteDraftDialog } from "@/components/cases/delete-draft-dialog";
 import { StatusBadge } from "@/components/cases/status-badge";
 import {
@@ -20,7 +21,7 @@ import {
   toDocumentView,
   toStatementFigures,
 } from "@/lib/case-view";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
 
@@ -29,14 +30,22 @@ import type { Metadata } from "next";
 export const metadata: Metadata = { title: "Underwriting Case" };
 
 /**
- * Lifecycle timeline. Future stages (analysis, AI underwriter, officer
- * review, …) are appended here as their sprints ship.
+ * The contractor's lifecycle timeline. Bank-internal steps (the AI memo)
+ * are deliberately absent — the applicant sees business events only.
  */
 function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
   const submitted = underwritingCase.submittedAt;
   const analysisReady =
     underwritingCase.financialStatements.length > 0 &&
     underwritingCase.status !== "DRAFT";
+  const terminal =
+    underwritingCase.officerDecisions.find((d) => d.decision !== "REQUEST_INFO") ?? null;
+  const decisionLabel =
+    terminal === null
+      ? "Decision"
+      : terminal.decision === "REJECT"
+        ? "Decision — Declined"
+        : "Decision — Approved";
   return [
     {
       label: "Created",
@@ -54,10 +63,25 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
       state: submitted ? "complete" : "upcoming",
     },
     { label: "Financial Analysis", state: analysisReady ? "complete" : "upcoming" },
-    { label: "AI Underwriter", state: "upcoming" },
-    { label: "Officer Review", state: "upcoming" },
-    { label: "Approval", state: "upcoming" },
-    { label: "Letter of Guarantee", state: "upcoming" },
+    {
+      label: "Officer Review",
+      timestamp: underwritingCase.reviewStartedAt
+        ? formatDateTime(underwritingCase.reviewStartedAt)
+        : undefined,
+      state: underwritingCase.reviewStartedAt ? "complete" : "upcoming",
+    },
+    {
+      label: decisionLabel,
+      timestamp: terminal ? formatDateTime(terminal.createdAt) : undefined,
+      state: terminal ? "complete" : "upcoming",
+    },
+    {
+      label: "Letter of Guarantee",
+      timestamp: underwritingCase.guarantee
+        ? formatDate(underwritingCase.guarantee.issueDate)
+        : undefined,
+      state: underwritingCase.guarantee ? "complete" : "upcoming",
+    },
   ];
 }
 
@@ -106,18 +130,26 @@ export default async function CaseDetailsPage({
             </h1>
             <StatusBadge status={underwritingCase.status} />
           </div>
-          {isDraft && (
-            <div className="flex items-center gap-2">
-              <Link
-                href={`/cases/${id}/edit`}
-                className={cn(buttonVariants({ variant: "outline" }))}
-              >
-                <PencilLine className="size-4" aria-hidden />
-                Continue Editing
+          <div className="flex items-center gap-2">
+            {extractedStatements.length > 0 && !isDraft && (
+              <Link href={`/cases/${id}/analysis`} className={cn(buttonVariants())}>
+                <BarChart3 className="size-4" aria-hidden />
+                Financial Analysis
               </Link>
-              <DeleteDraftDialog caseId={id} reference={underwritingCase.reference} />
-            </div>
-          )}
+            )}
+            {isDraft && (
+              <>
+                <Link
+                  href={`/cases/${id}/edit`}
+                  className={cn(buttonVariants({ variant: "outline" }))}
+                >
+                  <PencilLine className="size-4" aria-hidden />
+                  Continue Editing
+                </Link>
+                <DeleteDraftDialog caseId={id} reference={underwritingCase.reference} />
+              </>
+            )}
+          </div>
         </div>
         {contract && (
           <p className="mt-1 text-sm text-muted-foreground">{contract.contractTitle}</p>
@@ -172,6 +204,13 @@ export default async function CaseDetailsPage({
               </CardContent>
             </Card>
           )}
+
+          <DecisionStatusCard
+            caseId={id}
+            status={underwritingCase.status}
+            decisions={underwritingCase.officerDecisions}
+            guarantee={underwritingCase.guarantee}
+          />
         </div>
 
         <div>

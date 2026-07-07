@@ -43,6 +43,34 @@ export function formatDateTime(value: Date | string): string {
   return dateTimeFormatter.format(new Date(value));
 }
 
+const compactFormatters = new Map<string, Intl.NumberFormat>();
+
+/** Chart/label money: "SAR 120M". Display only — arithmetic stays Decimal. */
+export function formatCompactMoney(value: number, currency = "SAR"): string {
+  let formatter = compactFormatters.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      currencyDisplay: "code",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    });
+    compactFormatters.set(currency, formatter);
+  }
+  return formatter.format(value);
+}
+
+/** Ratio display: 2 decimal places, or "—" when incomputable. */
+export function formatRatio(value: number | null): string {
+  return value === null ? "—" : value.toFixed(2);
+}
+
+/** Fraction → percentage display: 0.1167 → "11.7%". */
+export function formatPercent(value: number | null): string {
+  return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;

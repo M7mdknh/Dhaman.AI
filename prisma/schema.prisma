@@ -1,7 +1,12 @@
 // Daman — initial schema (Sprint 0).
-// Deliberately absent until their sprint: FinancialAnalysis (Sprint 5),
-// AI/memo tables (Sprint 6), Guarantee registry (Sprint 8),
-// Open Banking / SIMAH (Future — never tables, only provider interfaces).
+// Financial analysis is deliberately NOT persisted (decision 2026-07-06):
+// it is computed on demand from FinancialStatement rows — see
+// docs/FINANCIAL_ENGINE.md. The Sprint 4 DecisionIntelligence rows freeze
+// the exact engine snapshot a memo explained (docs/DECISION_INTELLIGENCE.md).
+// Sprint 5 adds the officer workspace records: OfficerDecision, CaseNote,
+// Guarantee (docs/UNDERWRITING_WORKSPACE.md).
+// Deliberately absent: Open Banking / SIMAH (Future — never tables, only
+// provider interfaces).
 
 generator client {
   provider = "prisma-client"
@@ -71,10 +76,15 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  company   Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  cases     UnderwritingCase[]
-  documents Document[]
-  auditLogs AuditLog[]
+  company            Company?               @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  cases              UnderwritingCase[]
+  documents          Document[]
+  auditLogs          AuditLog[]
+  decisionsRequested DecisionIntelligence[]
+  assignedCases      UnderwritingCase[]     @relation("AssignedOfficer")
+  officerDecisions   OfficerDecision[]
+  caseNotes          CaseNote[]
+  guaranteesIssued   Guarantee[]
 
   @@index([companyId])
   @@map("users")
@@ -112,19 +122,30 @@ model UnderwritingCase {
   createdById String     @map("created_by_id")
   status      CaseStatus @default(DRAFT)
   submittedAt DateTime?  @map("submitted_at")
+  // Officer review lifecycle (Sprint 5). The first officer to start the
+  // review claims the case; decidedAt marks the latest terminal decision.
+  assignedOfficerId String?   @map("assigned_officer_id")
+  reviewStartedAt   DateTime? @map("review_started_at")
+  decidedAt         DateTime? @map("decided_at")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
-  company             Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  createdBy           User                 @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  contractDetails     ContractDetails?
-  documents           Document[]
-  financialStatements FinancialStatement[]
-  auditLogs           AuditLog[]
+  company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdBy            User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  assignedOfficer      User?                  @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id], onDelete: SetNull)
+  contractDetails      ContractDetails?
+  documents            Document[]
+  financialStatements  FinancialStatement[]
+  auditLogs            AuditLog[]
+  decisionIntelligence DecisionIntelligence[]
+  officerDecisions     OfficerDecision[]
+  notes                CaseNote[]
+  guarantee            Guarantee?
 
   @@index([status])
   @@index([createdById])
   @@index([createdAt])
+  @@index([assignedOfficerId])
   @@map("underwriting_cases")
 }
 
@@ -264,6 +285,143 @@ model FinancialStatement {
 
   @@unique([caseId, fiscalYear])
   @@map("financial_statements")
+}
+
+// Bank policy's recommendation vocabulary. The recommendation OF RECORD is
+// always derived deterministically from the risk band (thresholds.ts) —
+// the model must echo it and explain it, never choose it.
+enum RecommendationType {
+  APPROVE
+  APPROVE_WITH_CONDITIONS
+  MANUAL_REVIEW
+  REJECT
+}
+
+// One AI underwriting memo run (Sprint 4 Decision Intelligence).
+// Append-only: regeneration adds a row; the newest row is the active memo.
+// Only VALIDATED responses are persisted — failures live in the audit log.
+model DecisionIntelligence {
+  id     String @id @default(cuid())
+  caseId String @map("case_id")
+  // Who requested the generation (SetNull: memo survives user removal).
+  requestedById String? @map("requested_by_id")
+
+  // ---- Provenance: exactly what the model saw and how it was called.
+  // Frozen structured input (the immutable analysis snapshot the memo
+  // explains). Never rebuilt from live rows.
+  inputSnapshot Json   @map("input_snapshot")
+  // sha256 over (canonical input + prompt version + provider + model) —
+  // the response cache key: identical inputs never trigger a repeat call.
+  inputHash     String @map("input_hash")
+  provider      String
+  model         String
+  promptVersion String @map("prompt_version")
+  latencyMs     Int?   @map("latency_ms")
+
+  // ---- Validated memo (zod-checked before persistence).
+  summary               String
+  companyStrengths      String[] @map("company_strengths")
+  companyWeaknesses     String[] @map("company_weaknesses")
+  contractAssessment    String   @map("contract_assessment")
+  riskExplanation       String   @map("risk_explanation")
+  recommendationReason  String   @map("recommendation_reason")
+  missingInformation    String[] @map("missing_information")
+  confidenceExplanation String   @map("confidence_explanation")
+  nextSteps             String[] @map("next_steps")
+
+  // ---- Recommendation of record: deterministic bank policy (risk band →
+  // recommendation). aiRecommendation is what the model returned; when it
+  // diverges, policy wins and the divergence is flagged for the officer.
+  recommendation   RecommendationType @map("recommendation")
+  aiRecommendation RecommendationType @map("ai_recommendation")
+  aiDiverged       Boolean            @default(false) @map("ai_diverged")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  case             UnderwritingCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requestedBy      User?             @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  officerDecisions OfficerDecision[]
+
+  @@index([caseId, createdAt])
+  @@index([caseId, inputHash])
+  @@map("decision_intelligence")
+}
+
+// The Risk Officer's decision vocabulary (Sprint 5). "Manual Review" is
+// deliberately NOT a decision — the officer in the workspace IS the manual
+// review; it exists only as an AI recommendation value.
+enum OfficerDecisionType {
+  APPROVE
+  APPROVE_WITH_CONDITIONS
+  REJECT
+  REQUEST_INFO
+}
+
+// One officer decision event. Append-only: a REQUEST_INFO can be followed by
+// a terminal decision; the newest row is the decision of record.
+model OfficerDecision {
+  id        String              @id @default(cuid())
+  caseId    String              @map("case_id")
+  officerId String              @map("officer_id")
+  decision  OfficerDecisionType
+  // Mandatory internal reasoning. Only REQUEST_INFO content is ever shown to
+  // the contractor; approve/reject reasoning stays bank-internal.
+  reason     String
+  // Conditions attached to APPROVE_WITH_CONDITIONS (null otherwise).
+  conditions String?
+  // Which AI memo the officer had in front of them (SetNull: the decision
+  // record outlives memo housekeeping).
+  decisionIntelligenceId String?  @map("decision_intelligence_id")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  case                 UnderwritingCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  officer              User                  @relation(fields: [officerId], references: [id], onDelete: Restrict)
+  decisionIntelligence DecisionIntelligence? @relation(fields: [decisionIntelligenceId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, createdAt])
+  @@map("officer_decisions")
+}
+
+// Internal officer note on a case. NEVER exposed through any
+// contractor-facing query or serialization.
+model CaseNote {
+  id        String   @id @default(cuid())
+  caseId    String   @map("case_id")
+  authorId  String?  @map("author_id")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  case   UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, createdAt])
+  @@map("case_notes")
+}
+
+// Issued Letter of Guarantee (Sprint 5). One per case; the PDF is rendered
+// on demand from this row (deterministic) — nothing is stored on disk.
+model Guarantee {
+  id     String @id @default(cuid())
+  // Internal race-free counter for minting the human reference (never shown).
+  seq    Int    @default(autoincrement()) @unique
+  // Human-readable guarantee number, e.g. LG-2026-000001.
+  reference  String   @unique
+  caseId     String   @unique @map("case_id")
+  issuedById String   @map("issued_by_id")
+  amount     Decimal  @db.Decimal(18, 2)
+  currency   String   @default("SAR")
+  beneficiary String
+  issueDate  DateTime @map("issue_date") @db.Date
+  // Follows the guaranteed contract's end date.
+  expiryDate DateTime @map("expiry_date") @db.Date
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Restrict on both: an issued bank instrument must never disappear
+  // because a case or user row was removed.
+  case     UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  issuedBy User             @relation(fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@map("guarantees")
 }
 
 // Append-only. No service exposes update or delete for this table.

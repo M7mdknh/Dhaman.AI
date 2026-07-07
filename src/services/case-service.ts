@@ -20,6 +20,14 @@ export type CaseWithRelations = Prisma.UnderwritingCaseGetPayload<{
       include: { extraction: { select: { validation: true; error: true; currency: true; scale: true; detectedStatements: true } } };
     };
     financialStatements: { orderBy: { fiscalYear: "desc" } };
+    // Officer decisions power the contractor-visible decision status. The AI
+    // memo (decisionIntelligence) is deliberately NOT included — it is a
+    // bank-internal work product since Sprint 5 (officer workspace only).
+    officerDecisions: {
+      orderBy: { createdAt: "desc" };
+      select: { id: true; decision: true; reason: true; conditions: true; createdAt: true };
+    };
+    guarantee: { select: { reference: true; issueDate: true; expiryDate: true } };
   };
 }>;
 
@@ -97,6 +105,11 @@ export async function getOwnedCase(
         },
       },
       financialStatements: { orderBy: { fiscalYear: "desc" } },
+      officerDecisions: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, decision: true, reason: true, conditions: true, createdAt: true },
+      },
+      guarantee: { select: { reference: true, issueDate: true, expiryDate: true } },
     },
   });
 }

@@ -16,7 +16,7 @@ deliberately parked.
 | 4 | **Demo password hardcoded in `prisma/seed.ts`** and printed to console. | Known credential if seed runs in prod | Guard seed by `NODE_ENV` / move to env var before any shared deployment |
 | 5 | **No mobile navigation drawer** — sidebar hidden below `md`; only the topbar (brand + sign out) remains. Case pages themselves are responsive. | Unusable nav on phones | Auth-hardening backlog batch |
 | 6 | **Dark theme tokens exist but no toggle is exposed.** | None (light-only) | Whenever UX asks for it |
-| 7 | **No committed automated tests.** Sprint 0 (13 checks) and Sprint 1 (28 checks) were verified via scratchpad Playwright scripts; Playwright is a devDependency but no `tests/` suite exists in-repo. | Regressions land silently | Sprint 2 at the latest — commit browser E2E + parser unit tests (the Financial Intelligence engine must be test-first) |
+| 7 | **No committed browser E2E suite.** Unit tests exist in-repo since Sprint 2 (`tests/` — parser + financial engines, 51 assertions), but the Sprint 0/1 browser checks live only in scratchpad Playwright scripts. | UI regressions land silently | Officer workspace sprint at the latest — commit an E2E suite |
 | 8 | **No CI.** lint/typecheck/build run manually. | Broken main | With the first committed test suite |
 | 9 | **No security headers** (CSP, HSTS, X-Frame-Options…). | Clickjacking/XSS hardening absent | Before external exposure; add via `next.config.ts` headers |
 | 10 | **No structured logging or error monitoring.** `console` only. | Blind in production | Before pilot deployment |
@@ -25,6 +25,13 @@ deliberately parked.
 | 13 | **Dashboard search/filter is client-side in-memory** over the full case list (no pagination). Deliberate: a prod-only Next 15.5 bug drops searchParams-only `router.replace` navigations (see below), and MVP case volumes are tiny. | Slow with thousands of cases | Officer queue sprint (server pagination lands there); re-test router bug on Next upgrade |
 | 14 | **Timeline "Draft Saved" uses `updatedAt`** — approximate (any row touch counts) and shown even for never-edited drafts. Precise timestamps exist in AuditLog if needed. | Cosmetic imprecision | When the timeline gains audit-backed entries (officer sprint) |
 | 15 | **Wizard step forms stay mounted (CSS-hidden)** to preserve state across navigation — all field ids must be unique page-wide (contract selects are prefixed `contract-`). | Duplicate-id bugs if forgotten | Note for future wizard steps |
+| 16 | ~~The contractor sees the AI underwriting memo~~ **RESOLVED in Sprint 5**: the memo, memo generation, and the Underwriting Package are officer-only; the contractor sees decision status, request-info messages, and approval conditions only. | — | — |
+| 17 | **Company financial data leaves the machine when an OpenAI key is configured** (structured engine outputs + company registration data; no personal contacts, no PDFs). Acceptable for MVP; a bank deployment needs a data-processing agreement or an in-VPC/Azure endpoint. | Confidentiality obligations | Before pilot with real customer data (AzureOpenAIProvider is one file + a factory entry) |
+| 18 | **Memo regeneration is unbounded** — mitigated in Sprint 5 (generation is officer-only now), but there is still no per-user/day quota or cost tracking. | Provider cost abuse | First real API key (add a quota + usage log) |
+| 19 | **No officer exclusivity on reviews** — the first officer to start a review is recorded as assigned, but any officer can still decide any case (deliberate for a 1-officer MVP bank). | Two officers could act on one case concurrently; last write wins on status | When a second real officer exists: claim/lock or optimistic concurrency on status transitions |
+| 20 | **The LG QR stamp is informational, not cryptographic** — it encodes the particulars (reference, case, amount, expiry) but there is no signature or public verification endpoint, so a QR scan proves nothing by itself. | Forged-document risk if relied on for verification | Before real instruments: signed payload + `/verify/[reference]` endpoint |
+| 21 | **INFO_REQUESTED has no in-app response channel** — the contractor sees the request message, but a submitted case is read-only, so the answer arrives out of band (email/RM) and the officer resumes manually. | Untracked correspondence | Contractor reply + supplementary-upload flow (post-MVP) |
+| 22 | **`officer.case_opened` audit is deduplicated per officer/case within 15 min** — a deliberate compromise between the spec ("log opens") and refresh/post-action re-render noise. | Repeat opens inside the window are not individually recorded | Revisit if compliance needs every view event |
 
 ## Environment constraints (not code debt, but bites us)
 
@@ -60,11 +67,38 @@ deliberately parked.
 8. **AuditLog is append-only by convention** — no update/delete code path; DB
    links use `SetNull` so history survives entity deletion. (No DB-level
    immutability trigger yet — see below.)
+9. **Financial analysis is computed on demand — no `FinancialAnalysis` table**
+   (user decision 2026-07-06). The engine is deterministic and pure, so the
+   same statements always produce the same analysis; persisting it could only
+   be redundant or stale. Immutable **Analysis Snapshots** arrive with the AI
+   Underwriter / officer sprints, which need a frozen record of what a memo or
+   decision looked at. Snapshot storage is deliberately not built yet.
+10. **Risk Score convention: higher = riskier** (0 minimal → 100 maximal),
+   bands EXCELLENT < 15 ≤ LOW < 35 ≤ MODERATE < 55 ≤ HIGH < 75 ≤ CRITICAL —
+   all boundaries configurable in `lib/finance/thresholds.ts`. Underwriting
+   Capacity (higher = better) stays the primary KPI; the officer-facing
+   recommendation will be derived from the risk band in Sprint 4, never by AI.
+
+11. **AI recommendation discipline (Sprint 4):** the recommendation of record
+   is ALWAYS `RECOMMENDATION_BY_BAND[riskBand]` (deterministic). The model is
+   handed that value, must echo and explain it, and any divergence is stored
+   in `aiRecommendation` + flagged `aiDiverged` — policy prevails. Runtime
+   provider failures error visibly; they are never silently downgraded to the
+   mock provider.
+
+12. **Officer workflow (Sprint 5):** two disjoint access paths — contractors
+   ownership-scoped, bank staff role-gated (never ownership). "Manual
+   Review" is not an officer decision (the officer IS the manual review);
+   the vocabulary is Approve / Approve with Conditions / Reject / Request
+   Info, recorded append-only with mandatory reasons. Queue priority is
+   derived (risk band + exposure), never hand-maintained. LG particulars
+   are frozen at issue time and the PDF is rendered on demand, never
+   stored. Approval conditions are applicant-visible; internal reasoning
+   and notes never are.
 
 ## Postponed features (by design — do NOT build early)
 
-- Financial analysis tables & engine (Sprint 3), AI/memo storage (Sprint 4),
-  Guarantee registry (Sprint 6)
+- Guarantee registry list + per-case audit report export (Sprint 6)
 - Document `sha256` checksum — explicitly deferred until external object
   storage is introduced (user decision)
 - Admin user-management UI; profile pages

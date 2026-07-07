@@ -1,42 +1,97 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { CheckCircle2, FilePen, Plus, SearchCheck, Send } from "lucide-react";
+import {
+  CheckCircle2,
+  FileCheck2,
+  FilePen,
+  Gavel,
+  Inbox,
+  Plus,
+  SearchCheck,
+  Send,
+} from "lucide-react";
 
 import { CasesPanel } from "@/components/dashboard/cases-panel";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { QueueTable } from "@/components/review/queue-table";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
 import { toCaseRow } from "@/lib/case-view";
 import { cn } from "@/lib/utils";
 import { getCaseStats, listCasesForUser } from "@/services/case-service";
+import {
+  getQueueStats,
+  listReviewQueue,
+  type QueueTab,
+} from "@/services/officer-case-service";
 
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-export default async function DashboardPage() {
+function parseTab(value: string | undefined): QueueTab {
+  return value === "all" || value === "decided" ? value : "pending";
+}
+
+/** The Risk Officer's review queue — the bank-side dashboard. */
+async function OfficerDashboard({
+  userId,
+  fullName,
+  searchParams,
+}: {
+  userId: string;
+  fullName: string;
+  searchParams: { tab?: string; q?: string; page?: string };
+}) {
+  const tab = parseTab(searchParams.tab);
+  const query = searchParams.q?.trim() ?? "";
+  const page = Number(searchParams.page) || 1;
+
+  const [stats, queue] = await Promise.all([
+    getQueueStats(userId),
+    listReviewQueue(userId, { tab, query, page }),
+  ]);
+  if (!stats || !queue) redirect("/login");
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          Welcome, {fullName.split(" ")[0]}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Review submitted underwriting cases and record decisions.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard label="Pending Review" value={stats.pending} icon={Inbox} />
+        <StatCard label="In Review" value={stats.underReview} icon={SearchCheck} />
+        <StatCard label="Decided" value={stats.decided} icon={Gavel} />
+        <StatCard label="Guarantees Issued" value={stats.issued} icon={FileCheck2} />
+      </div>
+
+      <QueueTable result={queue} tab={tab} query={query} />
+    </div>
+  );
+}
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; q?: string; page?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  // The officer workspace ships in a later sprint — bank staff see a notice.
   if (session.role !== "CONTRACTOR") {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            Welcome, {session.fullName.split(" ")[0]}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The Risk Officer workspace is coming in an upcoming release.
-          </p>
-        </div>
-        <Card>
-          <CardContent className="py-16 text-center text-sm text-muted-foreground">
-            Submitted underwriting cases will appear here once the review queue ships.
-          </CardContent>
-        </Card>
-      </div>
+      <OfficerDashboard
+        userId={session.userId}
+        fullName={session.fullName}
+        searchParams={await searchParams}
+      />
     );
   }
 

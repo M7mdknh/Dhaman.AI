@@ -100,7 +100,11 @@ export async function removeFinancialStatement(
   return { ok: true };
 }
 
-/** Ownership-checked read for the authenticated download route. */
+/**
+ * Access-checked read for the authenticated download route: contractors are
+ * ownership-scoped; bank staff read any post-submission document and every
+ * such access is audited.
+ */
 export async function getDocumentContent(
   userId: string,
   documentId: string,
@@ -108,8 +112,28 @@ export async function getDocumentContent(
   const document = await prisma.document.findUnique({ where: { id: documentId } });
   if (!document) return null;
 
-  const owned = await getOwnedCase(userId, document.caseId);
-  if (!owned) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (!user) return null;
+
+  if (user.role === "RISK_OFFICER" || user.role === "ADMIN") {
+    const reviewable = await prisma.underwritingCase.findFirst({
+      where: { id: document.caseId, status: { not: "DRAFT" } },
+      select: { id: true },
+    });
+    if (!reviewable) return null;
+    await recordAudit({
+      action: "officer.document_downloaded",
+      actorId: userId,
+      caseId: document.caseId,
+      detail: { documentId: document.id, fileName: document.fileName },
+    });
+  } else {
+    const owned = await getOwnedCase(userId, document.caseId);
+    if (!owned) return null;
+  }
 
   const content = await storage.read(document.storageKey);
   return { document, content };

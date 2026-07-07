@@ -142,64 +142,81 @@ ANALYSIS_READY). See `docs/IFRS_ENGINE.md`.
 
 ---
 
-# Sprint 3 — Financial Intelligence Engine
+# Sprint 3 — Financial Intelligence Engine ✅ (completed 2026-07-06)
 
 Pure TypeScript, fully unit-tested. The LLM is never involved.
+Full algorithms + formulas: `docs/FINANCIAL_ENGINE.md`.
 
-- [ ] Ratio engine: liquidity, leverage, profitability, efficiency, cash flow, coverage (port from V1 `core/ratios.py`)
-- [ ] Trend analysis (year-over-year, port from V1 `core/trends.py`)
-- [ ] Risk flags (revenue swings, debt increase, margin deterioration, …)
-- [ ] Execution capacity score (contract size vs revenue / liquidity / coverage)
-- [ ] Risk score + band (transparent weighted rules, port from V1 `core/risk.py`)
-- [ ] Confidence score
-- [ ] `FinancialAnalysis` table
-- [ ] Analysis UI: ratios, trends, flags, risk gauge
-- [ ] Full unit test suite for all engine modules
+- [x] Ratio engine: liquidity, leverage, profitability, efficiency, cash flow, coverage (port from V1 `core/ratios.py`)
+- [x] Trend analysis (year-over-year, port from V1 `core/trends.py`)
+- [x] Risk flags (revenue swings, debt increase, margin deterioration, …)
+- [x] Execution capacity score — surfaced as **Underwriting Capacity**, the platform's primary KPI (contract size vs revenue / liquidity / coverage)
+- [x] Risk score + band (transparent weighted rules, port from V1 `core/risk.py`; five bands EXCELLENT→CRITICAL, all thresholds configurable in `lib/finance/thresholds.ts`)
+- [x] Reusable risk gauge component (score, band, supporting metrics)
+- [x] Analysis dashboard: capacity (primary) + risk gauge (secondary), KPI strip (liquidity, leverage, profitability, cash flow, growth), flags, trend charts, ratio tables
+- [x] Full unit test suite for all engine modules (hand-computed expectations)
+- ~~Confidence score~~ — moved to Sprint 4 by user decision 2026-07-06 (confidence belongs to the AI Underwriter)
+- ~~`FinancialAnalysis` table~~ — will NOT be built (user decision 2026-07-06): analysis is deterministic and computed on demand; immutable Analysis Snapshots arrive with the AI/officer sprints
 
 **Deployable:** submitted cases show a deterministic financial analysis.
 
 ---
 
-# Sprint 4 — AI Underwriter
+# Sprint 4 — AI Underwriter / Decision Intelligence ✅ (completed 2026-07-06)
 
 The AI explains and drafts. It never calculates and never decides.
+Full pipeline + provider architecture: `docs/DECISION_INTELLIGENCE.md`.
 
-- [ ] Server-only LLM client (env-gated; deterministic template fallback when no key)
-- [ ] Executive summary
-- [ ] Underwriting memo (strengths, weaknesses, missing information)
-- [ ] Recommendation derived deterministically from risk band (never by the model)
-- [ ] Confidence surfaced with the memo
-- [ ] Response cache (identical inputs → no repeat calls)
-- [ ] Memo UI with provenance labels (computed vs AI-drafted)
+- [x] LLM provider abstraction (`lib/ai/`): one-interface `LLMProvider`, typed retryable errors; OpenAIProvider (fetch, JSON mode, timeout) + MockProvider; future providers = one file + factory entry
+- [x] Env-gated, never crashes: no `OPENAI_API_KEY` → MockProvider automatically (deterministic template, clearly labeled); app stays deployable without AI
+- [x] Prompt builder (isolated, versioned): structured JSON input only — company (no personal contacts), contract, ratios by category, growth, trends, flags, capacity, risk — never PDFs, never raw statements
+- [x] DecisionIntelligenceService: cache by input hash (identical inputs → no repeat calls), 3 attempts with backoff, zod-validated strict JSON contract (invalid → rejected), persistence, audit trail
+- [x] Executive summary + underwriting memo (strengths, weaknesses, contract assessment, risk explanation, missing information, next steps)
+- [x] Recommendation derived deterministically from risk band (`RECOMMENDATION_BY_BAND` in thresholds.ts — never by the model); model divergence stored + flagged, policy prevails
+- [x] Confidence explanation surfaced with the memo (moved from Sprint 3 by decision 2026-07-06)
+- [x] Immutable Analysis Snapshot persisted with every memo (`inputSnapshot` — the frozen engine report the memo explains)
+- [x] Case page Decision Intelligence panel + professional Underwriting Package (`/cases/[id]/package`) with Computed / AI-drafted provenance labels
+- [x] Unit tests: prompt builder, response schema, mock provider, retry policy
 
 **Deployable:** every analyzed case carries an AI memo; works with no API key.
 
 ---
 
-# Sprint 5 — Risk Officer Workspace
+# Sprint 5 — Underwriting Workspace (Risk Officer) ✅ (completed 2026-07-07)
 
-- [ ] Officer queue: tabs (pending / all / issued), risk filter, search, pagination
-- [ ] Review page: analysis panel + documents + audit timeline + sticky decision sidebar
-- [ ] Explicit "Start review" action (no state change on page view)
-- [ ] Approve / Decline / Request more information (mandatory note + confirmation dialog)
-- [ ] Decision recorded as data (who, when, note) — not only in audit log
-- [ ] Contractor sees decision status + requested-info notes
-- [ ] Authorization: officers only; ownership checks on every data access
-- [ ] Audit entries for every officer action
+Re-scoped by user directive (2026-07-07): Sprint 5 absorbed Letter of
+Guarantee generation from Sprint 6 (entity, PDF, QR, authenticated
+download). Full workflow + audit catalog: `docs/UNDERWRITING_WORKSPACE.md`.
 
-**Deployable:** an officer takes a case from queue to final decision.
+- [x] Officer queue on the dashboard: tabs (pending / all / decided), search, server-side pagination, capacity/risk/priority columns
+- [x] Review workspace `/review/[id]`: header band, timeline (left), memo + full financial intelligence + company/contract + documents (center), sticky decision sidebar (right)
+- [x] Explicit "Start review" action (viewing NEVER changes state; first officer to start = assigned officer)
+- [x] Approve / Approve with Conditions / Reject / Request More Information — mandatory reason, confirmation dialog on every action ("Manual Review" is deliberately not an officer decision: the officer IS the manual review)
+- [x] Decision recorded as data (`OfficerDecision`, append-only: officer, timestamp, reason, conditions, memo id) — not only in audit log
+- [x] Internal notes (`CaseNote`) — bank staff only, never contractor-visible
+- [x] Contractor sees decision status, request-info message, approval conditions, LG download — never internal reasoning; AI memo + Underwriting Package now officer-only (TECH_DEBT #16 resolved)
+- [x] Deterministic queue priority (risk band + exposure, thresholds in `lib/finance/thresholds.ts`)
+- [x] Authorization: officer entry points gate on role, contractor paths stay ownership-scoped; officer document access audited
+- [x] Audit entries for every officer action (case_opened, review_started/resumed, decided, note_added, document_downloaded, guarantee issued/downloaded)
+- [x] `Guarantee` entity (1:1 case, `LG-YYYY-NNNNNN` from internal seq, particulars frozen at issue time) ⏩ from Sprint 6
+- [x] Professional LG PDF (pdf-lib letterhead layout, particulars table, signature block, QR verification stamp) rendered on demand — never stored ⏩
+- [x] Authenticated LG download route (bank staff + owning contractor, audited) ⏩
+- [x] Unit tests: exhaustive transition rules, priority derivation, LG reference minting, PDF rendering
+
+**Deployable:** an officer takes a case from queue to final decision and an
+issued, downloadable Letter of Guarantee.
 
 ---
 
-# Sprint 6 — Letter of Guarantee Generation
+# Sprint 6 — Guarantee Registry & Audit Reporting
 
-- [ ] `Guarantee` entity + registry (reference `LG-YYYY-NNNNNN`, issue date, expiry from duration)
-- [ ] Professional LG PDF (bank letterhead layout)
-- [ ] Authenticated download route (no public URLs)
-- [ ] Guarantee page + registry list
+(LG generation itself shipped early in Sprint 5 by user directive.)
+
+- [ ] Guarantee registry list (all issued LGs: reference, case, company, amount, issue/expiry, officer)
+- [ ] Guarantee detail page
 - [ ] Audit report per case (full trail, exportable)
 
-**Deployable:** approved cases issue a downloadable Letter of Guarantee — MVP complete.
+**Deployable:** the bank has a browsable guarantee registry — MVP complete.
 
 ---
 

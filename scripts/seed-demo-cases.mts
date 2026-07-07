@@ -91,6 +91,11 @@ async function main() {
     where: { email: "contractor@daman.local" },
   });
 
+  // Issued guarantees RESTRICT case deletion by design (a bank instrument
+  // must never vanish with its case) — for the DEMO reset, remove them first.
+  await prisma.guarantee.deleteMany({
+    where: { case: { companyId: contractor.companyId! } },
+  });
   const removed = await prisma.underwritingCase.deleteMany({
     where: { companyId: contractor.companyId! },
   });
