@@ -1,7 +1,22 @@
 /**
- * Full IFRS extraction pipeline (pure): PDF bytes → detected statements →
- * line items → normalized figures → validation. No I/O, no Prisma.
+ * Full IFRS extraction pipeline: PDF bytes → quality gate → (text layer and/or
+ * OCR) → bilingual statement detection → line items → normalized figures →
+ * validation. Pure orchestration over src/lib/ifrs/* — no Prisma, no framework.
+ *
+ * Architecture (see docs/IFRS_ENGINE.md):
+ *   1. extractPdfPages   — per-page text layer
+ *   2. assessDocument    — grade each page GOOD_TEXT / DAMAGED_TEXT / IMAGE_ONLY
+ *   3. OCR (opt-in)      — rasterize + recognize the pages that lack good text
+ *   4. detectStatements  — bilingual, layout-agnostic, on the best text per page
+ *   5. extract/normalize — line items → canonical figures
+ *   6. validate          — structural errors + quality/OCR diagnostics
+ *
+ * Numbers recovered by OCR are treated as low-trust: unless they pass an
+ * internal consistency cross-check they are NOT promoted to trusted figures,
+ * and a blocking diagnostic is raised instead of emitting unverified financials
+ * into underwriting.
  */
+import { addAmounts, compareAmounts } from "@/lib/ifrs/amounts";
 import {
   detectCurrency,
   detectCompanyName,
@@ -10,30 +25,109 @@ import {
   extractLineItems,
 } from "@/lib/ifrs/line-extractor";
 import { figuresByYear, normalizeLineItems, type FiguresByYear } from "@/lib/ifrs/normalizer";
+import { ocrPages } from "@/lib/ifrs/ocr";
 import { extractPdfPages } from "@/lib/ifrs/pdf-text";
+import { rasterizePages } from "@/lib/ifrs/raster";
 import { detectStatements } from "@/lib/ifrs/statement-detector";
+import { assessDocument, type DocumentQualityReport } from "@/lib/ifrs/text-quality";
+import { PdfReadError } from "@/lib/ifrs/types";
 import { validateExtraction } from "@/lib/ifrs/validator";
 
-import type { ExtractionResult, ValidationOutcome } from "@/lib/ifrs/types";
+import type {
+  ExtractionResult,
+  TextSource,
+  ValidationIssue,
+  ValidationOutcome,
+} from "@/lib/ifrs/types";
+
+/** Provenance describing HOW an extraction was obtained (for logging + trust). */
+export interface ExtractionMeta {
+  textSource: TextSource;
+  quality: DocumentQualityReport;
+  /** 1-based page numbers recovered via OCR. */
+  ocrPages: number[];
+  /** Mean OCR confidence (0-100) over OCR'd pages, or null when none. */
+  ocrConfidence: number | null;
+  /** False when the figures were read from OCR and could not be cross-verified. */
+  valuesTrusted: boolean;
+}
 
 export interface IfrsExtraction {
   result: ExtractionResult;
   figures: FiguresByYear;
   validation: ValidationOutcome;
+  meta: ExtractionMeta;
 }
 
-/** Rejects with PdfReadError for unusable PDFs (password / corrupted / scanned). */
-export async function extractIfrs(bytes: Buffer): Promise<IfrsExtraction> {
-  const pages = await extractPdfPages(bytes);
-  const fullText = pages.map((p) => p.text).join("\n");
+export interface ExtractIfrsOptions {
+  /** Enable the OCR fallback for image-only / damaged-text pages. */
+  enableOcr?: boolean;
+  /**
+   * Cap on pages sent to OCR (OCR is ~seconds/page). Image-only pages are
+   * prioritized (the primary statements live there), then damaged pages in
+   * document order. Default 30 keeps a 100+ page report tractable.
+   */
+  maxOcrPages?: number;
+}
 
+/** Below this OCR page confidence, numeric values are always treated as untrusted. */
+const MIN_OCR_CONFIDENCE = 78;
+/** Minimum usable non-space characters after OCR before we give up entirely. */
+const MIN_USABLE_CHARS = 40;
+
+/** Rejects with PdfReadError for unusable PDFs (password / corrupted / no text). */
+export async function extractIfrs(
+  bytes: Buffer,
+  options: ExtractIfrsOptions = {},
+): Promise<IfrsExtraction> {
+  const enableOcr = options.enableOcr ?? false;
+  const pages = await extractPdfPages(bytes, { allowImageOnly: enableOcr });
+  const quality = assessDocument(pages);
+
+  let effective = pages;
+  let ocredPages: number[] = [];
+  let ocrConfidence: number | null = null;
+
+  if (enableOcr && quality.ocrPageNumbers.length > 0) {
+    // Bound OCR cost: image-only pages first (the primary statements live
+    // there), then damaged pages ordered by proximity to them (the currency /
+    // scale subtitle and any continuation sit next to the statements, not on a
+    // distant cover page), capped.
+    const cap = options.maxOcrPages ?? 14;
+    const imageOnly = quality.pages.filter((p) => p.quality === "IMAGE_ONLY").map((p) => p.pageNumber);
+    const damaged = quality.pages
+      .filter((p) => p.quality === "DAMAGED_TEXT")
+      .map((p) => p.pageNumber)
+      .sort((a, b) => distanceTo(a, imageOnly) - distanceTo(b, imageOnly));
+    const targets = [...imageOnly, ...damaged].slice(0, cap);
+    const raster = await rasterizePages(bytes, targets);
+    const ocr = await ocrPages(raster);
+    const recovered = new Map(ocr.map((o) => [o.pageNumber, o.text]));
+    effective = pages.map((p) =>
+      recovered.has(p.pageNumber) ? { pageNumber: p.pageNumber, text: recovered.get(p.pageNumber)! } : p,
+    );
+    ocredPages = ocr.map((o) => o.pageNumber);
+    ocrConfidence = ocr.length
+      ? Math.round(ocr.reduce((sum, o) => sum + o.confidence, 0) / ocr.length)
+      : null;
+  }
+
+  const usableChars = effective.reduce((n, p) => n + p.text.replace(/\s/g, "").length, 0);
+  if (usableChars < MIN_USABLE_CHARS) {
+    throw new PdfReadError(
+      "NO_TEXT",
+      "No readable text could be recovered from this document, even with OCR. Please upload the original digital PDF issued by the auditor.",
+    );
+  }
+
+  const fullText = effective.map((p) => p.text).join("\n");
   const scale = detectScale(fullText);
   const currency = detectCurrency(fullText);
-  const companyName = detectCompanyName(pages[0]);
-  const statements = detectStatements(pages);
+  const companyName = detectCompanyName(effective[0]);
+  const statements = detectStatements(effective);
 
   const lineItems = statements.flatMap((statement) => {
-    const statementPages = pages.filter((p) => statement.pages.includes(p.pageNumber));
+    const statementPages = effective.filter((p) => statement.pages.includes(p.pageNumber));
     const statementText = statementPages.map((p) => p.text).join("\n");
     const years = detectFiscalYears(statementText, fullText);
     return extractLineItems(statement.type, statementPages, years, scale);
@@ -42,12 +136,134 @@ export async function extractIfrs(bytes: Buffer): Promise<IfrsExtraction> {
   const normalized = normalizeLineItems(lineItems);
   const figures = figuresByYear(normalized);
   const validation = validateExtraction(statements, figures);
-
   const fiscalYears = [...figures.keys()].sort((a, b) => b - a);
+
+  // Did the detected statements' figures come from OCR pages?
+  const statementPageSet = new Set(statements.flatMap((s) => s.pages));
+  const figuresFromOcr = [...statementPageSet].some((p) => ocredPages.includes(p));
+  const valuesTrusted = assessNumericTrust(figuresFromOcr, ocrConfidence, figures);
+
+  const textSource: TextSource =
+    ocredPages.length === 0
+      ? "TEXT_LAYER"
+      : quality.pages.every((p) => ocredPages.includes(p.pageNumber))
+        ? "OCR"
+        : "HYBRID";
+
+  addQualityDiagnostics(validation, {
+    quality,
+    textSource,
+    ocrConfidence,
+    figuresFromOcr,
+    valuesTrusted,
+    hasFigures: figures.size > 0,
+  });
 
   return {
     result: { currency, scale, fiscalYears, companyName, statements, lineItems: normalized },
     figures,
     validation,
+    meta: { textSource, quality, ocrPages: ocredPages, ocrConfidence, valuesTrusted },
   };
+}
+
+/**
+ * OCR-recovered numbers are trusted only when confidence is adequate AND the
+ * figures pass an internal cross-check (balance-sheet identity or gross-profit
+ * identity). Text-layer figures are always trusted (the text is authoritative).
+ */
+function assessNumericTrust(
+  figuresFromOcr: boolean,
+  ocrConfidence: number | null,
+  figures: FiguresByYear,
+): boolean {
+  if (!figuresFromOcr) return true;
+  if (ocrConfidence !== null && ocrConfidence < MIN_OCR_CONFIDENCE) return false;
+  return [...figures.values()].some(crossCheckConsistent);
+}
+
+/** True when a year's figures satisfy at least one accounting identity (±1%). */
+function crossCheckConsistent(f: Partial<Record<string, string>>): boolean {
+  const within = (a: string, b: string) => {
+    const diff = addAmounts([a, negate(b)]);
+    const tol = tenth(a, 2); // 1% of |a|
+    return compareAmounts(abs(diff), tol) <= 0;
+  };
+  if (f.totalAssets && f.totalLiabilities && f.totalEquity) {
+    if (within(f.totalAssets, addAmounts([f.totalLiabilities, f.totalEquity]))) return true;
+  }
+  if (f.revenue && f.cogs && f.grossProfit) {
+    if (within(f.grossProfit, addAmounts([f.revenue, f.cogs]))) return true; // cogs is negative
+  }
+  return false;
+}
+
+interface DiagnosticContext {
+  quality: DocumentQualityReport;
+  textSource: TextSource;
+  ocrConfidence: number | null;
+  figuresFromOcr: boolean;
+  valuesTrusted: boolean;
+  hasFigures: boolean;
+}
+
+/** Adds precise, non-generic diagnostics for damaged / OCR'd documents. */
+function addQualityDiagnostics(validation: ValidationOutcome, ctx: DiagnosticContext): void {
+  const damaged = ctx.quality.pages.filter((p) => p.quality === "DAMAGED_TEXT").length;
+  const imageOnly = ctx.quality.pages.filter((p) => p.quality === "IMAGE_ONLY").length;
+
+  if (damaged > 0) {
+    validation.warnings.push(warn(
+      "DAMAGED_TEXT_LAYER",
+      `${damaged} page(s) have a corrupt text layer (missing font Unicode maps); text was recovered by OCR.`,
+    ));
+  }
+  if (imageOnly > 0) {
+    validation.warnings.push(warn(
+      "IMAGE_ONLY_PAGES",
+      `${imageOnly} page(s) have no text layer (scanned); text was recovered by OCR.`,
+    ));
+  }
+  if (ctx.textSource !== "TEXT_LAYER" && ctx.ocrConfidence !== null) {
+    validation.warnings.push(warn("OCR_USED", `Text recovered via OCR at ${ctx.ocrConfidence}% mean confidence.`));
+  }
+
+  // The bank-safety gate: figures read from OCR that we cannot verify must NOT
+  // flow into underwriting. Block with a precise reason, never a generic one.
+  if (ctx.figuresFromOcr && !ctx.valuesTrusted) {
+    validation.errors.push(err(
+      "UNVERIFIED_OCR_VALUES",
+      "Statements were detected, but their figures were read from a scanned/damaged page by OCR and could not be automatically verified. Please upload the original digital PDF (not a scanned or compressed copy) so the amounts can be extracted reliably.",
+    ));
+  }
+}
+
+function warn(code: string, message: string): ValidationIssue {
+  return { code, message };
+}
+function err(code: string, message: string): ValidationIssue {
+  return { code, message };
+}
+
+/** Distance from a page to the nearest page in a set (∞ when the set is empty). */
+function distanceTo(page: number, anchors: number[]): number {
+  return anchors.reduce((min, a) => Math.min(min, Math.abs(page - a)), Infinity);
+}
+
+function negate(v: string): string {
+  if (v === "0") return v;
+  return v.startsWith("-") ? v.slice(1) : `-${v}`;
+}
+function abs(v: string): string {
+  return v.startsWith("-") ? v.slice(1) : v;
+}
+/** |value| / 10^n as a decimal string (used for a ±1% tolerance at n=2). */
+function tenth(value: string, n: number): string {
+  const [intPart, fracPart = ""] = abs(value).split(".");
+  const digits = intPart + fracPart;
+  const point = intPart.length - n;
+  if (point <= 0) return `0.${"0".repeat(-point)}${digits}`.replace(/0+$/, "") || "0";
+  const head = digits.slice(0, point).replace(/^0+(?=\d)/, "") || "0";
+  const tail = digits.slice(point).replace(/0+$/, "");
+  return tail ? `${head}.${tail}` : head;
 }

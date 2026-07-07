@@ -51,3 +51,6 @@ next-env.d.ts
 
 # Uploaded case documents (local-disk storage adapter)
 /uploads
+
+# Tesseract OCR language data (fetched/cached at runtime)
+*.traineddata

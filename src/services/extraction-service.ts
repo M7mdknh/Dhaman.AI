@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 
 import { extractIfrs, type IfrsExtraction } from "@/lib/ifrs/extract";
+import { terminateOcr } from "@/lib/ifrs/ocr";
 import { PdfReadError } from "@/lib/ifrs/types";
 import { prisma } from "@/lib/prisma";
 import { storage, StorageError } from "@/lib/storage";
@@ -120,12 +121,16 @@ export async function processCaseDocuments(
       logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
 
       const sha256 = createHash("sha256").update(bytes).digest("hex");
-      const extraction = await extractIfrs(bytes);
+      const extraction = await extractIfrs(bytes, { enableOcr: true });
       const blocking = extraction.validation.errors;
       logStage("extracted", document.id, startedAt, {
+        textSource: extraction.meta.textSource,
+        ocrPages: extraction.meta.ocrPages.length,
+        ocrConfidence: extraction.meta.ocrConfidence,
+        valuesTrusted: extraction.meta.valuesTrusted,
         statements: extraction.result.statements.map((s) => s.type),
         fiscalYears: extraction.result.fiscalYears,
-        blockingErrors: blocking.length,
+        blockingErrors: blocking.map((e) => e.code),
         warnings: extraction.validation.warnings.length,
       });
 
@@ -184,6 +189,9 @@ export async function processCaseDocuments(
       });
     }
   }
+
+  // Release the shared OCR worker; a failure here must not fail the pipeline.
+  await terminateOcr().catch(() => {});
 
   const years = failures.length === 0 ? await rebuildFinancialStatements(caseId, completed) : [];
 

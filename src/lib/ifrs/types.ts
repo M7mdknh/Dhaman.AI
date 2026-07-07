@@ -80,6 +80,9 @@ export interface ExtractionResult {
   lineItems: ExtractedLineItem[];
 }
 
+/** How the text used for extraction was obtained. */
+export type TextSource = "TEXT_LAYER" | "OCR" | "HYBRID";
+
 export interface ValidationIssue {
   code: string;
   message: string;

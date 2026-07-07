@@ -21,7 +21,19 @@ function loadMupdf(): Promise<typeof MupdfModule> {
   return mupdfModule;
 }
 
-export async function extractPdfPages(bytes: Buffer): Promise<PageText[]> {
+export interface ExtractPagesOptions {
+  /**
+   * When true, image-only / low-text documents are returned as-is instead of
+   * raising NO_TEXT — the caller intends to recover text via OCR. Password and
+   * corrupted PDFs still reject (OCR cannot help those).
+   */
+  allowImageOnly?: boolean;
+}
+
+export async function extractPdfPages(
+  bytes: Buffer,
+  options: ExtractPagesOptions = {},
+): Promise<PageText[]> {
   const mupdf = await loadMupdf();
   let document: MupdfModule.Document;
   try {
@@ -56,7 +68,10 @@ export async function extractPdfPages(bytes: Buffer): Promise<PageText[]> {
       }
     }
 
-    if (pageCount === 0 || totalChars < MIN_CHARS_PER_PAGE * pageCount) {
+    if (pageCount === 0) {
+      throw new PdfReadError("CORRUPTED", "The PDF contains no pages.");
+    }
+    if (!options.allowImageOnly && totalChars < MIN_CHARS_PER_PAGE * pageCount) {
       throw new PdfReadError(
         "NO_TEXT",
         "This document appears to be scanned (no selectable text). Please upload the original digital PDF issued by the auditor.",
