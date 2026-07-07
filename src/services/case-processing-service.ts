@@ -171,47 +171,6 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
   }
 }
 
-/**
- * Re-arms RUNNING jobs that have gone quiet past the stale window — a runner
- * that was killed mid-flight (e.g. a serverless invocation hit its budget).
- * System-level (no ownership scope): only the scheduled drainer calls it. The
- * stale window MUST exceed the longest realistic run so a genuinely-live runner
- * is never reclaimed out from under itself. Returns how many were re-queued.
- */
-export async function reclaimStalledJobs(): Promise<number> {
-  const cutoff = new Date(Date.now() - STALE_RUNNING_MS);
-  const reclaimed = await prisma.caseProcessing.updateMany({
-    where: { state: "RUNNING", updatedAt: { lt: cutoff } },
-    data: { state: "QUEUED", startedAt: null },
-  });
-  return reclaimed.count;
-}
-
-/**
- * The DURABLE executor of the pipeline. On serverless hosts the request-time
- * `after()` trigger is best-effort — bound to the invocation budget — so a
- * scheduled cron (see /api/cron/process) calls this to (1) reclaim jobs a
- * killed runner left RUNNING and (2) run any QUEUED jobs. Jobs run
- * sequentially to bound peak resource use within the cron's `maxDuration`;
- * `runCaseProcessing` is self-claiming and never throws, so a job another
- * runner already grabbed is simply skipped.
- */
-export async function drainProcessingQueue(
-  limit = 5,
-): Promise<{ reclaimed: number; ran: number }> {
-  const reclaimed = await reclaimStalledJobs();
-  const queued = await prisma.caseProcessing.findMany({
-    where: { state: "QUEUED" },
-    orderBy: { queuedAt: "asc" },
-    take: limit,
-    select: { caseId: true },
-  });
-  for (const job of queued) {
-    await runCaseProcessing(job.caseId);
-  }
-  return { reclaimed, ran: queued.length };
-}
-
 /** Records a terminal failure on both the job and the case (case stays saved). */
 async function failJob(caseId: string, stage: ProcessingStage, reason: string): Promise<void> {
   await prisma.$transaction([

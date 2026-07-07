@@ -172,17 +172,18 @@ npm run dev                 # http://localhost:3000
 AI is optional: set `OPENAI_API_KEY` to use OpenAI; without it the app runs
 with a clearly-labeled deterministic mock provider (see `.env.example`).
 
-### Deploying (Vercel + managed Postgres + object storage)
+### Deploying (Vercel Hobby-compatible — no cron, no paid features)
 
 Financial processing (OCR → parsing → analysis → AI memo) runs asynchronously,
-decoupled from submission. On serverless hosts the request-time trigger is
-best-effort, so a scheduled cron drains the durable job queue:
+decoupled from submission:
 
+- **Submit** persists the case, marks it `PROCESSING`, and starts the pipeline
+  immediately in the background via Next.js `after()` — the user is never
+  blocked on OCR/parsing/AI. The case page shows live stage progress; a lost
+  trigger self-heals on the next status check, and a stalled run offers a
+  one-click **Retry Analysis**. No cron and no scheduled jobs are used.
 - Set `S3_BUCKET` (+ credentials) — the read-only serverless filesystem cannot
   persist uploads; production refuses to boot on local disk otherwise.
-- Set `CRON_SECRET`; `vercel.json` already registers the `/api/cron/process`
-  cron that reclaims and runs queued jobs (the 2-minute cadence needs a Vercel
-  Pro plan).
 - Optionally set `TESSERACT_LANG_PATH` to a private traineddata mirror to drop
   the runtime CDN dependency for OCR. See `.env.example` for the full list.
 

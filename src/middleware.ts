@@ -31,8 +31,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Protect everything except Next.js internals, static assets, the health
-  // probe, and the cron endpoint (which authenticates itself with CRON_SECRET
-  // and carries no session cookie, so it must bypass the redirect-to-login).
-  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|api/health|api/cron).*)"],
+  // Protect everything except Next.js internals, static assets, and health.
+  matcher: ["/((?!_next/static|_next/image|favicon\\.ico|api/health).*)"],
 };

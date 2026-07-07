@@ -13,10 +13,6 @@ import { after } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { getProcessingForOwner, runCaseProcessing } from "@/services/case-processing-service";
 
-// The self-heal below can kick off the pipeline out-of-band via `after()`;
-// give that work real headroom (the scheduled cron is the durable backstop).
-export const maxDuration = 300;
-
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ caseId: string }> },

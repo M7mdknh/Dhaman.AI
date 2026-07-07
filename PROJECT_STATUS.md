@@ -48,14 +48,14 @@ The stale ledger items were reconciled (rate limiting, security headers, and
 object storage were already DONE; the seed-password risk is guarded by
 `NODE_ENV`). Two HIGH deployment items were then fixed:
 
-- **Durable async execution.** The pipeline previously ran only inside the
-  request-time `after()`, which is bound to the serverless invocation budget
-  (heavy OCR + AI could be killed mid-run, stranding the job). Added
-  `reclaimStalledJobs` + `drainProcessingQueue` to `case-processing-service`,
-  a `CRON_SECRET`-guarded `/api/cron/process` route (`maxDuration=300`,
-  excluded from auth middleware), and a `vercel.json` cron (every 2 min, Pro).
-  The cron is now the authoritative executor: it re-queues jobs a killed runner
-  left RUNNING and runs the backlog. The poll route also got `maxDuration=300`.
+- **Async execution (Vercel Hobby-compatible).** Processing starts immediately
+  after submission via Next.js `after()` — no cron, no scheduled jobs, no paid
+  Vercel features. (An interim cron-drainer + `maxDuration=300` approach was
+  built and then **removed**: Vercel Cron needs a paid cadence and blocked the
+  Hobby deploy, and the `maxDuration` overrides would exceed the Hobby function
+  cap.) Resilience without a scheduler: a lost `after()` trigger self-heals on
+  the next dashboard poll (still-QUEUED jobs re-fire, self-claiming); a run
+  killed mid-flight surfaces as a stall with a one-click **Retry Analysis**.
 - **OCR packaging.** Declared `sharp` as a direct dependency (was only a
   transitive/optional dep of `next`); added `sharp` + `tesseract.js` to
   `serverExternalPackages`; made the tesseract core/lang/cache paths
