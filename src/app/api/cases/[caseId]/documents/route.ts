@@ -40,7 +40,19 @@ export async function POST(
     return NextResponse.json({ error: "Invalid fiscal year." }, { status: 400 });
   }
 
-  const result = await addFinancialStatement(session.userId, caseId, file, year.data);
+  let result;
+  try {
+    result = await addFinancialStatement(session.userId, caseId, file, year.data);
+  } catch (error) {
+    // An unexpected failure (storage backend, database) must not leak as an
+    // opaque 500 — the client can only surface a clean JSON error. Log the
+    // cause server-side so it stays diagnosable.
+    console.error("Financial statement upload failed", { caseId, error });
+    return NextResponse.json(
+      { error: "Upload could not be saved. Please try again." },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

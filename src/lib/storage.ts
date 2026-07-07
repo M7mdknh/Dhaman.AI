@@ -1,6 +1,12 @@
 /**
- * File storage adapter. Local disk for the MVP; the interface is the seam
- * for a cloud object store later (S3/GCS) without touching business logic.
+ * File storage adapter. Two backends behind one interface:
+ *   - S3Storage        — used in any deployment (Vercel's filesystem is
+ *                        read-only, so local disk cannot persist uploads).
+ *   - LocalDiskStorage — used for local development when no bucket is set.
+ *
+ * The backend is chosen from the environment at module load (see bottom).
+ * Buckets are PRIVATE: objects are read server-side and streamed through the
+ * access-checked download route — never exposed via a public URL.
  *
  * Keys are ALWAYS server-generated (see document-service) — the client
  * filename is display metadata only, never a path.
@@ -8,12 +14,71 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
+
 import { env } from "@/lib/env";
 
 export interface FileStorage {
   save(key: string, data: Buffer): Promise<void>;
   read(key: string): Promise<Buffer>;
   remove(key: string): Promise<void>;
+}
+
+/** S3-compatible object store (AWS S3, Cloudflare R2, MinIO). */
+class S3Storage implements FileStorage {
+  private readonly client: S3Client;
+  private readonly bucket: string;
+
+  constructor(config: {
+    bucket: string;
+    region: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    endpoint?: string;
+    forcePathStyle: boolean;
+  }) {
+    this.bucket = config.bucket;
+    this.client = new S3Client({
+      region: config.region,
+      endpoint: config.endpoint,
+      forcePathStyle: config.forcePathStyle,
+      // Fall back to the provider's ambient credential chain (e.g. an
+      // instance role) when explicit keys are not supplied.
+      credentials:
+        config.accessKeyId && config.secretAccessKey
+          ? { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey }
+          : undefined,
+    });
+  }
+
+  async save(key: string, data: Buffer): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: data,
+        ContentType: "application/pdf",
+      }),
+    );
+  }
+
+  async read(key: string): Promise<Buffer> {
+    const result = await this.client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    if (!result.Body) throw new Error(`Empty object body for key: ${key}`);
+    const bytes = await result.Body.transformToByteArray();
+    return Buffer.from(bytes);
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
 }
 
 class LocalDiskStorage implements FileStorage {
@@ -47,4 +112,17 @@ class LocalDiskStorage implements FileStorage {
   }
 }
 
-export const storage: FileStorage = new LocalDiskStorage(env.UPLOAD_DIR);
+/**
+ * A configured S3 bucket takes precedence — required on read-only-filesystem
+ * hosts (Vercel). Local disk is the development fallback.
+ */
+export const storage: FileStorage = env.S3_BUCKET
+  ? new S3Storage({
+      bucket: env.S3_BUCKET,
+      region: env.S3_REGION,
+      accessKeyId: env.S3_ACCESS_KEY_ID,
+      secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      endpoint: env.S3_ENDPOINT,
+      forcePathStyle: env.S3_FORCE_PATH_STYLE,
+    })
+  : new LocalDiskStorage(env.UPLOAD_DIR);
