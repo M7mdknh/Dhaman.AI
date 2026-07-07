@@ -114,15 +114,33 @@ class LocalDiskStorage implements FileStorage {
 
 /**
  * A configured S3 bucket takes precedence — required on read-only-filesystem
- * hosts (Vercel). Local disk is the development fallback.
+ * hosts (Vercel), where the local-disk adapter cannot persist uploads.
+ *
+ * In production the disk fallback is DISALLOWED: a missing bucket fails fast
+ * at startup instead of silently accepting uploads that vanish. Self-hosted
+ * deployments with a genuine persistent disk can opt back in with
+ * ALLOW_LOCAL_STORAGE=true.
  */
-export const storage: FileStorage = env.S3_BUCKET
-  ? new S3Storage({
+function createStorage(): FileStorage {
+  if (env.S3_BUCKET) {
+    return new S3Storage({
       bucket: env.S3_BUCKET,
       region: env.S3_REGION,
       accessKeyId: env.S3_ACCESS_KEY_ID,
       secretAccessKey: env.S3_SECRET_ACCESS_KEY,
       endpoint: env.S3_ENDPOINT,
       forcePathStyle: env.S3_FORCE_PATH_STYLE,
-    })
-  : new LocalDiskStorage(env.UPLOAD_DIR);
+    });
+  }
+
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_LOCAL_STORAGE !== "true") {
+    throw new Error(
+      "No document storage configured for production: set S3_BUCKET (and S3 credentials), " +
+        "or set ALLOW_LOCAL_STORAGE=true only if this host has a persistent writable disk.",
+    );
+  }
+
+  return new LocalDiskStorage(env.UPLOAD_DIR);
+}
+
+export const storage: FileStorage = createStorage();
