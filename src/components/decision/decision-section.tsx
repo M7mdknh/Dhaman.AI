@@ -62,11 +62,14 @@ export function DecisionSection({
   caseId,
   decision,
   eligible,
+  autoGenerating = false,
 }: {
   caseId: string;
   decision: DecisionIntelligence | null;
   /** Case is submitted with parsed statements — generation is possible. */
   eligible: boolean;
+  /** The memo is being prepared in the background (officer just opened the case). */
+  autoGenerating?: boolean;
 }) {
   return (
     <Card>
@@ -84,15 +87,17 @@ export function DecisionSection({
         {!decision ? (
           <div className="flex flex-col items-center py-8 text-center">
             <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-              <Sparkles className="size-5" aria-hidden />
+              <Sparkles className={cn("size-5", autoGenerating && "animate-pulse")} aria-hidden />
             </span>
             <h3 className="mt-4 text-sm font-semibold text-foreground">
-              No underwriting analysis yet
+              {autoGenerating ? "Preparing AI analysis…" : "No underwriting analysis yet"}
             </h3>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              {eligible
-                ? "Generate an AI-drafted memo that explains the computed financial intelligence. Nothing is calculated by the AI."
-                : "The memo becomes available once the case is submitted and its statements are parsed."}
+              {autoGenerating
+                ? "The AI-drafted memo is being generated in the background now that you have opened the case. Refresh in a few seconds to view it — or generate it now."
+                : eligible
+                  ? "Generate an AI-drafted memo that explains the computed financial intelligence. Nothing is calculated by the AI."
+                  : "The memo becomes available once the case is submitted and its statements are parsed."}
             </p>
             {eligible && (
               <div className="mt-4">

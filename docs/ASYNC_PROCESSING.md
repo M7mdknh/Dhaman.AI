@@ -32,11 +32,18 @@ claim (QUEUED → RUNNING, attempts++)          ← only one runner wins the cla
   ├ READING_STATEMENTS ┐
   ├ DETECTING_STATEMENTS│  the IFRS pipeline (processCaseDocuments)
   ├ EXTRACTING_DATA    ┘
-  ├ FINANCIAL_ANALYSIS     deterministic engine builds a report
-  └ AI_UNDERWRITING        best-effort memo pre-generation
+  └ FINANCIAL_ANALYSIS     deterministic engine builds a report — LAST stage
 COMPLETED  → case ANALYSIS_READY
 FAILED     → case PROCESSING_FAILED   (case + documents stay saved)
 ```
+
+**Processing completes at FINANCIAL_ANALYSIS. The AI underwriting memo is NOT
+generated here** — the deterministic Financial Intelligence Engine
+(Underwriting Capacity, Financial Health, Risk Score, Financial Trends, Status)
+is sufficient to make the case reviewable, and the contractor must never wait
+~6–7s on the LLM to finish submission. The memo is generated **lazily** instead
+(see "Lazy AI memo" below), so `AI_UNDERWRITING` is no longer a gating stage
+(the enum value is retained for labels/historical rows).
 
 The job row is the durable, observable, retryable record of the work. Stage
 progress is written to it as the pipeline advances (monotonically — the
@@ -59,12 +66,31 @@ failed the whole submission — the case was never saved. Submission is now just
 - **Retry** (`retryProcessing` → `retryProcessingAction`) re-arms the job to
   QUEUED and re-runs the pipeline on the **same uploaded documents** — no
   re-upload required. Ownership-scoped to the case's contractor.
-- **AI underwriting is best-effort by design.** Per the product principle "the
-  AI assists the bank, it never replaces it", a flaky external LLM must not
-  block underwriting. If memo pre-generation fails the case still reaches
-  ANALYSIS_READY (audited as `case.decision_deferred`); the officer generates
-  the memo on demand, exactly as before. Only the deterministic pipeline gates
-  readiness.
+- **AI underwriting never gates readiness.** Per the product principle "the AI
+  assists the bank, it never replaces it", a flaky/slow external LLM must not
+  block underwriting — so it is off the processing path entirely (see "Lazy AI
+  memo"). Only the deterministic pipeline gates readiness.
+
+## Lazy AI memo — the contractor never waits for GPT
+
+The AI-drafted underwriting memo (`DecisionIntelligence`) is a bank-internal
+work product the contractor never sees. Generating it inline added ~6–7s of LLM
+latency to every submission for no contractor-facing benefit, so it is generated
+on demand from exactly two triggers:
+
+1. **A Risk Officer opens the case.** `review/[id]/page.tsx` fires
+   `ensureDecisionIntelligence(caseId)` in a Next.js `after()` — the page renders
+   immediately; the memo is prepared in the background. The call is idempotent
+   (a no-op once a memo exists) and de-duplicates concurrent opens of the same
+   case into a single provider call. System-attributed (`requestedById = null`).
+2. **Explicit "Generate AI Analysis".** `generateDecisionAction` →
+   `generateDecisionIntelligence` (officer-gated), unchanged.
+
+Both funnel through `runDecisionIntelligence`, whose `inputHash` cache means a
+repeat over the same engine output + prompt + model reuses the stored memo
+rather than calling the provider again. A failed lazy generation (e.g. provider
+rate-limit) is audited and simply leaves the "Generate AI Analysis" button for
+the officer — it never affects the case's ANALYSIS_READY state.
 
 ## Live progress (the processing dashboard)
 
@@ -80,12 +106,13 @@ The case page renders `ProcessingDashboard` while the case is `PROCESSING` /
 ⟳ Detecting Financial Statements
 ⟳ Extracting Financial Data
 ⟳ Financial Analysis
-⟳ AI Underwriting
 ✓ Completed
 ```
 
-On completion the page refreshes to reveal the analysis. On failure it shows the
-real reason and a **Retry Analysis** button.
+On completion the page refreshes to reveal the deterministic Financial
+Intelligence (Underwriting Capacity, Financial Health, Risk Score, Financial
+Trends, Status) — no AI in the loop. On failure it shows the real reason and a
+**Retry Analysis** button.
 
 ## Robustness
 

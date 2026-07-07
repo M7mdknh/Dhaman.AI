@@ -79,6 +79,38 @@ Derivable figures are stored only when literally printed. Numbers that OCR
 cannot verify are flagged, not guessed — correctness over completeness, because
 a wrong figure in underwriting is worse than a missing one.
 
+## Performance (MVP: optimize for speed)
+
+The engine optimizes for user-visible speed — a reliable underwriting package
+*quickly*, not a perfect reconstruction of every statement. Targets: **< 10s**
+for a standard digital IFRS report, **< 20s** for a scanned one.
+
+- **Detect statement pages first, then process only those.** Detection runs on
+  the cheap text layer *before* any OCR. A clean digital report never enters OCR
+  at all. When OCR is needed, only the detected statement pages (+ neighbors for
+  the currency/scale subtitle and a balance-sheet continuation) are rasterized —
+  never the whole annual report. Fully scanned docs fall back to a bounded,
+  statements-first window (`OCR_MAX_PAGES`).
+- **Parallelism.** OCR pages run concurrently across a worker pool
+  (`OCR_CONCURRENCY`); a case's documents are extracted concurrently
+  (`DOCUMENT_CONCURRENCY`). The OCR pool is a process-wide singleton, so parallel
+  documents share workers safely.
+- **Caching.** On retry, a byte-identical document that already COMPLETED is not
+  re-read or re-OCR'd — its figures are rebuilt from the persisted (normalized)
+  line items (`reuseCachedExtraction`).
+- **OCR is low-DPI by default** (`OCR_DPI=200`): OCR numerics are gated as
+  low-trust regardless, so DPI mainly affects heading legibility.
+- **Every stage is measured.** `StageTimer` (`src/lib/ifrs/perf.ts`) records each
+  stage's duration + share of total + a bottleneck recommendation; the report is
+  logged per document and per case (`[ifrs-extraction]` / `[case-processing]`)
+  and persisted in `DocumentExtraction.raw.perf`. Profile a real report with
+  `npx tsx scripts/benchmark-extraction.mts <file.pdf>`.
+- **The full canonical figure set is still extracted** (the financial engine
+  needs margins/liquidity/leverage/coverage). The eight core underwriting
+  figures — revenue, net income, cash, total assets, total liabilities, total
+  equity, operating cash flow, total debt — are tracked as a completeness gate
+  (`CORE_FIGURE_KEYS`, `coreFigureCoverage`), not as the only fields captured.
+
 ## Known limitations
 
 - **Arabic-Indic numeric OCR is unreliable** on dense scanned tables:

@@ -140,12 +140,45 @@ export async function generateDecisionIntelligence(
   return runDecisionIntelligence(caseId, userId);
 }
 
+/** Caches in-flight lazy generations so concurrent officer opens of the same
+ * case collapse into a single provider call (per server instance). */
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * Lazy, background memo generation — the trigger for "a Risk Officer opened the
+ * case". Idempotent and non-blocking by contract: it never throws, returns
+ * immediately when a memo already exists, and de-duplicates concurrent triggers
+ * for the same case. Safe to fire from a Server Component via `after()` so the
+ * officer's page renders without waiting on the LLM (and the contractor's
+ * submission never touches it). System-attributed (`requestedById = null`).
+ */
+export async function ensureDecisionIntelligence(caseId: string): Promise<void> {
+  try {
+    const existing = await prisma.decisionIntelligence.findFirst({
+      where: { caseId },
+      select: { id: true },
+    });
+    if (existing) return; // already generated (or reused) — nothing to do
+
+    const pending = inFlight.get(caseId);
+    if (pending) {
+      await pending;
+      return;
+    }
+    const run = runDecisionIntelligence(caseId, null).finally(() => inFlight.delete(caseId));
+    inFlight.set(caseId, run);
+    await run;
+  } catch {
+    // Best-effort: a failed lazy generation is audited inside
+    // runDecisionIntelligence; the officer can retry via "Generate AI Analysis".
+  }
+}
+
 /**
  * Guard-free memo generation. Callers: the officer wrapper above (after the
- * role gate) and the async processing pipeline, which pre-generates the memo
- * as its final stage so it is ready and cached when an officer opens the case.
+ * role gate) and `ensureDecisionIntelligence` (the lazy on-open trigger).
  * `requestedById` is the officer for a manual run, or null for a
- * system/pipeline run (SetNull on the row keeps the memo if the user is gone).
+ * system/lazy run (SetNull on the row keeps the memo if the user is gone).
  */
 export async function runDecisionIntelligence(
   caseId: string,

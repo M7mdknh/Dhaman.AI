@@ -67,6 +67,15 @@ const envSchema = z.object({
   TESSERACT_LANG_PATH: z.string().min(1).optional(),
   TESSERACT_CORE_PATH: z.string().min(1).optional(),
   TESSERACT_CACHE_PATH: z.string().min(1).default("/tmp/tessdata"),
+  // OCR speed/quality knobs (the MVP optimizes for speed — see
+  // docs/IFRS_ENGINE.md "Performance"). Concurrency = number of parallel
+  // tesseract workers; each holds the ara+eng models in memory, so raise it
+  // only on a box with headroom. DPI trades legibility for speed (OCR numerics
+  // are low-trust and gated regardless, so 200 is a safe default). Max pages
+  // caps how many pages are ever rasterized+OCR'd for one document.
+  OCR_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
+  OCR_DPI: z.coerce.number().int().min(120).max(400).default(200),
+  OCR_MAX_PAGES: z.coerce.number().int().min(1).max(60).default(10),
 });
 
 export const env = envSchema.parse({
@@ -86,4 +95,7 @@ export const env = envSchema.parse({
   TESSERACT_LANG_PATH: process.env.TESSERACT_LANG_PATH,
   TESSERACT_CORE_PATH: process.env.TESSERACT_CORE_PATH,
   TESSERACT_CACHE_PATH: process.env.TESSERACT_CACHE_PATH,
+  OCR_CONCURRENCY: process.env.OCR_CONCURRENCY,
+  OCR_DPI: process.env.OCR_DPI,
+  OCR_MAX_PAGES: process.env.OCR_MAX_PAGES,
 });

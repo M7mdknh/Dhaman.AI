@@ -15,16 +15,26 @@
 import { createHash } from "node:crypto";
 
 import { extractIfrs, type IfrsExtraction } from "@/lib/ifrs/extract";
+import {
+  coreFigureCoverage,
+  figuresByYear,
+  type CanonicalKey,
+  type FiguresByYear,
+} from "@/lib/ifrs/normalizer";
 import { terminateOcr } from "@/lib/ifrs/ocr";
+import { formatPerfReport, StageTimer, STAGE, type PerfReport } from "@/lib/ifrs/perf";
 import { PdfReadError } from "@/lib/ifrs/types";
 import { prisma } from "@/lib/prisma";
 import { storage, StorageError } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
 
-import type { CanonicalKey } from "@/lib/ifrs/normalizer";
-import type { ValidationIssue } from "@/lib/ifrs/types";
+import type { ExtractedLineItem, ValidationIssue, ValidationOutcome } from "@/lib/ifrs/types";
 import type { Document, Prisma } from "@/generated/prisma/client";
 import type { ProcessingStage } from "@/generated/prisma/enums";
+
+/** Documents processed concurrently. A case has ≤3 statements; OCR contention
+ * is bounded independently by the OCR worker pool (env.OCR_CONCURRENCY). */
+const DOCUMENT_CONCURRENCY = 3;
 
 /**
  * Reports pipeline progress to the caller (the processing orchestrator) so it
@@ -46,12 +56,27 @@ export interface PipelineOutcome {
   years: number[];
   failures: DocumentFailure[];
   warnings: ValidationIssue[];
+  /** Aggregate stage timing across all documents (for the performance report). */
+  perf: PerfReport;
 }
 
+/**
+ * The minimum a completed document contributes downstream — sourced either from
+ * a fresh extraction or reconstructed from a cached one. `rebuildFinancialStatements`
+ * needs only figures + currency + scale, so we keep this narrow.
+ */
 interface CompletedExtraction {
   document: Document;
-  extraction: IfrsExtraction;
+  figures: FiguresByYear;
+  currency: string | null;
+  scale: number;
+  warnings: ValidationIssue[];
 }
+
+/** Per-document result of the concurrent map, reduced into the outcome. */
+type DocumentResult =
+  | { ok: true; completed: CompletedExtraction; perf: PerfReport | null }
+  | { ok: false; failure: DocumentFailure; perf: PerfReport | null };
 
 /** Grep-able, single-line structured log for each pipeline stage. */
 function logStage(
@@ -105,7 +130,7 @@ function describeCause(cause: unknown): string {
   return String(cause);
 }
 
-/** Runs extraction for every financial statement on the case. */
+/** Runs extraction for every financial statement on the case, concurrently. */
 export async function processCaseDocuments(
   caseId: string,
   actorId: string | null,
@@ -116,99 +141,35 @@ export async function processCaseDocuments(
     orderBy: { fiscalYear: "desc" },
   });
 
+  // A case-level timer aggregates every document's stage breakdown into one
+  // performance report (requirement: measure every stage). `record`/`absorb`
+  // are synchronous, so interleaving from concurrent documents is safe.
+  const timer = new StageTimer();
+
+  const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, (document) =>
+    processDocument(document, timer, onStage),
+  );
+
+  // Release the shared OCR workers; a failure here must not fail the pipeline.
+  await terminateOcr().catch(() => {});
+
   const completed: CompletedExtraction[] = [];
   const failures: DocumentFailure[] = [];
   const warnings: ValidationIssue[] = [];
-
-  for (const document of documents) {
-    await prisma.document.update({
-      where: { id: document.id },
-      data: { processingStatus: "PROCESSING" },
-    });
-    const startedAt = new Date();
-    logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
-
-    try {
-      await onStage?.("READING_STATEMENTS");
-      const bytes = await storage.read(document.storageKey);
-      logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
-
-      const sha256 = createHash("sha256").update(bytes).digest("hex");
-      await onStage?.("DETECTING_STATEMENTS");
-      const extraction = await extractIfrs(bytes, { enableOcr: true });
-      await onStage?.("EXTRACTING_DATA");
-      const blocking = extraction.validation.errors;
-      logStage("extracted", document.id, startedAt, {
-        textSource: extraction.meta.textSource,
-        ocrPages: extraction.meta.ocrPages.length,
-        ocrConfidence: extraction.meta.ocrConfidence,
-        valuesTrusted: extraction.meta.valuesTrusted,
-        statements: extraction.result.statements.map((s) => s.type),
-        fiscalYears: extraction.result.fiscalYears,
-        blockingErrors: blocking.map((e) => e.code),
-        warnings: extraction.validation.warnings.length,
-      });
-
-      await persistExtraction(document.id, startedAt, extraction, null);
-      await prisma.document.update({
-        where: { id: document.id },
-        data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
-      });
-
-      if (blocking.length > 0) {
-        logStage("failed_validation", document.id, startedAt, {
-          errors: blocking.map((e) => e.code),
-        });
-        failures.push({
-          documentId: document.id,
-          fileName: document.fileName,
-          fiscalYear: document.fiscalYear,
-          message: blocking.map((e) => e.message).join(" "),
-        });
-      } else {
-        logStage("completed", document.id, startedAt);
-        completed.push({ document, extraction });
-        warnings.push(
-          ...extraction.validation.warnings.map((w) => ({
-            ...w,
-            message: `${document.fileName}: ${w.message}`,
-          })),
-        );
-      }
-    } catch (error) {
-      const { kind, userMessage, detail } = classifyFailure(error);
-      // The real exception lives here, in the logs — never lost behind the
-      // user-facing message the way it was before.
-      console.error(
-        "[ifrs-extraction]",
-        JSON.stringify({
-          stage: "error",
-          documentId: document.id,
-          fileName: document.fileName,
-          storageKey: document.storageKey,
-          kind,
-          elapsedMs: Date.now() - startedAt.getTime(),
-          detail,
-        }),
-      );
-      await persistExtraction(document.id, startedAt, null, userMessage);
-      await prisma.document.update({
-        where: { id: document.id },
-        data: { processingStatus: "FAILED" },
-      });
-      failures.push({
-        documentId: document.id,
-        fileName: document.fileName,
-        fiscalYear: document.fiscalYear,
-        message: userMessage,
-      });
+  for (const result of results) {
+    if (result.perf) timer.absorb(result.perf);
+    if (result.ok) {
+      completed.push(result.completed);
+      warnings.push(...result.completed.warnings);
+    } else {
+      failures.push(result.failure);
     }
   }
 
-  // Release the shared OCR worker; a failure here must not fail the pipeline.
-  await terminateOcr().catch(() => {});
-
   const years = failures.length === 0 ? await rebuildFinancialStatements(caseId, completed) : [];
+
+  const perf = timer.report();
+  console.log("[ifrs-extraction]", formatPerfReport(perf, `case ${caseId} extraction`));
 
   await recordAudit({
     action: failures.length ? "case.extraction_failed" : "case.extraction_completed",
@@ -219,10 +180,169 @@ export async function processCaseDocuments(
       years,
       failures: failures.map((f) => ({ fileName: f.fileName, message: f.message })),
       warnings: warnings.length,
+      perfMs: perf.wallMs,
     },
   });
 
-  return { ok: failures.length === 0 && years.length > 0, years, failures, warnings };
+  return { ok: failures.length === 0 && years.length > 0, years, failures, warnings, perf };
+}
+
+/**
+ * Extracts a single document. Reuses a cached extraction when the SAME bytes
+ * already completed successfully (retry after a sibling document failed → the
+ * good documents are not re-read or re-OCR'd). Never throws: every fault is
+ * captured as a DocumentResult so one bad file cannot abort the whole map.
+ */
+async function processDocument(
+  document: Document,
+  timer: StageTimer,
+  onStage?: StageReporter,
+): Promise<DocumentResult> {
+  const startedAt = new Date();
+  logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
+
+  try {
+    await onStage?.("READING_STATEMENTS");
+    const bytes = await timer.time(STAGE.STORAGE_READ, () => storage.read(document.storageKey));
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
+
+    // Cache: identical bytes that already completed successfully need no rework.
+    const cached = await reuseCachedExtraction(document, sha256);
+    if (cached) {
+      await onStage?.("EXTRACTING_DATA");
+      logStage("cache_hit", document.id, startedAt, { years: [...cached.figures.keys()] });
+      return { ok: true, completed: cached, perf: null };
+    }
+
+    await onStage?.("DETECTING_STATEMENTS");
+    const extraction = await extractIfrs(bytes, { enableOcr: true });
+    await onStage?.("EXTRACTING_DATA");
+    const blocking = extraction.validation.errors;
+    logStage("extracted", document.id, startedAt, {
+      textSource: extraction.meta.textSource,
+      ocrPages: extraction.meta.ocrPages.length,
+      ocrConfidence: extraction.meta.ocrConfidence,
+      valuesTrusted: extraction.meta.valuesTrusted,
+      statements: extraction.result.statements.map((s) => s.type),
+      fiscalYears: extraction.result.fiscalYears,
+      coreFigures: coreFigureCoverage(extraction.figures),
+      blockingErrors: blocking.map((e) => e.code),
+      warnings: extraction.validation.warnings.length,
+    });
+
+    await persistExtraction(document.id, startedAt, extraction, null);
+    await prisma.document.update({
+      where: { id: document.id },
+      data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
+    });
+
+    if (blocking.length > 0) {
+      logStage("failed_validation", document.id, startedAt, { errors: blocking.map((e) => e.code) });
+      return {
+        ok: false,
+        perf: extraction.meta.perf,
+        failure: {
+          documentId: document.id,
+          fileName: document.fileName,
+          fiscalYear: document.fiscalYear,
+          message: blocking.map((e) => e.message).join(" "),
+        },
+      };
+    }
+
+    logStage("completed", document.id, startedAt);
+    return {
+      ok: true,
+      perf: extraction.meta.perf,
+      completed: {
+        document,
+        figures: extraction.figures,
+        currency: extraction.result.currency,
+        scale: extraction.result.scale,
+        warnings: extraction.validation.warnings.map((w) => ({
+          ...w,
+          message: `${document.fileName}: ${w.message}`,
+        })),
+      },
+    };
+  } catch (error) {
+    const { kind, userMessage, detail } = classifyFailure(error);
+    // The real exception lives here, in the logs — never lost behind the
+    // user-facing message the way it was before.
+    console.error(
+      "[ifrs-extraction]",
+      JSON.stringify({
+        stage: "error",
+        documentId: document.id,
+        fileName: document.fileName,
+        storageKey: document.storageKey,
+        kind,
+        elapsedMs: Date.now() - startedAt.getTime(),
+        detail,
+      }),
+    );
+    await persistExtraction(document.id, startedAt, null, userMessage);
+    await prisma.document.update({
+      where: { id: document.id },
+      data: { processingStatus: "FAILED" },
+    });
+    return {
+      ok: false,
+      perf: null,
+      failure: {
+        documentId: document.id,
+        fileName: document.fileName,
+        fiscalYear: document.fiscalYear,
+        message: userMessage,
+      },
+    };
+  }
+}
+
+/**
+ * Reconstructs a completed extraction from its persisted row when the bytes are
+ * byte-identical to the last successful run. Only figures + currency + scale are
+ * needed downstream, and they are rebuilt from the stored (already-normalized)
+ * line items — no PDF read, no OCR. Returns null when there is nothing safe to
+ * reuse (changed bytes, prior failure, or missing/legacy row).
+ */
+async function reuseCachedExtraction(
+  document: Document,
+  sha256: string,
+): Promise<CompletedExtraction | null> {
+  if (document.processingStatus !== "COMPLETED" || document.sha256 !== sha256) return null;
+  const row = await prisma.documentExtraction.findUnique({ where: { documentId: document.id } });
+  if (!row || row.error) return null;
+  const raw = row.raw as { lineItems?: ExtractedLineItem[] } | null;
+  if (!raw?.lineItems) return null;
+  const validation = row.validation as ValidationOutcome | null;
+  if (validation?.errors?.length) return null;
+  return {
+    document,
+    figures: figuresByYear(raw.lineItems),
+    currency: row.currency,
+    scale: row.scale,
+    warnings: (validation?.warnings ?? []).map((w) => ({ ...w, message: `${document.fileName}: ${w.message}` })),
+  };
+}
+
+/** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 async function persistExtraction(
@@ -242,8 +362,10 @@ async function persistExtraction(
     fiscalYears: extraction?.result.fiscalYears ?? [],
     detectedStatements: extraction?.result.statements.map((s) => s.type) ?? [],
     companyName: extraction?.result.companyName ?? null,
+    // `perf` rides alongside the line items (no schema migration needed) so the
+    // per-document stage breakdown is queryable after the fact.
     raw: extraction
-      ? ({ lineItems: extraction.result.lineItems } as unknown as Prisma.InputJsonValue)
+      ? ({ lineItems: extraction.result.lineItems, perf: extraction.meta.perf } as unknown as Prisma.InputJsonValue)
       : undefined,
     validation: extraction
       ? (extraction.validation as unknown as Prisma.InputJsonValue)
@@ -268,7 +390,7 @@ async function rebuildFinancialStatements(
   // Year → source: labeled document first, then newest document that saw it.
   const sources = new Map<number, CompletedExtraction>();
   for (const entry of completed) {
-    for (const year of entry.extraction.figures.keys()) {
+    for (const year of entry.figures.keys()) {
       const current = sources.get(year);
       const labeled = entry.document.fiscalYear === year;
       const currentLabeled = current?.document.fiscalYear === year;
@@ -276,18 +398,18 @@ async function rebuildFinancialStatements(
     }
   }
 
-  const rows = [...sources.entries()].map(([fiscalYear, { document, extraction }]) => {
-    const figures = extraction.figures.get(fiscalYear)!;
+  const rows = [...sources.entries()].map(([fiscalYear, entry]) => {
+    const figures = entry.figures.get(fiscalYear)!;
     return {
       caseId,
-      documentId: document.id,
+      documentId: entry.document.id,
       fiscalYear,
-      currency: extraction.result.currency ?? "SAR",
+      currency: entry.currency ?? "SAR",
       audited: true,
       sourceJson: {
-        documentId: document.id,
-        fileName: document.fileName,
-        scale: extraction.result.scale,
+        documentId: entry.document.id,
+        fileName: entry.document.fileName,
+        scale: entry.scale,
         extractedAt: new Date().toISOString(),
         parserName: "daman-ifrs-ts/1",
       },

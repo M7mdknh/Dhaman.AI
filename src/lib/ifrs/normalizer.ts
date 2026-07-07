@@ -39,6 +39,32 @@ export const CANONICAL_KEYS = [
 
 export type CanonicalKey = (typeof CANONICAL_KEYS)[number];
 
+/**
+ * The minimum figures an underwriting package needs to be actionable. The
+ * parser still extracts the full canonical set (the financial-intelligence
+ * engine consumes all of it — margins, liquidity, leverage, coverage), but a
+ * fiscal year that carries every CORE figure is "underwritable" — used to log
+ * completeness and to reason about a fast-path without re-reading the document.
+ */
+export const CORE_FIGURE_KEYS = [
+  "revenue",
+  "netIncome",
+  "cash",
+  "totalAssets",
+  "totalLiabilities",
+  "totalEquity",
+  "operatingCashFlow",
+  "totalDebt",
+] as const satisfies readonly CanonicalKey[];
+
+/** Count of CORE figures present in the newest fiscal year (0-8). */
+export function coreFigureCoverage(figures: FiguresByYear): number {
+  const newest = [...figures.keys()].sort((a, b) => b - a)[0];
+  if (newest === undefined) return 0;
+  const year = figures.get(newest) ?? {};
+  return CORE_FIGURE_KEYS.filter((key) => year[key] !== undefined).length;
+}
+
 interface MappingRule {
   key: CanonicalKey;
   statements: StatementType[];

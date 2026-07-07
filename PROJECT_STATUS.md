@@ -10,6 +10,63 @@ approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
 day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
 committed on `main`.
 
+### Post-MVP — Lazy AI Memo (contractor never waits for GPT) (2026-07-08)
+
+AI underwriting memo generation was removed from the blocking processing path
+and made lazy. Processing now COMPLETES at `FINANCIAL_ANALYSIS`: the
+deterministic Financial Intelligence Engine (Underwriting Capacity, Financial
+Health, Risk Score, Financial Trends, Status) is sufficient to make the case
+reviewable. Measured effect: case processing dropped from **~11–12s to ~4.5–5s**
+(the ~6–7s LLM call is off the contractor's path). See `docs/ASYNC_PROCESSING.md`
+→ "Lazy AI memo". No schema migration.
+
+- `case-processing-service.ts`: removed the Stage-5 AI block; success now sets
+  `stage=FINANCIAL_ANALYSIS`. `PROCESSING_STAGES` (`lib/processing.ts`) no longer
+  contains `AI_UNDERWRITING` (enum value retained for labels/historical rows).
+- Memo generated from exactly two triggers: (1) a Risk Officer opening the case
+  — `review/[id]/page.tsx` fires the new `ensureDecisionIntelligence(caseId)` via
+  Next.js `after()` (idempotent, dedupes concurrent opens, system-attributed);
+  (2) the existing explicit "Generate AI Analysis" button (unchanged). The
+  `DecisionSection` shows a "Preparing AI analysis…" state on officer open.
+- Contractor display unchanged and already AI-free (the analysis page renders
+  the deterministic panel) — it simply appears ~6–7s sooner.
+- Verified: 94/94 tests (processing-step suite updated), typecheck + lint +
+  production build clean; seed run shows ~4.5–5s processing → ANALYSIS_READY with
+  no `ai_underwriting` stage; lazy generation proved to create exactly one memo
+  under 3 concurrent triggers (mock provider).
+
+### Post-MVP — Extraction Engine Speed Optimization (2026-07-08)
+
+The Financial Statement Extraction Engine was re-tuned to optimize for
+user-visible speed (targets: **< 10s** digital IFRS reports, **< 20s** scanned).
+No schema migration; deployable. See `docs/IFRS_ENGINE.md` → "Performance".
+
+- **Statement-pages-first.** `extractIfrs` now detects statements on the cheap
+  text layer *before* OCR, so a clean digital report never OCRs; when OCR is
+  needed it targets only statement pages + neighbors (never the whole report),
+  capped by `OCR_MAX_PAGES`.
+- **Parallelism.** OCR pages run across a worker pool (`OCR_CONCURRENCY`, new
+  `OcrPool`); a case's documents extract concurrently (`DOCUMENT_CONCURRENCY=3`).
+- **Caching.** Retry reuses a byte-identical, already-COMPLETED document's
+  extraction (rebuilt from persisted line items — no re-read/re-OCR).
+- **Measurement.** New `src/lib/ifrs/perf.ts` `StageTimer` → per-stage duration,
+  % of total, and a bottleneck recommendation; logged per document and per case
+  and persisted in `DocumentExtraction.raw.perf`. New CLI
+  `scripts/benchmark-extraction.mts` profiles real reports against the targets.
+- **Field policy.** Full canonical figure set still extracted (the financial
+  engine needs all of it); the 8 core underwriting figures are a completeness
+  gate (`CORE_FIGURE_KEYS`), not a hard field-drop — dropping fields saves ~0ms
+  (cost is PDF text/OCR I/O) and would break analysis.
+- New env knobs: `OCR_CONCURRENCY` (2), `OCR_DPI` (200), `OCR_MAX_PAGES` (10).
+- **Finding surfaced by the new report:** for digital reports extraction is now
+  ~1–2s; the dominant processing stage is **AI memo pre-generation (~6–7s)**,
+  which is best-effort and never gates underwriting. Deferring it to first
+  officer-open is the next lever for a sub-10s end-to-end (product decision —
+  changes when the memo first exists).
+- Verified: 94/94 unit tests (incl. new `perf.test.ts`), typecheck + lint +
+  production build clean; full submit→processing→ANALYSIS_READY exercised
+  against the real DB via `scripts/seed-demo-cases.mts` (3 cases, reports logged).
+
 ### Post-MVP redesign — Async Financial Processing (2026-07-07)
 
 Critical product fix: submission was blocking the user on OCR/parsing/AI and,

@@ -17,6 +17,7 @@
  * into underwriting.
  */
 import { addAmounts, compareAmounts } from "@/lib/ifrs/amounts";
+import { env } from "@/lib/env";
 import {
   detectCurrency,
   detectCompanyName,
@@ -27,10 +28,11 @@ import {
 import { figuresByYear, normalizeLineItems, type FiguresByYear } from "@/lib/ifrs/normalizer";
 import { ocrPages } from "@/lib/ifrs/ocr";
 import { extractPdfPages } from "@/lib/ifrs/pdf-text";
+import { StageTimer, STAGE, type PerfReport } from "@/lib/ifrs/perf";
 import { rasterizePages } from "@/lib/ifrs/raster";
 import { detectStatements } from "@/lib/ifrs/statement-detector";
 import { assessDocument, type DocumentQualityReport } from "@/lib/ifrs/text-quality";
-import { PdfReadError } from "@/lib/ifrs/types";
+import { PdfReadError, type DetectedStatement } from "@/lib/ifrs/types";
 import { validateExtraction } from "@/lib/ifrs/validator";
 
 import type {
@@ -50,6 +52,8 @@ export interface ExtractionMeta {
   ocrConfidence: number | null;
   /** False when the figures were read from OCR and could not be cross-verified. */
   valuesTrusted: boolean;
+  /** Per-stage timing breakdown (duration + share + tuning recommendations). */
+  perf: PerfReport;
 }
 
 export interface IfrsExtraction {
@@ -63,11 +67,13 @@ export interface ExtractIfrsOptions {
   /** Enable the OCR fallback for image-only / damaged-text pages. */
   enableOcr?: boolean;
   /**
-   * Cap on pages sent to OCR (OCR is ~seconds/page). Image-only pages are
-   * prioritized (the primary statements live there), then damaged pages in
-   * document order. Default 30 keeps a 100+ page report tractable.
+   * Cap on pages sent to OCR (OCR is ~seconds/page). Only statement pages (and
+   * their neighbors) are targeted — never the whole report. Defaults to
+   * `env.OCR_MAX_PAGES`.
    */
   maxOcrPages?: number;
+  /** Rasterization DPI for OCR pages. Defaults to `env.OCR_DPI`. */
+  ocrDpi?: number;
 }
 
 /** Below this OCR page confidence, numeric values are always treated as untrusted. */
@@ -80,36 +86,42 @@ export async function extractIfrs(
   bytes: Buffer,
   options: ExtractIfrsOptions = {},
 ): Promise<IfrsExtraction> {
+  const timer = new StageTimer();
   const enableOcr = options.enableOcr ?? false;
-  const pages = await extractPdfPages(bytes, { allowImageOnly: enableOcr });
-  const quality = assessDocument(pages);
 
+  const pages = await timer.time(STAGE.READ_TEXT, () =>
+    extractPdfPages(bytes, { allowImageOnly: enableOcr }),
+  );
+  const quality = timer.sync(STAGE.ASSESS_QUALITY, () => assessDocument(pages));
+
+  // Detect on the CHEAP text layer FIRST. For a clean digital report (the
+  // common case, and the <10s target) this finds every statement and OCR is
+  // never entered at all. It also tells the OCR path WHICH pages to render, so
+  // we never OCR the whole annual report — only statement pages + neighbors.
   let effective = pages;
+  let statements = timer.sync(STAGE.DETECT_PAGES, () => detectStatements(pages));
   let ocredPages: number[] = [];
   let ocrConfidence: number | null = null;
 
-  if (enableOcr && quality.ocrPageNumbers.length > 0) {
-    // Bound OCR cost: image-only pages first (the primary statements live
-    // there), then damaged pages ordered by proximity to them (the currency /
-    // scale subtitle and any continuation sit next to the statements, not on a
-    // distant cover page), capped.
-    const cap = options.maxOcrPages ?? 14;
-    const imageOnly = quality.pages.filter((p) => p.quality === "IMAGE_ONLY").map((p) => p.pageNumber);
-    const damaged = quality.pages
-      .filter((p) => p.quality === "DAMAGED_TEXT")
-      .map((p) => p.pageNumber)
-      .sort((a, b) => distanceTo(a, imageOnly) - distanceTo(b, imageOnly));
-    const targets = [...imageOnly, ...damaged].slice(0, cap);
-    const raster = await rasterizePages(bytes, targets);
-    const ocr = await ocrPages(raster);
-    const recovered = new Map(ocr.map((o) => [o.pageNumber, o.text]));
-    effective = pages.map((p) =>
-      recovered.has(p.pageNumber) ? { pageNumber: p.pageNumber, text: recovered.get(p.pageNumber)! } : p,
-    );
-    ocredPages = ocr.map((o) => o.pageNumber);
-    ocrConfidence = ocr.length
-      ? Math.round(ocr.reduce((sum, o) => sum + o.confidence, 0) / ocr.length)
-      : null;
+  if (enableOcr) {
+    const targets = ocrTargets(statements, quality, pages.length, options.maxOcrPages ?? env.OCR_MAX_PAGES);
+    if (targets.length > 0) {
+      const raster = await timer.time(STAGE.RASTERIZE, () =>
+        rasterizePages(bytes, targets, options.ocrDpi ?? env.OCR_DPI),
+      );
+      const ocr = await timer.time(STAGE.OCR, () => ocrPages(raster));
+      const recovered = new Map(ocr.map((o) => [o.pageNumber, o.text]));
+      effective = pages.map((p) =>
+        recovered.has(p.pageNumber) ? { pageNumber: p.pageNumber, text: recovered.get(p.pageNumber)! } : p,
+      );
+      ocredPages = ocr.map((o) => o.pageNumber);
+      ocrConfidence = ocr.length
+        ? Math.round(ocr.reduce((sum, o) => sum + o.confidence, 0) / ocr.length)
+        : null;
+      // Re-detect on the recovered text: OCR may have exposed a statement whose
+      // page was image-only (invisible to the first pass).
+      statements = timer.sync(STAGE.DETECT_PAGES, () => detectStatements(effective));
+    }
   }
 
   const usableChars = effective.reduce((n, p) => n + p.text.replace(/\s/g, "").length, 0);
@@ -120,22 +132,26 @@ export async function extractIfrs(
     );
   }
 
-  const fullText = effective.map((p) => p.text).join("\n");
-  const scale = detectScale(fullText);
-  const currency = detectCurrency(fullText);
-  const companyName = detectCompanyName(effective[0]);
-  const statements = detectStatements(effective);
-
-  const lineItems = statements.flatMap((statement) => {
-    const statementPages = effective.filter((p) => statement.pages.includes(p.pageNumber));
-    const statementText = statementPages.map((p) => p.text).join("\n");
-    const years = detectFiscalYears(statementText, fullText);
-    return extractLineItems(statement.type, statementPages, years, scale);
+  const { figures, normalized, currency, scale, companyName } = timer.sync(STAGE.EXTRACT_LINES, () => {
+    const fullText = effective.map((p) => p.text).join("\n");
+    const detectedScale = detectScale(fullText);
+    const lineItems = statements.flatMap((statement) => {
+      const statementPages = effective.filter((p) => statement.pages.includes(p.pageNumber));
+      const statementText = statementPages.map((p) => p.text).join("\n");
+      const years = detectFiscalYears(statementText, fullText);
+      return extractLineItems(statement.type, statementPages, years, detectedScale);
+    });
+    const normalizedItems = normalizeLineItems(lineItems);
+    return {
+      figures: figuresByYear(normalizedItems),
+      normalized: normalizedItems,
+      currency: detectCurrency(fullText),
+      scale: detectedScale,
+      companyName: detectCompanyName(effective[0]),
+    };
   });
 
-  const normalized = normalizeLineItems(lineItems);
-  const figures = figuresByYear(normalized);
-  const validation = validateExtraction(statements, figures);
+  const validation = timer.sync(STAGE.NORMALIZE, () => validateExtraction(statements, figures));
   const fiscalYears = [...figures.keys()].sort((a, b) => b - a);
 
   // Did the detected statements' figures come from OCR pages?
@@ -163,8 +179,56 @@ export async function extractIfrs(
     result: { currency, scale, fiscalYears, companyName, statements, lineItems: normalized },
     figures,
     validation,
-    meta: { textSource, quality, ocrPages: ocredPages, ocrConfidence, valuesTrusted },
+    meta: { textSource, quality, ocrPages: ocredPages, ocrConfidence, valuesTrusted, perf: timer.report() },
   };
+}
+
+/**
+ * Chooses which pages to OCR — never the whole report. Statement pages found
+ * on the text layer (plus their immediate neighbors, where the currency/scale
+ * subtitle and a balance-sheet continuation sit) are targeted first; image-only
+ * pages are always eligible (a scanned statement is invisible to the first-pass
+ * detector). When the text layer detected nothing at all (a fully scanned doc),
+ * fall back to a bounded window of the pages that need OCR, statements-first.
+ * The result is capped so a 100+ page report never blows the time budget.
+ */
+function ocrTargets(
+  statements: DetectedStatement[],
+  quality: DocumentQualityReport,
+  pageCount: number,
+  cap: number,
+): number[] {
+  const needsOcr = new Set(quality.ocrPageNumbers);
+  if (needsOcr.size === 0) return []; // clean digital report — no OCR at all
+
+  const anchored: number[] = [];
+  const seen = new Set<number>();
+  const add = (page: number) => {
+    if (page >= 1 && page <= pageCount && needsOcr.has(page) && !seen.has(page)) {
+      seen.add(page);
+      anchored.push(page);
+    }
+  };
+  for (const statement of statements) {
+    for (const page of statement.pages) {
+      add(page - 1);
+      add(page);
+      add(page + 1);
+    }
+  }
+
+  const imageOnly = quality.pages
+    .filter((p) => p.quality === "IMAGE_ONLY" && !seen.has(p.pageNumber))
+    .map((p) => p.pageNumber);
+  const damaged = quality.pages
+    .filter((p) => p.quality === "DAMAGED_TEXT" && !seen.has(p.pageNumber))
+    .map((p) => p.pageNumber);
+
+  const ordered =
+    anchored.length > 0
+      ? [...anchored, ...imageOnly] // located statements + any scanned pages
+      : [...imageOnly, ...damaged]; // fully scanned: statements sit up front
+  return ordered.slice(0, Math.max(1, cap));
 }
 
 /**
@@ -243,11 +307,6 @@ function warn(code: string, message: string): ValidationIssue {
 }
 function err(code: string, message: string): ValidationIssue {
   return { code, message };
-}
-
-/** Distance from a page to the nearest page in a set (∞ when the set is empty). */
-function distanceTo(page: number, anchors: number[]): number {
-  return anchors.reduce((min, a) => Math.min(min, Math.abs(page - a)), Infinity);
 }
 
 function negate(v: string): string {

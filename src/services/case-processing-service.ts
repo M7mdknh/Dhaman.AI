@@ -17,10 +17,10 @@
  * the case actions and the poll route). `runCaseProcessing` is idempotent and
  * self-claiming, so a duplicate trigger is a no-op rather than a double run.
  */
+import { formatPerfReport, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
 import { PROCESSING_STAGES, type ProcessingSnapshot } from "@/lib/processing";
 import { recordAudit } from "@/services/audit-service";
-import { runDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { processCaseDocuments } from "@/services/extraction-service";
 import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
@@ -92,9 +92,15 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     await prisma.caseProcessing.update({ where: { caseId }, data: { stage } });
   };
 
+  // End-to-end timer for the whole-case performance report (every stage:
+  // duration, share, recommendation). Extraction reports its own sub-stages;
+  // we fold them in and add financial analysis + AI underwriting.
+  const timer = new StageTimer();
+
   try {
     // --- Stages 1–3: read → detect → extract (the IFRS pipeline reports each).
     const pipeline = await processCaseDocuments(caseId, /* system run */ null, advanceTo);
+    timer.absorb(pipeline.perf);
     if (!pipeline.ok) {
       const reason =
         pipeline.failures.map((f) => `${f.fileName}: ${f.message}`).join(" ") ||
@@ -105,14 +111,15 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
 
     // --- Stage 4: financial analysis (deterministic engine, computed on demand).
     await advanceTo("FINANCIAL_ANALYSIS");
-    const analysisCase = await prisma.underwritingCase.findUnique({
-      where: { id: caseId },
-      include: { contractDetails: true, financialStatements: { orderBy: { fiscalYear: "desc" } } },
-    });
-    const report =
-      analysisCase?.contractDetails && analysisCase.financialStatements.length > 0
+    const report = await timer.time(STAGE.FINANCIAL_ANALYSIS, async () => {
+      const analysisCase = await prisma.underwritingCase.findUnique({
+        where: { id: caseId },
+        include: { contractDetails: true, financialStatements: { orderBy: { fiscalYear: "desc" } } },
+      });
+      return analysisCase?.contractDetails && analysisCase.financialStatements.length > 0
         ? buildFinancialIntelligence(analysisCase.financialStatements, analysisCase.contractDetails)
         : null;
+    });
     if (!report) {
       await failJob(
         caseId,
@@ -122,35 +129,27 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
       return;
     }
 
-    // --- Stage 5: AI underwriting. Pre-generate the memo (system run, no
-    // requester) so it is ready and cached when an officer opens the case.
-    // BEST-EFFORT by design: the AI assists the bank, it never gates it. The
-    // deterministic analysis above already makes the case reviewable, and the
-    // officer can (re)generate the memo on demand. A flaky external LLM must
-    // not block underwriting or lose the case — a failure here is audited and
-    // the case still reaches ANALYSIS_READY.
-    await advanceTo("AI_UNDERWRITING");
-    const decision = await runDecisionIntelligence(caseId, null);
-    if (!decision.ok) {
-      await recordAudit({
-        action: "case.decision_deferred",
-        caseId,
-        detail: { stage: "AI_UNDERWRITING", reason: decision.error },
-      });
-    }
-
-    // --- Success: the case is ready for the officer queue.
+    // --- Done: the deterministic Financial Intelligence Engine is sufficient to
+    // make the case reviewable, so processing COMPLETES here. The AI underwriting
+    // memo is deliberately NOT generated in this path — it would add ~6-7s of LLM
+    // latency to every submission for a best-effort artifact the contractor never
+    // sees. It is generated lazily instead: when a Risk Officer opens the case,
+    // or on explicit "Generate AI Analysis". The contractor never waits for GPT.
     await prisma.$transaction([
       prisma.caseProcessing.update({
         where: { caseId },
-        data: { state: "COMPLETED", stage: "AI_UNDERWRITING", completedAt: new Date(), error: null, failedStage: null },
+        data: { state: "COMPLETED", stage: "FINANCIAL_ANALYSIS", completedAt: new Date(), error: null, failedStage: null },
       }),
       prisma.underwritingCase.update({ where: { id: caseId }, data: { status: "ANALYSIS_READY" } }),
     ]);
+
+    // Whole-case performance report: duration + share + recommendation per stage.
+    const perf = timer.report();
+    console.log("[case-processing]", formatPerfReport(perf, `case ${caseId}`));
     await recordAudit({
       action: "case.processing_completed",
       caseId,
-      detail: { years: pipeline.years, warnings: pipeline.warnings.length },
+      detail: { years: pipeline.years, warnings: pipeline.warnings.length, perfMs: perf.wallMs },
     });
   } catch (error) {
     // Any unexpected fault leaves the case saved and the job retryable.

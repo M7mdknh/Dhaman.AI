@@ -33,8 +33,11 @@ describe("buildProcessingSteps", () => {
     expect(steps[0].key).toBe("submitted");
     expect(steps[1].key).toBe("uploaded");
     expect(steps.at(-1)!.key).toBe("completed");
-    // The five pipeline stages sit in order between the framing steps.
+    // The pipeline stages sit in order between the framing steps (processing
+    // completes at FINANCIAL_ANALYSIS; the AI memo is generated lazily, later).
     expect(steps.slice(2, -1).map((s) => s.key)).toEqual(PROCESSING_STAGES);
+    expect(PROCESSING_STAGES.at(-1)).toBe("FINANCIAL_ANALYSIS");
+    expect(PROCESSING_STAGES).not.toContain("AI_UNDERWRITING");
   });
 
   it("queued: framing complete, every stage pending", () => {
@@ -51,12 +54,11 @@ describe("buildProcessingSteps", () => {
     expect(s.DETECTING_STATEMENTS).toBe("complete");
     expect(s.EXTRACTING_DATA).toBe("active");
     expect(s.FINANCIAL_ANALYSIS).toBe("pending");
-    expect(s.AI_UNDERWRITING).toBe("pending");
     expect(s.completed).toBe("pending");
   });
 
   it("completed: everything is complete", () => {
-    const s = statesByKey(snapshot({ state: "COMPLETED", stage: "AI_UNDERWRITING" }));
+    const s = statesByKey(snapshot({ state: "COMPLETED", stage: "FINANCIAL_ANALYSIS" }));
     for (const stage of PROCESSING_STAGES) expect(s[stage]).toBe("complete");
     expect(s.completed).toBe("complete");
   });
@@ -69,17 +71,16 @@ describe("buildProcessingSteps", () => {
     expect(s.DETECTING_STATEMENTS).toBe("complete");
     expect(s.EXTRACTING_DATA).toBe("failed");
     expect(s.FINANCIAL_ANALYSIS).toBe("pending");
-    expect(s.AI_UNDERWRITING).toBe("pending");
     expect(s.completed).toBe("pending");
   });
 
-  it("failed at the AI stage: only the last stage fails", () => {
+  it("failed at the final analysis stage: earlier complete, that stage failed", () => {
     const s = statesByKey(
-      snapshot({ state: "FAILED", stage: "AI_UNDERWRITING", failedStage: "AI_UNDERWRITING" }),
+      snapshot({ state: "FAILED", stage: "FINANCIAL_ANALYSIS", failedStage: "FINANCIAL_ANALYSIS" }),
     );
     expect(s.READING_STATEMENTS).toBe("complete");
-    expect(s.FINANCIAL_ANALYSIS).toBe("complete");
-    expect(s.AI_UNDERWRITING).toBe("failed");
+    expect(s.EXTRACTING_DATA).toBe("complete");
+    expect(s.FINANCIAL_ANALYSIS).toBe("failed");
     expect(s.completed).toBe("pending");
   });
 });

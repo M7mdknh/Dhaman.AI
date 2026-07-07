@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import { ArrowLeft, Download, FileCheck2, Hourglass } from "lucide-react";
 
 import { FinancialIntelligencePanel } from "@/components/analysis/financial-intelligence-panel";
@@ -30,6 +31,7 @@ import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { derivePriority } from "@/lib/review";
 import { cn } from "@/lib/utils";
 import { getCaseForReview, type ReviewCase } from "@/services/officer-case-service";
+import { ensureDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
@@ -119,6 +121,18 @@ export default async function ReviewCasePage({
   );
   const memo = reviewCase.decisionIntelligence[0] ?? null;
   const status = reviewCase.status;
+  const analysisReady = reviewCase.financialStatements.length > 0;
+
+  // Lazy AI: a Risk Officer opening the case is one of the two triggers for the
+  // underwriting memo (the other is the explicit "Generate AI Analysis" button).
+  // Fire it in the background via `after()` so the page renders immediately —
+  // the memo is prepared without ever blocking the workflow. Idempotent and
+  // deduped, and a no-op once a memo exists.
+  const autoGenerating = analysisReady && !memo;
+  if (autoGenerating) {
+    after(() => ensureDecisionIntelligence(id));
+  }
+
   const guaranteeAmountLabel = contract
     ? formatMoney(contract.guaranteeAmount, contract.currency)
     : "—";
@@ -204,7 +218,8 @@ export default async function ReviewCasePage({
           <DecisionSection
             caseId={id}
             decision={memo}
-            eligible={reviewCase.financialStatements.length > 0}
+            eligible={analysisReady}
+            autoGenerating={autoGenerating}
           />
 
           <section aria-label="Financial intelligence">

@@ -8,13 +8,21 @@
  */
 import type { ProcessingStage, ProcessingState } from "@/generated/prisma/enums";
 
-/** The pipeline stages, in execution order. */
+/**
+ * The blocking pipeline stages, in execution order. Processing COMPLETES at
+ * FINANCIAL_ANALYSIS: the deterministic Financial Intelligence Engine is
+ * sufficient to make a case reviewable, so the contractor never waits on the
+ * LLM. The AI underwriting memo is generated lazily instead (when a Risk
+ * Officer opens the case, or on explicit request) and is therefore NOT a
+ * processing stage — see docs/ASYNC_PROCESSING.md. `AI_UNDERWRITING` remains a
+ * valid enum value (kept for STAGE_LABELS and historical job rows) but is no
+ * longer part of the gating sequence.
+ */
 export const PROCESSING_STAGES: ProcessingStage[] = [
   "READING_STATEMENTS",
   "DETECTING_STATEMENTS",
   "EXTRACTING_DATA",
   "FINANCIAL_ANALYSIS",
-  "AI_UNDERWRITING",
 ];
 
 export const STAGE_LABELS: Record<ProcessingStage, string> = {
@@ -58,8 +66,8 @@ export function isProcessingActive(state: ProcessingState): boolean {
  * Builds the ordered dashboard steps from a job snapshot. The two framing
  * steps ("Case Submitted", "Documents Uploaded") are always complete once a
  * job exists — the case and its documents were persisted synchronously at
- * submission. The five pipeline stages resolve against the job's state/stage,
- * and a trailing "Completed" caps the list.
+ * submission. The pipeline stages resolve against the job's state/stage, and a
+ * trailing "Completed" caps the list.
  */
 export function buildProcessingSteps(job: ProcessingSnapshot): ProcessingStep[] {
   const stageIndex = job.stage ? PROCESSING_STAGES.indexOf(job.stage) : -1;
