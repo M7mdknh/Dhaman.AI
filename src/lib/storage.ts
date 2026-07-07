@@ -29,6 +29,23 @@ export interface FileStorage {
   remove(key: string): Promise<void>;
 }
 
+/**
+ * Infrastructure failure talking to the storage backend (bad credentials,
+ * missing object, network). Distinct from a document problem: callers must
+ * NOT tell the user to fix their file when this is thrown. The underlying
+ * SDK/OS error is preserved as `cause` for logging.
+ */
+export class StorageError extends Error {
+  constructor(
+    readonly op: "save" | "read" | "remove",
+    readonly key: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`Storage ${op} failed for key "${key}"`, options);
+    this.name = "StorageError";
+  }
+}
+
 /** S3-compatible object store (AWS S3, Cloudflare R2, MinIO). */
 class S3Storage implements FileStorage {
   private readonly client: S3Client;
@@ -57,27 +74,39 @@ class S3Storage implements FileStorage {
   }
 
   async save(key: string, data: Buffer): Promise<void> {
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: data,
-        ContentType: "application/pdf",
-      }),
-    );
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: data,
+          ContentType: "application/pdf",
+        }),
+      );
+    } catch (cause) {
+      throw new StorageError("save", key, { cause });
+    }
   }
 
   async read(key: string): Promise<Buffer> {
-    const result = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-    );
-    if (!result.Body) throw new Error(`Empty object body for key: ${key}`);
-    const bytes = await result.Body.transformToByteArray();
-    return Buffer.from(bytes);
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      if (!result.Body) throw new Error("Empty object body");
+      const bytes = await result.Body.transformToByteArray();
+      return Buffer.from(bytes);
+    } catch (cause) {
+      throw new StorageError("read", key, { cause });
+    }
   }
 
   async remove(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    try {
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (cause) {
+      throw new StorageError("remove", key, { cause });
+    }
   }
 }
 
@@ -98,17 +127,29 @@ class LocalDiskStorage implements FileStorage {
   }
 
   async save(key: string, data: Buffer): Promise<void> {
-    const full = this.resolve(key);
-    await mkdir(path.dirname(full), { recursive: true });
-    await writeFile(full, data);
+    try {
+      const full = this.resolve(key);
+      await mkdir(path.dirname(full), { recursive: true });
+      await writeFile(full, data);
+    } catch (cause) {
+      throw new StorageError("save", key, { cause });
+    }
   }
 
-  read(key: string): Promise<Buffer> {
-    return readFile(this.resolve(key));
+  async read(key: string): Promise<Buffer> {
+    try {
+      return await readFile(this.resolve(key));
+    } catch (cause) {
+      throw new StorageError("read", key, { cause });
+    }
   }
 
   async remove(key: string): Promise<void> {
-    await rm(this.resolve(key), { force: true });
+    try {
+      await rm(this.resolve(key), { force: true });
+    } catch (cause) {
+      throw new StorageError("remove", key, { cause });
+    }
   }
 }
 

@@ -1,6 +1,22 @@
 import { z } from "zod";
 
 /**
+ * An S3 credential: trimmed, and rejected if it still carries the angle
+ * brackets or whitespace of an un-substituted placeholder (e.g. "<key>").
+ * Such values sign requests with the wrong length and fail opaquely.
+ */
+function s3Credential(name: string) {
+  return z
+    .string()
+    .min(1)
+    .transform((v) => v.trim())
+    .refine((v) => !/[<>\s]/.test(v), {
+      message: `${name} contains angle brackets or whitespace — paste the raw key value, not a placeholder like "<key>".`,
+    })
+    .optional();
+}
+
+/**
  * Validated server environment. Import only from server-side code.
  * Fails fast at boot with a readable message instead of failing deep
  * inside a request.
@@ -20,8 +36,12 @@ const envSchema = z.object({
   // streamed through the access-checked download route, never linked directly.
   S3_BUCKET: z.string().min(1).optional(),
   S3_REGION: z.string().min(1).default("us-east-1"),
-  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
-  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  // Credentials are trimmed and must not carry placeholder brackets or
+  // whitespace: a value like "<abc>" is a length-34 key the S3 signer rejects
+  // locally (before any request) with an opaque InvalidArgument — fail here
+  // instead, with a message that names the mistake.
+  S3_ACCESS_KEY_ID: s3Credential("S3_ACCESS_KEY_ID"),
+  S3_SECRET_ACCESS_KEY: s3Credential("S3_SECRET_ACCESS_KEY"),
   // Custom endpoint for non-AWS providers (e.g. Cloudflare R2). Omit for AWS.
   S3_ENDPOINT: z.string().url().optional(),
   // Path-style addressing (true for MinIO/some R2 setups; false for AWS).

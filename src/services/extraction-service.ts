@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 import { extractIfrs, type IfrsExtraction } from "@/lib/ifrs/extract";
 import { PdfReadError } from "@/lib/ifrs/types";
 import { prisma } from "@/lib/prisma";
-import { storage } from "@/lib/storage";
+import { storage, StorageError } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
 
 import type { CanonicalKey } from "@/lib/ifrs/normalizer";
@@ -41,6 +41,58 @@ interface CompletedExtraction {
   extraction: IfrsExtraction;
 }
 
+/** Grep-able, single-line structured log for each pipeline stage. */
+function logStage(
+  stage: string,
+  documentId: string,
+  startedAt: Date,
+  extra: Record<string, unknown> = {},
+): void {
+  console.log(
+    "[ifrs-extraction]",
+    JSON.stringify({ stage, documentId, elapsedMs: Date.now() - startedAt.getTime(), ...extra }),
+  );
+}
+
+type FailureKind = "document" | "storage" | "unexpected";
+
+/**
+ * Turns any thrown error into (a) an honest, user-facing message and (b) a
+ * technical detail for the logs. Only genuine document faults ask the user to
+ * fix their file; storage/unexpected faults are ours, not theirs.
+ */
+function classifyFailure(error: unknown): {
+  kind: FailureKind;
+  userMessage: string;
+  detail: string;
+} {
+  if (error instanceof PdfReadError) {
+    return { kind: "document", userMessage: error.message, detail: `${error.name}[${error.code}]: ${error.message}` };
+  }
+  if (error instanceof StorageError) {
+    return {
+      kind: "storage",
+      userMessage:
+        "A system error prevented processing this document. Please try again in a moment; if the problem persists, contact support.",
+      detail: `${error.message} — cause: ${describeCause(error.cause)}`,
+    };
+  }
+  return {
+    kind: "unexpected",
+    userMessage:
+      "The document could not be processed due to an unexpected error. Our team has been notified.",
+    detail: describeCause(error),
+  };
+}
+
+function describeCause(cause: unknown): string {
+  if (cause instanceof Error) {
+    const code = (cause as { code?: string; Code?: string }).code ?? (cause as { Code?: string }).Code;
+    return `${cause.name}${code ? `[${code}]` : ""}: ${cause.message}`;
+  }
+  return String(cause);
+}
+
 /** Runs extraction for every financial statement on the case. */
 export async function processCaseDocuments(
   caseId: string,
@@ -61,12 +113,21 @@ export async function processCaseDocuments(
       data: { processingStatus: "PROCESSING" },
     });
     const startedAt = new Date();
+    logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
 
     try {
       const bytes = await storage.read(document.storageKey);
+      logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
+
       const sha256 = createHash("sha256").update(bytes).digest("hex");
       const extraction = await extractIfrs(bytes);
       const blocking = extraction.validation.errors;
+      logStage("extracted", document.id, startedAt, {
+        statements: extraction.result.statements.map((s) => s.type),
+        fiscalYears: extraction.result.fiscalYears,
+        blockingErrors: blocking.length,
+        warnings: extraction.validation.warnings.length,
+      });
 
       await persistExtraction(document.id, startedAt, extraction, null);
       await prisma.document.update({
@@ -75,6 +136,9 @@ export async function processCaseDocuments(
       });
 
       if (blocking.length > 0) {
+        logStage("failed_validation", document.id, startedAt, {
+          errors: blocking.map((e) => e.code),
+        });
         failures.push({
           documentId: document.id,
           fileName: document.fileName,
@@ -82,6 +146,7 @@ export async function processCaseDocuments(
           message: blocking.map((e) => e.message).join(" "),
         });
       } else {
+        logStage("completed", document.id, startedAt);
         completed.push({ document, extraction });
         warnings.push(
           ...extraction.validation.warnings.map((w) => ({
@@ -91,11 +156,22 @@ export async function processCaseDocuments(
         );
       }
     } catch (error) {
-      const message =
-        error instanceof PdfReadError
-          ? error.message
-          : "The document could not be processed. Please re-export the PDF and try again.";
-      await persistExtraction(document.id, startedAt, null, message);
+      const { kind, userMessage, detail } = classifyFailure(error);
+      // The real exception lives here, in the logs — never lost behind the
+      // user-facing message the way it was before.
+      console.error(
+        "[ifrs-extraction]",
+        JSON.stringify({
+          stage: "error",
+          documentId: document.id,
+          fileName: document.fileName,
+          storageKey: document.storageKey,
+          kind,
+          elapsedMs: Date.now() - startedAt.getTime(),
+          detail,
+        }),
+      );
+      await persistExtraction(document.id, startedAt, null, userMessage);
       await prisma.document.update({
         where: { id: document.id },
         data: { processingStatus: "FAILED" },
@@ -104,7 +180,7 @@ export async function processCaseDocuments(
         documentId: document.id,
         fileName: document.fileName,
         fiscalYear: document.fiscalYear,
-        message,
+        message: userMessage,
       });
     }
   }
