@@ -37,7 +37,9 @@ claim (QUEUED → RUNNING, attempts++)          ← only one runner wins the cla
   │        → case ANALYSIS_READY NOW  (reviewable; headline shown)       │
   └─────────────────────────────────────────────────────────────────────┘
   ┌─ STAGE 2 — Deep Financial Intelligence (background; whole pipe ≤10s) ┐
-  │ └ AI_UNDERWRITING        the AI memo — best-effort, never gates       │
+  │ └ AI_UNDERWRITING     the AI memo — comprehensive mode only;          │
+  │                       express defers to lazy first-officer-open       │
+  │                       (best-effort, never gates)                      │
   └─────────────────────────────────────────────────────────────────────┘
 COMPLETED  → job done (case already ANALYSIS_READY since end of Stage 1)
 FAILED     → case PROCESSING_FAILED   (Stage-1 failure only; case stays saved)
@@ -51,9 +53,18 @@ FAILED     → case PROCESSING_FAILED   (Stage-1 failure only; case stays saved)
   HEADLINE — Underwriting Capacity /100, Rating (AAA…CCC), Financial Health /100,
   Risk Level, Recommendation — is available (`lib/finance/headline.ts`,
   `deriveHeadline`). The user already feels the analysis is complete.
-- **Stage 2 — Deep Financial Intelligence.** The job keeps RUNNING and generates
-  the AI memo in the **background**. It never gates readiness: a slow/failed LLM
-  leaves the case ANALYSIS_READY and the contractor never waits for GPT.
+- **Stage 2 — Deep Financial Intelligence.** The job keeps RUNNING. In
+  **comprehensive** mode it generates the AI memo here in the **background**; in
+  **express** mode (default) it does NOT — the memo is deferred to lazy
+  generation on first officer open (see below). Either way Stage 2 never gates
+  readiness: a slow/failed/deferred LLM leaves the case ANALYSIS_READY and the
+  contractor never waits for GPT.
+
+**Underwriting mode** (`UNDERWRITING_MODE`, default `express`) changes two things
+only — the deterministic engines are identical: express reads just the latest
+statement (Stage-1 document scope) and defers the memo to first officer open;
+comprehensive reads every uploaded year and generates the memo eagerly in
+Stage 2.
 
 **Critical-path discipline (why Stage 1 is fast):** the deterministic engine is
 ~1ms; the cost is I/O. So Stage 1 avoids needless DB round-trips — the pipeline
@@ -95,14 +106,17 @@ failed the whole submission — the case was never saved. Submission is now just
 The AI-drafted underwriting memo (`DecisionIntelligence`) is generated from three
 places, none of which the contractor ever waits on:
 
-1. **Stage 2 of processing (background).** After Stage 1 flips the case to
-   ANALYSIS_READY, the same job runs `runDecisionIntelligence(caseId, null)` in
-   the background, then marks the job COMPLETED. Best-effort — a failure is
-   audited (`case.decision_deferred`) and leaves the case ANALYSIS_READY.
+1. **Stage 2 of processing (background) — comprehensive mode only.** After
+   Stage 1 flips the case to ANALYSIS_READY, the same job runs
+   `runDecisionIntelligence(caseId, null)` in the background, then marks the job
+   COMPLETED. Best-effort — a failure is audited (`case.decision_deferred`) and
+   leaves the case ANALYSIS_READY. In express mode this step is skipped and the
+   job completes without a memo.
 2. **A Risk Officer opens the case.** `review/[id]/page.tsx` fires
    `ensureDecisionIntelligence(caseId)` in a Next.js `after()` — idempotent, a
-   no-op once a memo exists, and de-duplicates concurrent opens. Acts as the
-   safety net if Stage 2 was deferred (e.g. an LLM rate-limit).
+   no-op once a memo exists, and de-duplicates concurrent opens. This is the
+   PRIMARY trigger in express mode (and the safety net in comprehensive if
+   Stage 2 was deferred, e.g. an LLM rate-limit).
 3. **Explicit "Generate AI Analysis".** `generateDecisionAction` →
    `generateDecisionIntelligence` (officer-gated), unchanged.
 

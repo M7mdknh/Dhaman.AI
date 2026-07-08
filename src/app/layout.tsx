@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: "%s · Daman",
   },
   description:
-    "AI-assisted Letter of Guarantee underwriting. The AI prepares the package; the Risk Officer decides.",
+    "AI-powered Letter of Guarantee underwriting. The AI prepares the package; the Risk Officer decides.",
 };
 
 export default function RootLayout({

@@ -62,10 +62,17 @@ density per page and routes accordingly, so corrupt input is never trusted.
 
 ## Persistence & lifecycle
 
-- Extraction runs at **case submission, before the case leaves DRAFT** — a hard
-  failure rejects submission with a per-file message. OCR-enabled in the
-  service (`extractIfrs(bytes, { enableOcr: true })`); the shared OCR worker is
+- Extraction runs **asynchronously, after submission**, as Stage 1 of the
+  processing pipeline (`docs/ASYNC_PROCESSING.md`) — submission only saves the
+  case (`DRAFT → PROCESSING`) and enqueues the job. A hard extraction failure
+  sets the case to `PROCESSING_FAILED` with a per-file reason and is **retryable
+  on the same uploaded documents** (no re-upload); the case is never lost. The
+  hybrid path (`processDocument`) picks the cheapest engine that yields the core
+  figures — text layer, then GPT-Vision, then OCR; the shared OCR worker is
   released after each batch.
+- **Underwriting mode controls document scope** (`UNDERWRITING_MODE`): express
+  reads only the latest audited statement; comprehensive reads every uploaded
+  fiscal year. The engines are identical either way.
 - `Document.processingStatus`: `UPLOADED → PROCESSING → COMPLETED | FAILED`.
 - `DocumentExtraction` — one row per document: parser, timings, detected
   statements, scale, currency, fiscal years, raw line items, validation.

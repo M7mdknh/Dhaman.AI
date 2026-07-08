@@ -115,8 +115,10 @@ export function DocumentsStep({
       <CardHeader>
         <CardTitle>Audited IFRS Financial Statements</CardTitle>
         <CardDescription>
-          Upload the audited financial statements for the last three fiscal years. PDF only,
-          maximum 10 MB per file. Files are stored securely — analysis begins after submission.
+          Upload your <span className="font-medium text-foreground">latest</span> audited
+          financial statement to get an underwriting assessment in seconds. Earlier years are
+          optional — they deepen the historical trend analysis. PDF only, maximum 10 MB per
+          file. Analysis begins automatically after submission.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -154,7 +156,19 @@ export function DocumentsStep({
               ) : (
                 <div className="flex items-center justify-between rounded-lg border border-dashed border-border px-3 py-2.5">
                   <div>
-                    <p className="text-sm font-medium text-foreground">Fiscal Year {year}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">Fiscal Year {year}</p>
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                          year === STATEMENT_YEARS[0]
+                            ? "bg-primary/10 text-primary"
+                            : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {year === STATEMENT_YEARS[0] ? "Latest · Recommended" : "Optional"}
+                      </span>
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       Audited IFRS financial statement (PDF)
                     </p>

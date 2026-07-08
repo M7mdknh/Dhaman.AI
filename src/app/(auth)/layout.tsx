@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
         {children}
         <p className="mt-6 text-center text-xs leading-relaxed text-muted-foreground">
-          AI-assisted underwriting. The final decision always rests with the
+          AI-powered underwriting. The final decision always rests with the
           bank&apos;s Risk Officer.
         </p>
       </div>

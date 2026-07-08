@@ -12,7 +12,7 @@ automates a decision.
 
 ```
 Submitted case
-   ↓ IFRS extraction (Sprint 2)             SUBMITTED → PARSING → ANALYSIS_READY
+   ↓ async processing (two-stage)           DRAFT → PROCESSING → ANALYSIS_READY
    ↓ appears in the officer queue           (dashboard, "Pending" tab, FIFO)
    ↓ officer opens /review/[id]             audited; viewing NEVER changes state
    ↓ Start Review (explicit, confirmed)     ANALYSIS_READY → UNDER_REVIEW

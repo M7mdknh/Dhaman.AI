@@ -8,13 +8,54 @@ Your role is to behave like a senior fintech engineer, not a code generator.
 
 # Project
 
-Daman is an AI-assisted corporate underwriting platform.
+Daman is an AI-powered Corporate Underwriting Platform.
 
 Its purpose is to reduce Letter of Guarantee underwriting time from days to minutes.
+
+Document extraction is only one component — the product is the underwriting
+value it delivers, not an IFRS parser.
 
 The AI assists the bank.
 
 The AI never replaces the bank.
+
+During the MVP, speed and user experience take priority: a believable
+underwriting assessment in seconds beats a perfect financial statement
+reconstruction.
+
+---
+
+# Underwriting Modes
+
+The platform supports two business workflows (`UNDERWRITING_MODE` env,
+default `express`). The deterministic engines are identical in both — only
+document scope and AI-memo timing change.
+
+⚡ **Express Underwriting (default)**
+
+- A meaningful underwriting assessment in ~5 seconds.
+- Latest audited financial statement required; previous years optional.
+- Fast extraction → immediate Financial Intelligence + Underwriting Capacity.
+- The AI memo is generated lazily (on first Risk Officer open) — never on the
+  contractor's path.
+
+📊 **Comprehensive Underwriting (production)**
+
+- Reads every uploaded fiscal year for full historical trend analysis.
+- Complete deterministic extraction and deep validation.
+- AI memo generated eagerly in the background.
+- May take significantly longer.
+
+---
+
+# AI Boundaries
+
+- The Financial Intelligence Engine is fully deterministic — the AI never
+  performs calculations and never produces a figure.
+- AI is used for exactly two things: document understanding (vision
+  extraction of scanned statements) and underwriting explanation (the memo).
+- The recommendation of record is derived from the risk band by bank policy;
+  the final decision always belongs to the Risk Officer.
 
 ---
 
@@ -31,23 +72,22 @@ Do NOT use FastAPI or Python.
 
 ---
 
-# Current Sprint
+# Current Phase
 
-Work follows the sprint roadmap in `TODO.md`. The current sprint is recorded
-in `PROJECT_STATUS.md`.
+The MVP (Sprints 0–5) is complete. Work follows `TODO.md`; the current state
+is recorded in `PROJECT_STATUS.md`.
 
-Only build the current sprint's scope.
+The current focus is post-MVP: speed, user experience, and hackathon-readiness
+of the Express Underwriting flow.
 
 Do NOT build
 
-- AI
-- Financial Ratios
-- OCR
-- GPT
+- Deep Extraction (production document-AI)
 - Open Banking
 - SIMAH
+- Core Banking Integration
 
-until their sprint is reached (or explicitly requested).
+until explicitly requested.
 
 ---
 
@@ -110,10 +150,10 @@ For every request
 4. Keep architecture consistent.
 5. Update TODO.md if necessary.
 
-After every sprint
+After every work package
 
 - Update TODO.md (check off completed items).
-- Update PROJECT_STATUS.md (current sprint, completed, next).
-- The application must be deployable at the end of every sprint.
+- Update PROJECT_STATUS.md (current focus, completed, next).
+- The application must be deployable at the end of every work package.
 
-Never implement features outside the current sprint.
+Never implement features outside the current phase's scope.

@@ -26,6 +26,24 @@ Case page “Decision Intelligence” + /cases/[id]/package report
 Everything above the provider interface is vendor-agnostic. The UI renders
 persisted rows only — it never sees provider or prompt logic.
 
+## Generation timing & visibility (current)
+
+The memo is **never on the contractor's critical path** — the deterministic
+Financial Intelligence Engine alone makes a case reviewable, so the memo is
+generated in the background / on demand:
+
+- **Express mode (default):** generated **lazily** on the first Risk Officer
+  open (`ensureDecisionIntelligence`, fired from the review page via Next.js
+  `after()` — idempotent, a no-op once a memo exists, dedupes concurrent opens).
+- **Comprehensive mode:** generated **eagerly** in Stage 2 of the background
+  pipeline, after the case is already ANALYSIS_READY.
+- **Explicit:** the officer's "Generate AI Analysis" button, unchanged.
+
+All three funnel through `runDecisionIntelligence`; the `inputHash` cache means
+a repeat over unchanged engine output reuses the stored memo. The memo, memo
+generation, and the Underwriting Package are **officer-only** (since Sprint 5) —
+the contractor never sees them. See `docs/ASYNC_PROCESSING.md`.
+
 ## Provider architecture
 
 `src/lib/ai/`:
@@ -130,11 +148,12 @@ log.
 
 ## UI
 
-- **Case details page** — “Decision Intelligence” panel: executive summary,
-  strengths/weaknesses, recommendation badge (labeled *derived from the
-  computed risk band*), missing information, next steps, confidence,
-  provider/model/prompt provenance footer, divergence and mock-provider
-  notices, generate/regenerate actions.
+- **Officer review workspace** (`/review/[id]`, officer-only) — “Decision
+  Intelligence” panel: executive summary, strengths/weaknesses, recommendation
+  badge (labeled *derived from the computed risk band*), missing information,
+  next steps, confidence, provider/model/prompt provenance footer, divergence
+  and mock-provider notices, generate/regenerate actions. Shows a "Preparing AI
+  analysis…" state while a lazy generation is in flight.
 - **`/cases/[id]/package`** — the professional Underwriting Package:
   Executive Summary, Company Overview, Contract Overview, Financial
   Highlights, Major Risks, Positive Indicators, Financial Trends,

@@ -292,10 +292,21 @@ export default async function ReviewCasePage({
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(status === "SUBMITTED" || status === "PARSING") && (
+              {(status === "SUBMITTED" ||
+                status === "PROCESSING" ||
+                status === "PARSING") && (
                 <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
                   <Hourglass className="mt-0.5 size-4 shrink-0" aria-hidden />
                   Statement extraction is still in progress — the case becomes
+                  reviewable once the analysis is ready.
+                </p>
+              )}
+
+              {status === "PROCESSING_FAILED" && (
+                <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+                  <Hourglass className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
+                  Financial processing did not complete for this case. The
+                  applicant can retry the analysis from their side — it becomes
                   reviewable once the analysis is ready.
                 </p>
               )}

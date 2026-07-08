@@ -27,7 +27,10 @@ components/
   layout/       app shell (sidebar, top nav)
 lib/            infrastructure: prisma client, session, password, env, utils
 lib/ai/         LLM provider abstraction (interface + OpenAI/Mock providers
-                + factory) — the ONLY vendor-aware code in the app
+                + factory) — the ONLY vendor-aware code in the app; also the
+                vision path (`completeVisionJSON`) for scanned-document reading
+lib/ifrs/       pure IFRS extraction primitives (pdf-text, quality gate, OCR,
+                statement detection, line/normalize, validation, perf timer)
 lib/validation/ zod schemas (single source of truth for input shapes)
 lib/finance/    financial engine primitives: types, null-safe Decimal math,
                 thresholds (EVERY tunable business constant lives here)
@@ -35,6 +38,8 @@ lib/review.ts   pure officer-workflow rules: transition legality, decision →
                 status mapping, deterministic queue priority (unit-tested)
 lib/pdf/        document layouts (Letter of Guarantee) — pure data → bytes
 services/       business logic — the ONLY layer that touches Prisma
+services/extraction-service.ts + services/extraction/  hybrid IFRS extraction
+                (text-layer → GPT-Vision → OCR) and the async processing pipeline
 services/finance/ pure deterministic engines (ratios, trends, flags,
                 capacity, risk) + orchestrator; no I/O, no AI
 services/decision/ Decision Intelligence: versioned prompt builder +
@@ -99,15 +104,36 @@ by decision).
 
 ## The case status state machine
 
-`DRAFT → SUBMITTED → PARSING → ANALYSIS_READY → UNDER_REVIEW →
+`DRAFT → PROCESSING → ANALYSIS_READY → UNDER_REVIEW →
 (APPROVED → ISSUED) | DECLINED | INFO_REQUESTED (→ UNDER_REVIEW)`
+with `PROCESSING → PROCESSING_FAILED` (retryable) on a Stage-1 failure.
 
 The full enum exists from Sprint 0 (it is core domain vocabulary and avoids
-migration churn). DRAFT/SUBMITTED arrived in Sprint 1; the Sprint 2 parsing
-pipeline drives SUBMITTED → PARSING → ANALYSIS_READY; the Sprint 5 officer
-workspace drives everything after (ANALYSIS_READY → UNDER_REVIEW →
-APPROVED/DECLINED/INFO_REQUESTED → ISSUED). Transition legality is pure code
-in `lib/review.ts`; the case and review services enforce it — never UI.
+migration churn). DRAFT arrived in Sprint 1. **Submission is decoupled from
+processing** (post-MVP async redesign): `submitCase` moves the case
+`DRAFT → PROCESSING` in one short transaction and enqueues a job — it never
+runs extraction. The async pipeline (`case-processing-service`) then drives
+`PROCESSING → ANALYSIS_READY` (or `PROCESSING_FAILED`) in two stages; see
+`docs/ASYNC_PROCESSING.md`. The Sprint 5 officer workspace drives everything
+after (ANALYSIS_READY → UNDER_REVIEW → APPROVED/DECLINED/INFO_REQUESTED →
+ISSUED). Transition legality is pure code in `lib/review.ts`; the case and
+review services enforce it — never UI.
+
+(The `SUBMITTED` and `PARSING` enum values remain for historical rows and
+labels; the live flow uses `PROCESSING`.)
+
+## Processing pipeline & underwriting modes
+
+Financial processing is a **two-stage async pipeline**, independent of
+submission (`docs/ASYNC_PROCESSING.md`): Stage 1 (hybrid extraction →
+deterministic engine) flips the case to ANALYSIS_READY with a live underwriting
+headline in seconds; Stage 2 (the AI memo) runs in the background and never
+gates readiness. `UNDERWRITING_MODE` (default `express`) controls document
+scope + memo timing only — the deterministic engines are identical: **express**
+reads the latest statement and generates the memo lazily on first officer open;
+**comprehensive** reads all years and generates the memo eagerly. Extraction
+itself is hybrid — text-layer first, GPT-Vision for scanned/damaged pages, OCR
+last (`docs/IFRS_ENGINE.md`).
 
 Access is two disjoint paths: contractors are **ownership-scoped**
 (`case-service`), bank staff are **role-gated** (`officer-case-service` and

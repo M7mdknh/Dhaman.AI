@@ -26,7 +26,7 @@ deliberately parked.
 | 14 | **Timeline "Draft Saved" uses `updatedAt`** — approximate (any row touch counts) and shown even for never-edited drafts. Precise timestamps exist in AuditLog if needed. | Cosmetic imprecision | When the timeline gains audit-backed entries (officer sprint) |
 | 15 | **Wizard step forms stay mounted (CSS-hidden)** to preserve state across navigation — all field ids must be unique page-wide (contract selects are prefixed `contract-`). | Duplicate-id bugs if forgotten | Note for future wizard steps |
 | 16 | ~~The contractor sees the AI underwriting memo~~ **RESOLVED in Sprint 5**: the memo, memo generation, and the Underwriting Package are officer-only; the contractor sees decision status, request-info messages, and approval conditions only. | — | — |
-| 17 | **Company financial data leaves the machine when an OpenAI key is configured** (structured engine outputs + company registration data; no personal contacts, no PDFs). Acceptable for MVP; a bank deployment needs a data-processing agreement or an in-VPC/Azure endpoint. | Confidentiality obligations | Before pilot with real customer data (AzureOpenAIProvider is one file + a factory entry) |
+| 17 | **Company financial data leaves the machine when an OpenAI key is configured.** Two paths now: (a) the memo — structured engine outputs + company registration data (no personal contacts, no raw statement rows); (b) **GPT-Vision extraction — rendered IMAGES of the statement pages are sent to the vision model** for scanned/damaged documents (`VISION_ENABLED`, on by default). Acceptable for MVP; a bank deployment needs a data-processing agreement or an in-VPC/Azure endpoint, and/or `VISION_ENABLED=false`. | Confidentiality obligations | Before pilot with real customer data (AzureOpenAIProvider is one file + a factory entry); Deep Extraction replaces the fallback path |
 | 18 | **Memo regeneration is unbounded** — mitigated in Sprint 5 (generation is officer-only now), but there is still no per-user/day quota or cost tracking. | Provider cost abuse | First real API key (add a quota + usage log) |
 | 19 | **No officer exclusivity on reviews** — the first officer to start a review is recorded as assigned, but any officer can still decide any case (deliberate for a 1-officer MVP bank). | Two officers could act on one case concurrently; last write wins on status | When a second real officer exists: claim/lock or optimistic concurrency on status transitions |
 | 20 | **The LG QR stamp is informational, not cryptographic** — it encodes the particulars (reference, case, amount, expiry) but there is no signature or public verification endpoint, so a QR scan proves nothing by itself. | Forged-document risk if relied on for verification | Before real instruments: signed payload + `/verify/[reference]` endpoint |
@@ -105,9 +105,12 @@ deliberately parked.
 
 - ~~Guarantee registry list + per-case audit report export (Sprint 6)~~ —
   Sprint 6 CANCELLED by user decision (2026-07-07); these will not be built
-- Document `sha256` checksum — explicitly deferred until external object
-  storage is introduced (user decision)
+- ~~Document `sha256` checksum~~ — **DONE**: `Document.sha256` is populated by
+  the extraction pipeline (used for the retry extraction cache); object storage
+  (S3/R2) shipped in RC1
 - Admin user-management UI; profile pages
+- Deep Extraction (production document AI for scanned Arabic statements) —
+  Future phase; replaces the OCR fallback for bank-grade numeric extraction
 - Open Banking / SIMAH — interfaces + mocks only, Future phase
 - Arabic/RTL localization
 

@@ -11,7 +11,8 @@ export interface NavItem {
 
 const ALL_ROLES: Role[] = ["CONTRACTOR", "RISK_OFFICER", "ADMIN"];
 
-// Grows sprint by sprint (Cases → Sprint 3, Review queue → Sprint 7, …).
+// The dashboard is the single hub for both roles: contractors see their cases,
+// officers see the review queue. Case and review flows are reached from there.
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ALL_ROLES },
 ];

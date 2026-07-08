@@ -12,6 +12,7 @@ Every sprint ends with a deployable application.
 | 4 ✅ | AI Underwriter | Memo, summary, recommendation surfacing (LLM explains, never calculates) |
 | 5 ✅ | Underwriting Workspace | Officer queue, review workspace, decisions + internal notes, audit — PLUS Letter of Guarantee generation (absorbed from Sprint 6 by user directive 2026-07-07) |
 | ~~6~~ | ~~Guarantee Registry & Audit Reporting~~ | Cancelled by user decision 2026-07-07 — the MVP is complete at Sprint 5 |
+| P ✅ | Post-MVP: Speed & Experience (2026-07-08) | Express / Comprehensive underwriting modes, two-stage background pipeline (deterministic headline in seconds, AI memo in the background), lazy AI memo, hybrid GPT-Vision extraction. No schema migration. |
 
 Sprint 1 was re-scoped by user directive (2026-07-06): it absorbed the former
 "Enterprise Dashboard" and "Underwriting Case Wizard" sprints; auth hardening
@@ -21,10 +22,15 @@ Sprint 6 was cancelled by user decision (2026-07-07): **the roadmap ends at
 Sprint 5** — the guarantee registry and exportable audit report will not be
 built.
 
+The MVP is complete at Sprint 5. Post-MVP work (2026-07-08) re-optimized the
+platform for the Express Underwriting experience without adding schema — the
+product is an AI-powered underwriting platform, not an IFRS parser, and
+optimizes for delivering underwriting value quickly.
+
 ## Phase discipline
 
-- Only the current sprint's scope is implemented.
+- Only the current phase's scope is implemented.
 - Financial analysis tables, AI tables, and integration tables are created in
   their own sprints — never earlier.
-- Open Banking and SIMAH remain interfaces + mocks (`Future`), never real
-  implementations in the MVP.
+- Deep Extraction, Open Banking, and SIMAH remain `Future` (interfaces + mocks
+  only for the integrations), never real implementations in the MVP.

@@ -15,7 +15,10 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // The marketing landing page at "/" is public; authenticated users hitting
+  // it are still bounced to the dashboard below.
+  const isPublic =
+    pathname === "/" || PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   if (!session && !isPublic) {
     const login = new URL("/login", request.url);

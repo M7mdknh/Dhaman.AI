@@ -126,6 +126,10 @@ server-side upload rejections (fake PDF, bad year, duplicate year, oversize).
 
 # Sprint 2 — IFRS Parsing ✅ (completed 2026-07-06)
 
+> Historical record. The "no OCR / scanned PDFs rejected" scope below was
+> **superseded post-MVP** by hybrid extraction (OCR fallback, then GPT-Vision
+> for scanned/damaged statements) — see "Post-MVP" below and `docs/IFRS_ENGINE.md`.
+
 - [x] Deterministic PDF text extraction (MuPDF WASM; no LLM, no OCR — scanned PDFs rejected with a clear message)
 - [x] Statement detection (financial position, profit or loss, cash flows; auditor report/TOC excluded; 2-page spans)
 - [x] Line-item normalization to canonical figures (statement-scoped regex synonym table; unmapped labels kept in provenance)
@@ -218,8 +222,52 @@ recorded in `AuditLog`; only the reporting UI was cut.)
 
 ---
 
+# Post-MVP — Underwriting Speed & Experience ✅ (2026-07-08)
+
+Philosophy shift: Daman is an AI-powered underwriting platform, not an OCR
+engine. The product optimizes for a believable underwriting assessment in
+seconds — hackathon-readiness over perfect statement reconstruction. No schema
+migrations in this phase. Full detail in `PROJECT_STATUS.md` +
+`docs/ASYNC_PROCESSING.md` + `docs/IFRS_ENGINE.md`.
+
+## Express & Comprehensive Underwriting
+
+- [x] Two underwriting modes (`UNDERWRITING_MODE`, default `express`); the
+      deterministic engines are identical — only document scope + memo timing change
+- [x] **Express (default):** only the LATEST audited statement is read (its
+      comparative column still trends ≥2 years); previous years optional
+- [x] **Comprehensive:** all uploaded fiscal years read for full history + eager memo
+
+## Two-Stage Background Processing
+
+- [x] Stage 1 (extract → deterministic engine) flips the case to ANALYSIS_READY
+      with a live underwriting headline (Capacity, Rating, Financial Health, Risk
+      Level, Recommendation) — target ≤3s
+- [x] Stage 2 (AI memo) runs in the background and never gates readiness — whole pipeline ≤10s
+- [x] Critical-path collapse: concurrent DB round-trips, deferred off-path writes,
+      connection-pool warming (`instrumentation.ts`); measured Stage 1 ~2.4s on remote Neon + R2
+
+## Lazy AI Memo
+
+- [x] Memo removed from the blocking contractor path
+- [x] Express mode generates it lazily on first Risk Officer open
+      (`ensureDecisionIntelligence`, idempotent, dedupes concurrent opens) or via
+      the explicit "Generate AI Analysis" button
+
+## Hybrid Extraction (document understanding, never calculation)
+
+- [x] Text-layer first (digital, ~1s) → GPT-Vision on statement-page images for
+      scanned/damaged → OCR as last-resort fallback; vision figures flagged for
+      officer verification (`VISION_ENABLED`, `VISION_MAX_PAGES`, `VISION_DPI`, `VISION_TIMEOUT_MS`)
+- [x] Statement-pages-first OCR with a bounded worker pool + extraction caching on retry
+
+---
+
 # Future (do NOT implement — architecture-ready only)
 
+- [ ] Deep Extraction — production-grade document AI for scanned Arabic
+      statements (layout-aware; replaces the OCR fallback for bank-grade numeric
+      extraction — see `docs/IFRS_ENGINE.md` "Known limitations")
 - [ ] Saudi Open Banking (`ExposureProvider` interface + mock only)
 - [ ] SIMAH (`CreditBureauProvider` interface + mock only)
 - [ ] Core Banking Integration

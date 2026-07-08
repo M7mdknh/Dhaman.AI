@@ -9,6 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { DecisionAutoRefresh } from "@/components/decision/auto-refresh";
 import { GenerateDecisionButton } from "@/components/decision/generate-decision-button";
 import {
   RecommendationBadge,
@@ -94,11 +95,12 @@ export function DecisionSection({
             </h3>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
               {autoGenerating
-                ? "The AI-drafted memo is being generated in the background now that you have opened the case. Refresh in a few seconds to view it — or generate it now."
+                ? "The AI-drafted memo is being generated in the background now that you have opened the case. It will appear here automatically in a few seconds."
                 : eligible
                   ? "Generate an AI-drafted memo that explains the computed financial intelligence. Nothing is calculated by the AI."
                   : "The memo becomes available once the case is submitted and its statements are parsed."}
             </p>
+            {autoGenerating && <DecisionAutoRefresh />}
             {eligible && (
               <div className="mt-4">
                 <GenerateDecisionButton caseId={caseId} />

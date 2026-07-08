@@ -1,14 +1,38 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-07.**
+> of any session. **Last updated: 2026-07-08.**
 
-Current Sprint
+## Product framing
 
-**None — the MVP is COMPLETE.** Sprint 5 (Underwriting Workspace) was
-approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
-day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
-committed on `main`.
+Daman is an **AI-powered Corporate Underwriting Platform**, not an IFRS parser
+— document extraction is one component. The product optimizes for delivering a
+believable underwriting assessment *quickly*; during the MVP, speed and user
+experience take priority over perfect financial statement reconstruction. The
+Financial Intelligence Engine is fully deterministic; AI is used only for
+document understanding (vision extraction) and underwriting explanation (the
+memo), never calculation, and the Risk Officer always decides.
+
+## Current focus
+
+**The MVP (Sprints 0–5) is COMPLETE.** Sprint 5 was approved on 2026-07-07 and
+Sprint 6 was cancelled the same day (the roadmap ends at Sprint 5). Since then,
+post-MVP work (2026-07-08) has re-optimized the platform for the Express
+Underwriting experience: two underwriting modes, a two-stage background
+pipeline, a lazy AI memo, and hybrid GPT-Vision extraction — all detailed
+below. All work is committed on `main`.
+
+### Underwriting modes (current)
+
+- **⚡ Express (default, `UNDERWRITING_MODE=express`)** — a meaningful
+  assessment in seconds. Only the LATEST audited statement is read (its
+  comparative column still trends ≥2 years); previous years optional. Immediate
+  deterministic Financial Intelligence + Underwriting Capacity headline; the AI
+  memo is generated lazily on first officer open.
+- **📊 Comprehensive (`UNDERWRITING_MODE=comprehensive`)** — production-grade.
+  All uploaded fiscal years read for full historical trend analysis; complete
+  deterministic extraction; the AI memo generated eagerly in the background.
+  May take significantly longer.
 
 ### Post-MVP — Hybrid GPT-Vision Extraction (2026-07-08)
 
@@ -376,11 +400,33 @@ sprints (auth hardening → backlog).
 
 ## Next
 
-Nothing scheduled — Sprint 6 (Guarantee Registry & Audit Reporting) was
-cancelled by user decision (2026-07-07). If work resumes, the candidates
-are the auth-hardening backlog in `TODO.md` and the register in
-`TECH_DEBT.md` (notably: committed E2E suite, CI, object storage before any
-cloud deployment).
+No feature sprint scheduled — Sprint 6 was cancelled (2026-07-07) and the
+post-MVP speed/experience work (2026-07-08) is complete. Candidate work if it
+resumes:
+
+- **Future — Deep Extraction:** production-grade document AI for scanned
+  Arabic statements (the current OCR fallback is unreliable on dense
+  Arabic-Indic numeric tables — those figures are gated out, not trusted).
+  This is the extraction lever beyond hybrid GPT-Vision.
+- **Future integrations (architecture-ready only):** Saudi Open Banking
+  (`ExposureProvider`), SIMAH (`CreditBureauProvider`), Core Banking.
+- **Hardening backlog** (`TODO.md` + `TECH_DEBT.md`): committed E2E suite, CI,
+  auth hardening, a real queue/visibility-timeout if volume outgrows the
+  `after()`-only processing model.
+
+## Known limitations
+
+- **AI memo latency is a real external cost (~6–7s, tail higher)** — which is
+  exactly why it is Stage 2 / lazy and never on the contractor's path.
+- **Vision-extracted figures are flagged for officer verification**, not
+  auto-trusted; scanned Arabic numeric OCR is gated out entirely
+  (`UNVERIFIED_OCR_VALUES`).
+- **Express mode trades breadth for speed:** it reads only the latest
+  statement, so deep multi-year history needs Comprehensive mode.
+- **Processing has no scheduled backstop** (Hobby-plan deliberate): a lost
+  trigger self-heals on the next poll; a mid-run crash needs a one-click retry
+  (TECH_DEBT #23).
+- Full ledger of intentional shortcuts + risks: `TECH_DEBT.md`.
 
 ---
 
