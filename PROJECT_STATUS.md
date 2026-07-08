@@ -61,6 +61,41 @@ package in <10s**. No schema migration. See `docs/ASYNC_PROCESSING.md`.
 - Verified: 102/102 tests (new `headline.test.ts`, `deriveProgress` suite),
   typecheck + lint + production build clean; seed exercised full two-stage flow.
 
+### Post-MVP — Remote-DB critical-path collapse + Express/Comprehensive modes (2026-07-08)
+
+Philosophy: Daman is an AI underwriting platform, not an OCR engine — optimize
+for a believable assessment in seconds. **Measurement first** (`scripts/measure-latency.mts`,
+`scripts/drive-processing.mts`): with the demo DB on **remote Neon (us-east-1,
+~175ms/round-trip)**, the deterministic engine is ~1ms and digital extraction
+~40–90ms, but Stage 1 was spending **~69% on serialized DB round-trips**, ~20% on
+the R2 read, and a **~2.5s cold-connect** on the first request. Parsing was ~1.6%
+— never the bottleneck. Fix = collapse the round-trip *count* + warm the pool.
+
+- **Pool warming (`src/instrumentation.ts` + `lib/prisma.ts`):** `register()`
+  pre-opens **5** connections at boot; the pg pool now keeps them warm
+  (`keepAlive`, `idleTimeoutMillis: 0`, `max: 10`). Kills the ~2.5s cold-connect
+  from the judge's first request.
+- **Stage-1 critical path collapsed ~10 → ~4 serial round-trips:** the contract
+  fetch + the `status=PROCESSING` write now run **concurrently** with the ~1s
+  document pipeline; the extraction-cache check is folded into the document query
+  (`include: { extraction: true }` — no extra round-trip); DocumentExtraction
+  persistence, document-status writes, and every audit are **deferred off the
+  path** (collected in `pipeline.deferred`, settled with `Promise.allSettled`
+  before the job is marked COMPLETED — nothing is lost).
+- **Two modes (`UNDERWRITING_MODE`, default `express`):** express reads only the
+  LATEST audited statement (its comparative column still trends ≥2 years) and
+  generates the AI memo **lazily** on first officer open; comprehensive reads all
+  years and generates the memo eagerly in the background. Deterministic engines
+  are **untouched** — only document scope + memo timing change.
+- **429 robustness:** vision extraction (on the critical path) gets a dedicated
+  `VISION_TIMEOUT_MS` (12s) so a throttled key fails fast to OCR instead of
+  stalling Stage 1; the memo is background/best-effort with retries.
+- **Measured (real Neon + R2, warm pool), fresh digital upload — the judge
+  scenario:** Stage 1 **~2.4s ✅** (target ≤3s), full pipeline **~3.0s ✅**
+  (target ≤10s). Before this change (warm, remote DB): Stage 1 ~3.0s, pipeline
+  ~5.2s + a ~2.5s cold-connect. Verified: 107/107 tests, typecheck + lint +
+  build clean. New env: `UNDERWRITING_MODE`, `VISION_TIMEOUT_MS`.
+
 ### Post-MVP — Lazy AI Memo (contractor never waits for GPT) (2026-07-08)
 
 AI underwriting memo generation was removed from the blocking processing path

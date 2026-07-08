@@ -181,7 +181,8 @@ export async function extractViaVision(
         images,
         maxOutputTokens: 1_500,
         temperature: 0,
-        timeoutMs: env.LLM_TIMEOUT_MS,
+        // Critical-path timeout: fail fast to OCR rather than stall Stage 1.
+        timeoutMs: env.VISION_TIMEOUT_MS,
       }),
     );
 

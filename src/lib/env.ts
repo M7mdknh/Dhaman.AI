@@ -57,6 +57,19 @@ const envSchema = z.object({
   // Force a provider regardless of key presence ("mock" | "openai").
   LLM_PROVIDER: z.enum(["openai", "mock"]).optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
+  // Vision extraction sits ON the Stage-1 critical path (a scanned statement
+  // must be read before the engine runs), so it gets a TIGHTER timeout than the
+  // background memo: a throttled/slow key fails fast to the OCR fallback instead
+  // of stalling the "results in seconds" moment.
+  VISION_TIMEOUT_MS: z.coerce.number().int().positive().default(12_000),
+
+  // ---- Underwriting mode. EXPRESS (default) optimizes for the fastest
+  // believable assessment: only the LATEST audited statement is required and
+  // the AI memo is generated lazily (on first officer open), never on the
+  // contractor's critical path. COMPREHENSIVE uses all uploaded years and
+  // generates the memo eagerly in the background. The deterministic engines are
+  // identical in both modes — only document scope and memo timing change.
+  UNDERWRITING_MODE: z.enum(["express", "comprehensive"]).default("express"),
 
   // ---- OCR (tesseract.js). The WASM core resolves from node_modules; only
   // the language traineddata is fetched, and by default from a public CDN.
@@ -105,6 +118,8 @@ export const env = envSchema.parse({
   OPENAI_MODEL: process.env.OPENAI_MODEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
   LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
+  VISION_TIMEOUT_MS: process.env.VISION_TIMEOUT_MS,
+  UNDERWRITING_MODE: process.env.UNDERWRITING_MODE,
   TESSERACT_LANG_PATH: process.env.TESSERACT_LANG_PATH,
   TESSERACT_CORE_PATH: process.env.TESSERACT_CORE_PATH,
   TESSERACT_CACHE_PATH: process.env.TESSERACT_CACHE_PATH,

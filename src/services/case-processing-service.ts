@@ -17,6 +17,7 @@
  * the case actions and the poll route). `runCaseProcessing` is idempotent and
  * self-claiming, so a duplicate trigger is a no-op rather than a double run.
  */
+import { env } from "@/lib/env";
 import { deriveHeadline, type UnderwritingHeadline } from "@/lib/finance/headline";
 import { formatPerfReport, formatStageTargets, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
@@ -78,10 +79,20 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
   });
   if (claim.count === 0) return; // already running, completed, or no job
 
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
-    data: { status: "PROCESSING" },
-  });
+  // Kick off the two writes/reads that DON'T depend on extraction so they run
+  // CONCURRENTLY with the ~1s document pipeline instead of adding ~350ms of
+  // serial remote round-trips ahead of it:
+  //   • flip the case to PROCESSING (observational; drives the case list)
+  //   • fetch the contract (needed by the engine, not by extraction)
+  // Both are awaited later, by which point they have long since resolved.
+  const statusPromise = prisma.underwritingCase
+    .update({ where: { id: caseId }, data: { status: "PROCESSING" } })
+    .then(() => {}, () => {});
+  const contractPromise = prisma.contractDetails.findUnique({ where: { caseId } });
+
+  // Non-critical writes moved off the Stage-1 critical path, settled before the
+  // job is marked COMPLETED (so nothing is lost) but never gating readiness.
+  const deferred: Promise<unknown>[] = [];
 
   // Advance the persisted stage monotonically: the extraction pipeline reports
   // Reading/Detecting/Extracting repeatedly across documents, so we never let
@@ -102,11 +113,15 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
   // we fold them in and add financial analysis + AI underwriting.
   const timer = new StageTimer();
 
+  const mode = env.UNDERWRITING_MODE;
   try {
     // --- Stages 1–3: read → detect → extract (the IFRS pipeline reports each).
-    const pipeline = await processCaseDocuments(caseId, /* system run */ null, advanceTo);
+    // Its non-critical writes come back in `pipeline.deferred` — settled later.
+    const pipeline = await processCaseDocuments(caseId, /* system run */ null, advanceTo, mode);
     timer.absorb(pipeline.perf);
+    deferred.push(...pipeline.deferred);
     if (!pipeline.ok) {
+      await statusPromise; // ensure PROCESSING landed before PROCESSING_FAILED
       const reason =
         pipeline.failures.map((f) => `${f.fileName}: ${f.message}`).join(" ") ||
         "No usable financial figures could be extracted from the uploaded statements.";
@@ -115,16 +130,18 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     }
 
     // ---- STAGE 1 (Fast Financial Intelligence): the deterministic engine.
-    // Runs on the statements the pipeline just returned (no re-read) plus a
-    // light contract fetch — keeping DB round-trips off the ≤3s critical path.
+    // Runs on the statements the pipeline just returned (no re-read) and the
+    // contract fetched CONCURRENTLY above — the engine itself is ~1ms, so this
+    // stage adds no round-trip to the critical path.
     await advanceTo("FINANCIAL_ANALYSIS");
     const report = await timer.time(STAGE.FINANCIAL_ANALYSIS, async () => {
-      const contract = await prisma.contractDetails.findUnique({ where: { caseId } });
+      const contract = await contractPromise;
       return contract && pipeline.statements.length > 0
         ? buildFinancialIntelligence(pipeline.statements, contract)
         : null;
     });
     if (!report) {
+      await statusPromise;
       await failJob(
         caseId,
         "FINANCIAL_ANALYSIS",
@@ -138,30 +155,45 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     // case to ANALYSIS_READY immediately so the dashboard shows results while the
     // job keeps RUNNING for Stage 2. This is the "feels done in <3s" moment.
     const stage1Ms = timer.report().wallMs;
+    await statusPromise; // PROCESSING must be committed before ANALYSIS_READY
     await prisma.underwritingCase.update({
       where: { id: caseId },
       data: { status: "ANALYSIS_READY" },
     });
     await advanceTo("AI_UNDERWRITING");
-    await recordAudit({
-      action: "case.analysis_ready",
-      caseId,
-      detail: { stage1Ms, years: pipeline.years, band: report.risk.band },
-    });
-
-    // ---- STAGE 2 (Deep Financial Intelligence): the AI underwriting memo, in
-    // the BACKGROUND. Best-effort — a slow/failed LLM never un-readies the case
-    // (the contractor already has results and never waits for GPT).
-    const decision = await timer.time(STAGE.AI_UNDERWRITING, () =>
-      runDecisionIntelligence(caseId, null),
-    );
-    if (!decision.ok) {
-      await recordAudit({
-        action: "case.decision_deferred",
+    deferred.push(
+      recordAudit({
+        action: "case.analysis_ready",
         caseId,
-        detail: { stage: "AI_UNDERWRITING", reason: decision.error },
-      });
+        detail: { mode, stage1Ms, years: pipeline.years, band: report.risk.band },
+      }),
+    );
+
+    // ---- STAGE 2 (Deep Financial Intelligence): the AI underwriting memo.
+    // EXPRESS mode generates it LAZILY (on first officer open — the review page
+    // triggers it) so it never touches the contractor's path. COMPREHENSIVE
+    // generates it eagerly here, in the background. Either way it is best-effort
+    // and never un-readies the case.
+    let memoGenerated = false;
+    if (mode === "comprehensive") {
+      const decision = await timer.time(STAGE.AI_UNDERWRITING, () =>
+        runDecisionIntelligence(caseId, null),
+      );
+      memoGenerated = decision.ok;
+      if (!decision.ok) {
+        deferred.push(
+          recordAudit({
+            action: "case.decision_deferred",
+            caseId,
+            detail: { stage: "AI_UNDERWRITING", reason: decision.error },
+          }),
+        );
+      }
     }
+
+    // ---- Settle the deferred (off-critical-path) writes before closing the job
+    // so extraction rows, document status, and audits are durable when COMPLETED.
+    await Promise.allSettled(deferred);
 
     // ---- Whole pipeline done.
     await prisma.caseProcessing.update({
@@ -170,17 +202,19 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     });
 
     const perf = timer.report();
-    console.log("[case-processing]", formatPerfReport(perf, `case ${caseId}`));
+    console.log("[case-processing]", formatPerfReport(perf, `case ${caseId} (${mode})`));
     console.log("[case-processing]", formatStageTargets(stage1Ms, perf.wallMs));
     await recordAudit({
       action: "case.processing_completed",
       caseId,
       detail: {
+        mode,
         years: pipeline.years,
         warnings: pipeline.warnings.length,
         stage1Ms,
         totalMs: perf.wallMs,
-        memoGenerated: decision.ok,
+        memoGenerated,
+        memoDeferred: mode === "express",
       },
     });
   } catch (error) {

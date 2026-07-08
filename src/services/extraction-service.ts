@@ -14,6 +14,7 @@
  */
 import { createHash } from "node:crypto";
 
+import { env } from "@/lib/env";
 import { extractIfrs, type IfrsExtraction } from "@/lib/ifrs/extract";
 import {
   coreFigureCoverage,
@@ -30,12 +31,22 @@ import { recordAudit } from "@/services/audit-service";
 import { extractViaVision } from "@/services/extraction/vision-extractor";
 
 import type { ExtractedLineItem, ValidationIssue, ValidationOutcome } from "@/lib/ifrs/types";
-import type { Document, FinancialStatement, Prisma } from "@/generated/prisma/client";
+import type {
+  Document,
+  DocumentExtraction,
+  FinancialStatement,
+  Prisma,
+} from "@/generated/prisma/client";
 import type { ProcessingStage } from "@/generated/prisma/enums";
 
 /** Documents processed concurrently. A case has ≤3 statements; OCR contention
  * is bounded independently by the OCR worker pool (env.OCR_CONCURRENCY). */
 const DOCUMENT_CONCURRENCY = 3;
+
+/** A document with its (optionally pre-loaded) latest extraction row. Loading
+ * the extraction alongside the document in ONE query removes a per-document
+ * round-trip from the ~175ms-each remote-DB critical path (the cache check). */
+type DocumentWithExtraction = Document & { extraction: DocumentExtraction | null };
 
 /** Core figures (of 8) the fast text pass must yield to be trusted as-is;
  * below this the document is treated as scanned/damaged → GPT-Vision. */
@@ -66,6 +77,11 @@ export interface PipelineOutcome {
   warnings: ValidationIssue[];
   /** Aggregate stage timing across all documents (for the performance report). */
   perf: PerfReport;
+  /** Non-critical persistence (per-document extraction rows, doc status, the
+   * extraction audit) that was moved OFF the Stage-1 critical path. The caller
+   * awaits these before closing the job, so nothing is lost — but the "results
+   * in seconds" flip never waits on them. */
+  deferred: Promise<unknown>[];
 }
 
 /**
@@ -138,24 +154,45 @@ function describeCause(cause: unknown): string {
   return String(cause);
 }
 
-/** Runs extraction for every financial statement on the case, concurrently. */
+/**
+ * Runs extraction for the case's financial statements, concurrently.
+ *
+ * `mode` controls document SCOPE only (the engines are identical either way):
+ *  - "express" (default): only the LATEST audited statement is read. It usually
+ *    carries a comparative column, so the engine still sees ≥2 years — but the
+ *    critical path never waits on older uploads. Fastest believable assessment.
+ *  - "comprehensive": every uploaded statement is read for full history.
+ *
+ * Non-critical writes (per-document extraction rows, document status, the audit)
+ * are collected into `deferred` and returned unawaited — the caller flips the
+ * case to ANALYSIS_READY first, then settles them before closing the job.
+ */
 export async function processCaseDocuments(
   caseId: string,
   actorId: string | null,
   onStage?: StageReporter,
+  mode: "express" | "comprehensive" = env.UNDERWRITING_MODE,
 ): Promise<PipelineOutcome> {
-  const documents = await prisma.document.findMany({
+  const all = await prisma.document.findMany({
     where: { caseId, docType: "FINANCIAL_STATEMENT" },
     orderBy: { fiscalYear: "desc" },
+    // Load the latest extraction alongside each document so the cache check
+    // costs no extra round-trip.
+    include: { extraction: true },
   });
+  // Express: read only the newest statement (fiscalYear desc → index 0). It
+  // typically includes a prior-year comparative, so the engine still trends.
+  const documents = mode === "express" && all.length > 0 ? all.slice(0, 1) : all;
 
   // A case-level timer aggregates every document's stage breakdown into one
   // performance report (requirement: measure every stage). `record`/`absorb`
   // are synchronous, so interleaving from concurrent documents is safe.
   const timer = new StageTimer();
+  // Deferred (off-critical-path) writes, awaited by the caller before COMPLETED.
+  const deferred: Promise<unknown>[] = [];
 
   const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, (document) =>
-    processDocument(document, timer, onStage),
+    processDocument(document, timer, deferred, onStage),
   );
 
   // Release the shared OCR workers; a failure here must not fail the pipeline.
@@ -181,20 +218,32 @@ export async function processCaseDocuments(
   const perf = timer.report();
   console.log("[ifrs-extraction]", formatPerfReport(perf, `case ${caseId} extraction`));
 
-  await recordAudit({
-    action: failures.length ? "case.extraction_failed" : "case.extraction_completed",
-    actorId,
-    caseId,
-    detail: {
-      documents: documents.length,
-      years,
-      failures: failures.map((f) => ({ fileName: f.fileName, message: f.message })),
-      warnings: warnings.length,
-      perfMs: perf.wallMs,
-    },
-  });
+  // The extraction audit is provenance, not correctness — defer it off the path.
+  deferred.push(
+    recordAudit({
+      action: failures.length ? "case.extraction_failed" : "case.extraction_completed",
+      actorId,
+      caseId,
+      detail: {
+        mode,
+        documents: documents.length,
+        years,
+        failures: failures.map((f) => ({ fileName: f.fileName, message: f.message })),
+        warnings: warnings.length,
+        perfMs: perf.wallMs,
+      },
+    }),
+  );
 
-  return { ok: failures.length === 0 && years.length > 0, years, statements, failures, warnings, perf };
+  return {
+    ok: failures.length === 0 && years.length > 0,
+    years,
+    statements,
+    failures,
+    warnings,
+    perf,
+    deferred,
+  };
 }
 
 /**
@@ -204,8 +253,9 @@ export async function processCaseDocuments(
  * captured as a DocumentResult so one bad file cannot abort the whole map.
  */
 async function processDocument(
-  document: Document,
+  document: DocumentWithExtraction,
   timer: StageTimer,
+  deferred: Promise<unknown>[],
   onStage?: StageReporter,
 ): Promise<DocumentResult> {
   const startedAt = new Date();
@@ -218,7 +268,9 @@ async function processDocument(
     logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
 
     // Cache: identical bytes that already completed successfully need no rework.
-    const cached = await reuseCachedExtraction(document, sha256);
+    // The extraction row was loaded with the document, so this is a no-round-trip
+    // check.
+    const cached = reuseCachedExtraction(document, sha256);
     if (cached) {
       await onStage?.("EXTRACTING_DATA");
       logStage("cache_hit", document.id, startedAt, { years: [...cached.figures.keys()] });
@@ -255,11 +307,18 @@ async function processDocument(
       warnings: extraction.validation.warnings.length,
     });
 
-    await persistExtraction(document.id, startedAt, extraction, null);
-    await prisma.document.update({
-      where: { id: document.id },
-      data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
-    });
+    // Persist the extraction row + document status OFF the critical path. The
+    // figures the pipeline needs are already in memory; these writes are
+    // provenance + cache-for-retry, so the caller settles them before closing
+    // the job rather than making the ANALYSIS_READY flip wait ~2 round-trips.
+    deferred.push(
+      persistExtraction(document.id, startedAt, extraction, null).then(() =>
+        prisma.document.update({
+          where: { id: document.id },
+          data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
+        }),
+      ),
+    );
 
     if (blocking.length > 0) {
       logStage("failed_validation", document.id, startedAt, { errors: blocking.map((e) => e.code) });
@@ -331,12 +390,12 @@ async function processDocument(
  * line items — no PDF read, no OCR. Returns null when there is nothing safe to
  * reuse (changed bytes, prior failure, or missing/legacy row).
  */
-async function reuseCachedExtraction(
-  document: Document,
+function reuseCachedExtraction(
+  document: DocumentWithExtraction,
   sha256: string,
-): Promise<CompletedExtraction | null> {
+): CompletedExtraction | null {
   if (document.processingStatus !== "COMPLETED" || document.sha256 !== sha256) return null;
-  const row = await prisma.documentExtraction.findUnique({ where: { documentId: document.id } });
+  const row = document.extraction;
   if (!row || row.error) return null;
   const raw = row.raw as { lineItems?: ExtractedLineItem[] } | null;
   if (!raw?.lineItems) return null;
