@@ -9,29 +9,52 @@
 import type { ProcessingStage, ProcessingState } from "@/generated/prisma/enums";
 
 /**
- * The blocking pipeline stages, in execution order. Processing COMPLETES at
- * FINANCIAL_ANALYSIS: the deterministic Financial Intelligence Engine is
- * sufficient to make a case reviewable, so the contractor never waits on the
- * LLM. The AI underwriting memo is generated lazily instead (when a Risk
- * Officer opens the case, or on explicit request) and is therefore NOT a
- * processing stage — see docs/ASYNC_PROCESSING.md. `AI_UNDERWRITING` remains a
- * valid enum value (kept for STAGE_LABELS and historical job rows) but is no
- * longer part of the gating sequence.
+ * The pipeline runs in TWO stages (see docs/ASYNC_PROCESSING.md):
+ *
+ *  - STAGE 1 — Fast Financial Intelligence (target ≤3s): read → detect →
+ *    extract → deterministic financial analysis. The case flips to
+ *    ANALYSIS_READY here and the underwriting HEADLINE is shown — the user
+ *    already feels the analysis is complete.
+ *  - STAGE 2 — Deep Financial Intelligence (background, target: whole pipeline
+ *    ≤10s): the AI underwriting memo. It never gates readiness; the dashboard
+ *    keeps updating while it runs.
  */
-export const PROCESSING_STAGES: ProcessingStage[] = [
+export const STAGE1_STAGES: ProcessingStage[] = [
   "READING_STATEMENTS",
   "DETECTING_STATEMENTS",
   "EXTRACTING_DATA",
   "FINANCIAL_ANALYSIS",
 ];
+export const STAGE2_STAGES: ProcessingStage[] = ["AI_UNDERWRITING"];
+
+/** All stages, in execution order. */
+export const PROCESSING_STAGES: ProcessingStage[] = [...STAGE1_STAGES, ...STAGE2_STAGES];
+
+/** The last Stage-1 stage — its completion means the headline is ready. */
+export const STAGE1_LAST: ProcessingStage = "FINANCIAL_ANALYSIS";
 
 export const STAGE_LABELS: Record<ProcessingStage, string> = {
   READING_STATEMENTS: "Reading Financial Statements",
   DETECTING_STATEMENTS: "Detecting Financial Statements",
   EXTRACTING_DATA: "Extracting Financial Data",
   FINANCIAL_ANALYSIS: "Financial Analysis",
-  AI_UNDERWRITING: "AI Underwriting",
+  AI_UNDERWRITING: "AI Underwriting Memo",
 };
+
+/**
+ * Nominal per-stage durations (ms) used ONLY to render a smooth progress bar
+ * and a rough "estimated remaining" — not a promise. Stage 2 (the LLM) is by
+ * far the longest, which is exactly why it runs after the user already has
+ * results.
+ */
+const STAGE_WEIGHTS: Record<ProcessingStage, number> = {
+  READING_STATEMENTS: 600,
+  DETECTING_STATEMENTS: 300,
+  EXTRACTING_DATA: 900,
+  FINANCIAL_ANALYSIS: 500,
+  AI_UNDERWRITING: 6500,
+};
+const TOTAL_WEIGHT = PROCESSING_STAGES.reduce((sum, s) => sum + STAGE_WEIGHTS[s], 0);
 
 /** Visual state of a single row in the processing dashboard. */
 export type StepState = "complete" | "active" | "pending" | "failed";
@@ -60,6 +83,59 @@ export interface ProcessingSnapshot {
 /** True while the job still needs watching (poller keeps polling). */
 export function isProcessingActive(state: ProcessingState): boolean {
   return state === "QUEUED" || state === "RUNNING";
+}
+
+/** Live progress readout for the "Preparing your underwriting package" UI. */
+export interface ProcessingProgress {
+  /** Overall completion, 0-100. */
+  overallPct: number;
+  /** Nominal remaining time (ms) — a smooth estimate, not a guarantee. */
+  estRemainingMs: number;
+  currentStepLabel: string | null;
+  completedStepLabels: string[];
+  /** Stage 1 finished → the deterministic headline is available. */
+  stage1Complete: boolean;
+}
+
+/**
+ * Derives the progress bar / ETA from a job snapshot (pure — safe on the
+ * client). The active stage counts as half-done so the bar always advances.
+ */
+export function deriveProgress(job: ProcessingSnapshot): ProcessingProgress {
+  const isDone = job.state === "COMPLETED";
+  const stageIndex = job.stage ? PROCESSING_STAGES.indexOf(job.stage) : -1;
+
+  let doneWeight = 0;
+  const completedStepLabels: string[] = [];
+  PROCESSING_STAGES.forEach((stage, i) => {
+    const before = stageIndex >= 0 && i < stageIndex;
+    if (isDone || before) {
+      doneWeight += STAGE_WEIGHTS[stage];
+      completedStepLabels.push(STAGE_LABELS[stage]);
+    } else if (i === stageIndex && job.state === "RUNNING") {
+      doneWeight += STAGE_WEIGHTS[stage] / 2; // active stage is half-credited
+    }
+  });
+
+  const overallPct = isDone ? 100 : Math.round((doneWeight / TOTAL_WEIGHT) * 100);
+  const currentStepLabel = isDone
+    ? null
+    : job.state === "QUEUED"
+      ? "Queued"
+      : stageIndex >= 0
+        ? STAGE_LABELS[PROCESSING_STAGES[stageIndex]]
+        : STAGE_LABELS[PROCESSING_STAGES[0]];
+
+  const stage1Complete =
+    isDone || (stageIndex >= 0 && stageIndex > PROCESSING_STAGES.indexOf(STAGE1_LAST));
+
+  return {
+    overallPct,
+    estRemainingMs: isDone ? 0 : Math.max(0, Math.round(TOTAL_WEIGHT - doneWeight)),
+    currentStepLabel,
+    completedStepLabels,
+    stage1Complete,
+  };
 }
 
 /**

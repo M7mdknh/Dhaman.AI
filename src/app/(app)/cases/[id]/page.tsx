@@ -22,10 +22,13 @@ import {
   toDocumentView,
   toStatementFigures,
 } from "@/lib/case-view";
+import { deriveHeadline } from "@/lib/finance/headline";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { isProcessingActive } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
 import { toProcessingSnapshot } from "@/services/case-processing-service";
+import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
 
@@ -100,9 +103,22 @@ export default async function CaseDetailsPage({
   if (!underwritingCase) notFound();
 
   const isDraft = underwritingCase.status === "DRAFT";
-  const isProcessing =
-    underwritingCase.status === "PROCESSING" ||
-    underwritingCase.status === "PROCESSING_FAILED";
+  // Show the live dashboard while the JOB is active — this now spans Stage 2
+  // (the background AI memo) even after the case has flipped to ANALYSIS_READY
+  // at the end of Stage 1, so the two-stage progress stays visible.
+  const snapshot = underwritingCase.processing
+    ? toProcessingSnapshot(underwritingCase.processing)
+    : null;
+  const showDashboard =
+    !!snapshot &&
+    (isProcessingActive(snapshot.state) ||
+      snapshot.stalled ||
+      underwritingCase.status === "PROCESSING_FAILED");
+  const headlineReport = buildFinancialIntelligence(
+    underwritingCase.financialStatements,
+    underwritingCase.contractDetails,
+  );
+  const headline = headlineReport ? deriveHeadline(headlineReport) : null;
   const contract = underwritingCase.contractDetails
     ? toContractInput(underwritingCase.contractDetails)
     : null;
@@ -163,11 +179,8 @@ export default async function CaseDetailsPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          {isProcessing && underwritingCase.processing && (
-            <ProcessingDashboard
-              caseId={id}
-              initial={toProcessingSnapshot(underwritingCase.processing)}
-            />
+          {showDashboard && snapshot && (
+            <ProcessingDashboard caseId={id} initial={{ ...snapshot, headline }} />
           )}
 
           <Card>

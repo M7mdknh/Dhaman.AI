@@ -17,10 +17,12 @@
  * the case actions and the poll route). `runCaseProcessing` is idempotent and
  * self-claiming, so a duplicate trigger is a no-op rather than a double run.
  */
-import { formatPerfReport, StageTimer, STAGE } from "@/lib/ifrs/perf";
+import { deriveHeadline, type UnderwritingHeadline } from "@/lib/finance/headline";
+import { formatPerfReport, formatStageTargets, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
 import { PROCESSING_STAGES, type ProcessingSnapshot } from "@/lib/processing";
 import { recordAudit } from "@/services/audit-service";
+import { runDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { processCaseDocuments } from "@/services/extraction-service";
 import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
@@ -83,13 +85,16 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
 
   // Advance the persisted stage monotonically: the extraction pipeline reports
   // Reading/Detecting/Extracting repeatedly across documents, so we never let
-  // the dashboard move backwards.
+  // the dashboard move backwards. The write is FIRE-AND-FORGET: stage progress
+  // is observational (it drives the live dashboard), not correctness, so a
+  // progress round-trip must never sit on the ≤3s Stage-1 critical path. The
+  // dashboard poll simply reads whatever stage has committed.
   let stageIndex = -1;
   const advanceTo = async (stage: ProcessingStage) => {
     const next = PROCESSING_STAGES.indexOf(stage);
     if (next <= stageIndex) return;
     stageIndex = next;
-    await prisma.caseProcessing.update({ where: { caseId }, data: { stage } });
+    void prisma.caseProcessing.update({ where: { caseId }, data: { stage } }).catch(() => {});
   };
 
   // End-to-end timer for the whole-case performance report (every stage:
@@ -109,15 +114,14 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
       return;
     }
 
-    // --- Stage 4: financial analysis (deterministic engine, computed on demand).
+    // ---- STAGE 1 (Fast Financial Intelligence): the deterministic engine.
+    // Runs on the statements the pipeline just returned (no re-read) plus a
+    // light contract fetch — keeping DB round-trips off the ≤3s critical path.
     await advanceTo("FINANCIAL_ANALYSIS");
     const report = await timer.time(STAGE.FINANCIAL_ANALYSIS, async () => {
-      const analysisCase = await prisma.underwritingCase.findUnique({
-        where: { id: caseId },
-        include: { contractDetails: true, financialStatements: { orderBy: { fiscalYear: "desc" } } },
-      });
-      return analysisCase?.contractDetails && analysisCase.financialStatements.length > 0
-        ? buildFinancialIntelligence(analysisCase.financialStatements, analysisCase.contractDetails)
+      const contract = await prisma.contractDetails.findUnique({ where: { caseId } });
+      return contract && pipeline.statements.length > 0
+        ? buildFinancialIntelligence(pipeline.statements, contract)
         : null;
     });
     if (!report) {
@@ -129,27 +133,55 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
       return;
     }
 
-    // --- Done: the deterministic Financial Intelligence Engine is sufficient to
-    // make the case reviewable, so processing COMPLETES here. The AI underwriting
-    // memo is deliberately NOT generated in this path — it would add ~6-7s of LLM
-    // latency to every submission for a best-effort artifact the contractor never
-    // sees. It is generated lazily instead: when a Risk Officer opens the case,
-    // or on explicit "Generate AI Analysis". The contractor never waits for GPT.
-    await prisma.$transaction([
-      prisma.caseProcessing.update({
-        where: { caseId },
-        data: { state: "COMPLETED", stage: "FINANCIAL_ANALYSIS", completedAt: new Date(), error: null, failedStage: null },
-      }),
-      prisma.underwritingCase.update({ where: { id: caseId }, data: { status: "ANALYSIS_READY" } }),
-    ]);
+    // STAGE 1 COMPLETE — the case is REVIEWABLE NOW and the underwriting headline
+    // (capacity, rating, health, risk, recommendation) is available. Flip the
+    // case to ANALYSIS_READY immediately so the dashboard shows results while the
+    // job keeps RUNNING for Stage 2. This is the "feels done in <3s" moment.
+    const stage1Ms = timer.report().wallMs;
+    await prisma.underwritingCase.update({
+      where: { id: caseId },
+      data: { status: "ANALYSIS_READY" },
+    });
+    await advanceTo("AI_UNDERWRITING");
+    await recordAudit({
+      action: "case.analysis_ready",
+      caseId,
+      detail: { stage1Ms, years: pipeline.years, band: report.risk.band },
+    });
 
-    // Whole-case performance report: duration + share + recommendation per stage.
+    // ---- STAGE 2 (Deep Financial Intelligence): the AI underwriting memo, in
+    // the BACKGROUND. Best-effort — a slow/failed LLM never un-readies the case
+    // (the contractor already has results and never waits for GPT).
+    const decision = await timer.time(STAGE.AI_UNDERWRITING, () =>
+      runDecisionIntelligence(caseId, null),
+    );
+    if (!decision.ok) {
+      await recordAudit({
+        action: "case.decision_deferred",
+        caseId,
+        detail: { stage: "AI_UNDERWRITING", reason: decision.error },
+      });
+    }
+
+    // ---- Whole pipeline done.
+    await prisma.caseProcessing.update({
+      where: { caseId },
+      data: { state: "COMPLETED", stage: "AI_UNDERWRITING", completedAt: new Date(), error: null, failedStage: null },
+    });
+
     const perf = timer.report();
     console.log("[case-processing]", formatPerfReport(perf, `case ${caseId}`));
+    console.log("[case-processing]", formatStageTargets(stage1Ms, perf.wallMs));
     await recordAudit({
       action: "case.processing_completed",
       caseId,
-      detail: { years: pipeline.years, warnings: pipeline.warnings.length, perfMs: perf.wallMs },
+      detail: {
+        years: pipeline.years,
+        warnings: pipeline.warnings.length,
+        stage1Ms,
+        totalMs: perf.wallMs,
+        memoGenerated: decision.ok,
+      },
     });
   } catch (error) {
     // Any unexpected fault leaves the case saved and the job retryable.
@@ -269,4 +301,48 @@ export async function getProcessingForOwner(
     where: { caseId, case: { companyId } },
   });
   return job ? toProcessingSnapshot(job) : null;
+}
+
+/** The poll payload: the job snapshot plus the Stage-1 underwriting headline
+ * (present the instant deterministic analysis exists — before the AI memo). */
+export interface ProcessingView {
+  snapshot: ProcessingSnapshot & { stalled: boolean };
+  headline: UnderwritingHeadline | null;
+}
+
+/**
+ * Ownership-scoped poll read. Returns the job snapshot AND — as soon as the
+ * deterministic statements exist (Stage 1 done) — the underwriting headline, so
+ * the dashboard can show results the moment Stage 1 completes without a full
+ * page reload.
+ */
+export async function getProcessingViewForOwner(
+  userId: string,
+  caseId: string,
+): Promise<ProcessingView | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, companyId: true },
+  });
+  const companyId = user?.role === "CONTRACTOR" ? user.companyId : null;
+  if (!companyId) return null;
+
+  const underwritingCase = await prisma.underwritingCase.findFirst({
+    where: { id: caseId, companyId },
+    include: {
+      processing: true,
+      contractDetails: true,
+      financialStatements: { orderBy: { fiscalYear: "desc" } },
+    },
+  });
+  if (!underwritingCase?.processing) return null;
+
+  const report = buildFinancialIntelligence(
+    underwritingCase.financialStatements,
+    underwritingCase.contractDetails,
+  );
+  return {
+    snapshot: toProcessingSnapshot(underwritingCase.processing),
+    headline: report ? deriveHeadline(report) : null,
+  };
 }

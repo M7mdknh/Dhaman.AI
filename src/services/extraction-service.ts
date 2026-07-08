@@ -29,7 +29,7 @@ import { storage, StorageError } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
 
 import type { ExtractedLineItem, ValidationIssue, ValidationOutcome } from "@/lib/ifrs/types";
-import type { Document, Prisma } from "@/generated/prisma/client";
+import type { Document, FinancialStatement, Prisma } from "@/generated/prisma/client";
 import type { ProcessingStage } from "@/generated/prisma/enums";
 
 /** Documents processed concurrently. A case has ≤3 statements; OCR contention
@@ -54,6 +54,9 @@ export interface PipelineOutcome {
   ok: boolean;
   /** Fiscal years persisted as FinancialStatement rows. */
   years: number[];
+  /** The persisted FinancialStatement rows — returned so the caller can run
+   * financial analysis without a second DB read of what we just wrote. */
+  statements: FinancialStatement[];
   failures: DocumentFailure[];
   warnings: ValidationIssue[];
   /** Aggregate stage timing across all documents (for the performance report). */
@@ -166,7 +169,9 @@ export async function processCaseDocuments(
     }
   }
 
-  const years = failures.length === 0 ? await rebuildFinancialStatements(caseId, completed) : [];
+  const statements =
+    failures.length === 0 ? await rebuildFinancialStatements(caseId, completed) : [];
+  const years = statements.map((s) => s.fiscalYear).sort((a, b) => b - a);
 
   const perf = timer.report();
   console.log("[ifrs-extraction]", formatPerfReport(perf, `case ${caseId} extraction`));
@@ -184,7 +189,7 @@ export async function processCaseDocuments(
     },
   });
 
-  return { ok: failures.length === 0 && years.length > 0, years, failures, warnings, perf };
+  return { ok: failures.length === 0 && years.length > 0, years, statements, failures, warnings, perf };
 }
 
 /**
@@ -386,7 +391,7 @@ async function persistExtraction(
 async function rebuildFinancialStatements(
   caseId: string,
   completed: CompletedExtraction[],
-): Promise<number[]> {
+): Promise<FinancialStatement[]> {
   // Year → source: labeled document first, then newest document that saw it.
   const sources = new Map<number, CompletedExtraction>();
   for (const entry of completed) {
@@ -417,12 +422,13 @@ async function rebuildFinancialStatements(
     };
   });
 
-  await prisma.$transaction([
+  // createManyAndReturn hands the persisted rows straight back, so the caller
+  // runs financial analysis on them without re-reading the case from the DB.
+  const [, created] = await prisma.$transaction([
     prisma.financialStatement.deleteMany({ where: { caseId } }),
-    prisma.financialStatement.createMany({ data: rows }),
+    prisma.financialStatement.createManyAndReturn({ data: rows }),
   ]);
-
-  return [...sources.keys()].sort((a, b) => b - a);
+  return created;
 }
 
 /** Decimal columns accept the normalized decimal strings verbatim. */

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   PROCESSING_STAGES,
   buildProcessingSteps,
+  deriveProgress,
   isProcessingActive,
   type ProcessingSnapshot,
   type StepState,
@@ -33,11 +34,10 @@ describe("buildProcessingSteps", () => {
     expect(steps[0].key).toBe("submitted");
     expect(steps[1].key).toBe("uploaded");
     expect(steps.at(-1)!.key).toBe("completed");
-    // The pipeline stages sit in order between the framing steps (processing
-    // completes at FINANCIAL_ANALYSIS; the AI memo is generated lazily, later).
+    // The pipeline stages sit in order between the framing steps. Two stages:
+    // Stage 1 ends at FINANCIAL_ANALYSIS (headline ready); Stage 2 is the AI memo.
     expect(steps.slice(2, -1).map((s) => s.key)).toEqual(PROCESSING_STAGES);
-    expect(PROCESSING_STAGES.at(-1)).toBe("FINANCIAL_ANALYSIS");
-    expect(PROCESSING_STAGES).not.toContain("AI_UNDERWRITING");
+    expect(PROCESSING_STAGES.at(-1)).toBe("AI_UNDERWRITING");
   });
 
   it("queued: framing complete, every stage pending", () => {
@@ -82,6 +82,36 @@ describe("buildProcessingSteps", () => {
     expect(s.EXTRACTING_DATA).toBe("complete");
     expect(s.FINANCIAL_ANALYSIS).toBe("failed");
     expect(s.completed).toBe("pending");
+  });
+});
+
+describe("deriveProgress", () => {
+  it("queued: 0% and Stage 1 not complete", () => {
+    const p = deriveProgress(snapshot({ state: "QUEUED" }));
+    expect(p.overallPct).toBe(0);
+    expect(p.stage1Complete).toBe(false);
+    expect(p.currentStepLabel).toBe("Queued");
+  });
+
+  it("advances the bar while running and names the current step", () => {
+    const p = deriveProgress(snapshot({ state: "RUNNING", stage: "EXTRACTING_DATA" }));
+    expect(p.overallPct).toBeGreaterThan(0);
+    expect(p.overallPct).toBeLessThan(100);
+    expect(p.currentStepLabel).toBe("Extracting Financial Data");
+    expect(p.stage1Complete).toBe(false);
+    expect(p.completedStepLabels).toContain("Reading Financial Statements");
+  });
+
+  it("flags Stage 1 complete once the AI (Stage 2) stage is active", () => {
+    const p = deriveProgress(snapshot({ state: "RUNNING", stage: "AI_UNDERWRITING" }));
+    expect(p.stage1Complete).toBe(true);
+  });
+
+  it("completed: 100% and no remaining time", () => {
+    const p = deriveProgress(snapshot({ state: "COMPLETED", stage: "AI_UNDERWRITING" }));
+    expect(p.overallPct).toBe(100);
+    expect(p.estRemainingMs).toBe(0);
+    expect(p.stage1Complete).toBe(true);
   });
 });
 

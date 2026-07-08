@@ -2,25 +2,35 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Check, Loader2, RotateCw, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { retryProcessingAction } from "@/app/(app)/cases/actions";
+import { UnderwritingHeadlineCard } from "@/components/cases/underwriting-headline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildProcessingSteps,
+  deriveProgress,
   isProcessingActive,
   type ProcessingSnapshot,
   type ProcessingStep,
 } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 
-type Snapshot = ProcessingSnapshot & { stalled: boolean };
+import type { UnderwritingHeadline } from "@/lib/finance/headline";
 
-/** Poll cadence while the pipeline is live. Cheap read; light on the DB. */
-const POLL_MS = 2500;
+/** The poll payload: the job snapshot + Stage-1 headline once it exists. */
+type Snapshot = ProcessingSnapshot & { stalled: boolean; headline?: UnderwritingHeadline | null };
+
+/**
+ * Poll cadence. Fast while Stage 1 is still running (we want the headline to
+ * appear the instant it is ready), relaxed once results are on screen and only
+ * the background AI memo remains.
+ */
+const POLL_FAST_MS = 900;
+const POLL_SLOW_MS = 2000;
 
 function StepRow({ step }: { step: ProcessingStep }) {
   const icon =
@@ -54,11 +64,16 @@ function StepRow({ step }: { step: ProcessingStep }) {
   );
 }
 
+function formatRemaining(ms: number): string {
+  const s = Math.ceil(ms / 1000);
+  return s <= 1 ? "a moment" : `~${s}s`;
+}
+
 /**
- * Live processing dashboard shown on the case page while the async pipeline
- * runs. Polls the processing endpoint, renders the ordered stage checklist,
- * refreshes the page to reveal the analysis on success, and offers a Retry
- * (no re-upload) on failure.
+ * Live "Preparing your underwriting package" dashboard. Two-stage: the moment
+ * Stage 1 completes it renders the deterministic underwriting headline (the
+ * user feels done), while Stage 2 (the AI memo) keeps running in the background.
+ * Refreshes to the full analysis on completion; offers a Retry on failure.
  */
 export function ProcessingDashboard({
   caseId,
@@ -70,7 +85,6 @@ export function ProcessingDashboard({
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
   const [retrying, setRetrying] = useState(false);
-  // Guards the one-time refresh when the pipeline completes.
   const completedRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
@@ -81,7 +95,7 @@ export function ProcessingDashboard({
       setSnapshot(data);
       if (data.state === "COMPLETED" && !completedRef.current) {
         completedRef.current = true;
-        toast.success("Financial processing complete");
+        toast.success("Underwriting package ready");
         router.refresh();
       }
     } catch {
@@ -90,14 +104,17 @@ export function ProcessingDashboard({
   }, [caseId, router]);
 
   const live = isProcessingActive(snapshot.state) && !snapshot.stalled;
+  const progress = deriveProgress(snapshot);
+  const headline = snapshot.headline ?? null;
+  // Speed up polling until the headline is on screen, then relax.
+  const pollMs = headline ? POLL_SLOW_MS : POLL_FAST_MS;
 
   useEffect(() => {
     if (!live) return;
-    // Poll immediately (catch fast transitions), then on an interval.
     void fetchStatus();
-    const id = setInterval(fetchStatus, POLL_MS);
+    const id = setInterval(fetchStatus, pollMs);
     return () => clearInterval(id);
-  }, [live, fetchStatus]);
+  }, [live, pollMs, fetchStatus]);
 
   async function handleRetry() {
     setRetrying(true);
@@ -122,17 +139,60 @@ export function ProcessingDashboard({
 
   const steps = buildProcessingSteps(snapshot);
   const failed = snapshot.state === "FAILED";
-  const stalled = snapshot.stalled;
+  const showRetry = failed || snapshot.stalled;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">
-          {failed ? "Processing Failed" : stalled ? "Processing Stalled" : "Processing Financial Statements"}
+        <CardTitle className="flex items-center gap-2 text-sm">
+          {failed ? (
+            "We couldn't finish your underwriting package"
+          ) : (
+            <>
+              <Sparkles className="size-4 text-blue-600" aria-hidden />
+              Preparing your underwriting package
+            </>
+          )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {!failed && !stalled && (
+        {/* Headline first: as soon as Stage 1 completes, the verdict is here. */}
+        {headline && (
+          <div className="space-y-2">
+            <UnderwritingHeadlineCard headline={headline} />
+            {!failed && snapshot.state !== "COMPLETED" && (
+              <p className="text-xs text-muted-foreground">
+                Your core underwriting assessment is ready. We are finalising the deep analysis and
+                AI memo in the background — you can leave this page.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Progress: overall %, current step, estimated remaining time. */}
+        {!failed && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium text-foreground">
+                {snapshot.state === "COMPLETED"
+                  ? "Complete"
+                  : (progress.currentStepLabel ?? "Preparing")}
+              </span>
+              <span className="text-muted-foreground tabular-nums">
+                {progress.overallPct}%
+                {snapshot.state !== "COMPLETED" && ` · ${formatRemaining(progress.estRemainingMs)} left`}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-500"
+                style={{ width: `${progress.overallPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {!headline && !failed && (
           <p className="text-sm text-muted-foreground">
             Your case has been submitted and saved. We are analysing the uploaded financial
             statements — this runs in the background, so you can safely leave this page.
@@ -145,22 +205,20 @@ export function ProcessingDashboard({
           ))}
         </ol>
 
-        {(failed || stalled) && (
+        {showRetry && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" aria-hidden />
-            <AlertTitle>{failed ? "We couldn't finish processing" : "Processing looks stuck"}</AlertTitle>
+            <AlertTitle>{failed ? "Processing didn't finish" : "This is taking longer than expected"}</AlertTitle>
             <AlertDescription>
               {failed
-                ? (snapshot.error ??
-                  "An error interrupted processing.")
-                : "This case has been processing longer than expected. You can retry the analysis."}
-              {" "}
+                ? (snapshot.error ?? "An error interrupted processing.")
+                : "We'll keep trying, or you can retry now."}{" "}
               Your case and its documents are saved — retry without re-uploading anything.
             </AlertDescription>
           </Alert>
         )}
 
-        {(failed || stalled) && (
+        {showRetry && (
           <div className="flex items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? (

@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { after } from "next/server";
 
 import { getSession } from "@/lib/auth/session";
-import { getProcessingForOwner, runCaseProcessing } from "@/services/case-processing-service";
+import { getProcessingViewForOwner, runCaseProcessing } from "@/services/case-processing-service";
 
 export async function GET(
   _request: NextRequest,
@@ -23,17 +23,19 @@ export async function GET(
   }
 
   const { caseId } = await params;
-  const snapshot = await getProcessingForOwner(session.userId, caseId);
-  if (!snapshot) {
+  const view = await getProcessingViewForOwner(session.userId, caseId);
+  if (!view) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
-  if (snapshot.state === "QUEUED") {
+  if (view.snapshot.state === "QUEUED") {
     after(() => runCaseProcessing(caseId));
   }
 
-  // Never cache: the dashboard needs the live state on every poll.
-  return NextResponse.json(snapshot, {
-    headers: { "Cache-Control": "no-store" },
-  });
+  // Never cache: the dashboard needs the live state on every poll. The payload
+  // is { ...snapshot, headline } so Stage-1 results render without a reload.
+  return NextResponse.json(
+    { ...view.snapshot, headline: view.headline },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

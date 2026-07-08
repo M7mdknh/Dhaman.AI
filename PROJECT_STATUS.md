@@ -10,6 +10,34 @@ approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
 day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
 committed on `main`.
 
+### Post-MVP — Two-Stage Processing Pipeline (2026-07-08)
+
+Redesigned processing for a hackathon-grade UX: **meaningful results in <3s, full
+package in <10s**. No schema migration. See `docs/ASYNC_PROCESSING.md`.
+
+- **Stage 1 — Fast Financial Intelligence.** Extract (statement-pages only,
+  cached) → deterministic engine → flip case to **ANALYSIS_READY immediately**
+  and surface the underwriting HEADLINE (`lib/finance/headline.ts`
+  `deriveHeadline`): Capacity /100, Rating (AAA…CCC), Financial Health /100,
+  Risk Level, Recommendation. **Stage 2 — Deep (background):** the AI memo, then
+  job COMPLETED; never gates readiness.
+- **Critical-path discipline** (the engine is ~1ms; cost is I/O): pipeline
+  returns the just-written `FinancialStatement` rows (`createManyAndReturn`) so
+  analysis skips a case re-read (that read measured **1.69s** on the dev DB);
+  stage-progress writes (`advanceTo`) are fire-and-forget.
+- **Poll payload** now `{ ...snapshot, headline }` (`getProcessingViewForOwner`)
+  so the dashboard shows results with no page reload. **UI:** rewritten
+  `ProcessingDashboard` — "Preparing your underwriting package", progress bar +
+  ETA + current/completed steps + headline hero; `deriveProgress` in
+  `lib/processing.ts`; "Processing Stalled" wording removed.
+- **Measured (dev box, 231ms/query local Postgres — production is ~1–5ms):**
+  warm Stage 1 **1.8–2.1s ✅**, entire pipeline (mock AI) **3.0–3.8s ✅**. Cold
+  first-run inflated by Prisma warmup. `buildFinancialIntelligence` = 0.72ms.
+  Remaining bottleneck: Stage 2 = real LLM latency (~6–7s, tail higher) — which
+  is exactly why it is background. `formatStageTargets` logs the ≤3s/≤10s table.
+- Verified: 102/102 tests (new `headline.test.ts`, `deriveProgress` suite),
+  typecheck + lint + production build clean; seed exercised full two-stage flow.
+
 ### Post-MVP — Lazy AI Memo (contractor never waits for GPT) (2026-07-08)
 
 AI underwriting memo generation was removed from the blocking processing path

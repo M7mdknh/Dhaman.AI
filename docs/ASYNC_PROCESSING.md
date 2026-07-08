@@ -29,21 +29,39 @@ idempotent orchestrator driven by the `CaseProcessing` job row.
 
 ```
 claim (QUEUED → RUNNING, attempts++)          ← only one runner wins the claim
-  ├ READING_STATEMENTS ┐
-  ├ DETECTING_STATEMENTS│  the IFRS pipeline (processCaseDocuments)
-  ├ EXTRACTING_DATA    ┘
-  └ FINANCIAL_ANALYSIS     deterministic engine builds a report — LAST stage
-COMPLETED  → case ANALYSIS_READY
-FAILED     → case PROCESSING_FAILED   (case + documents stay saved)
+  ┌─ STAGE 1 — Fast Financial Intelligence (target ≤3s) ────────────────┐
+  │ ├ READING_STATEMENTS ┐                                              │
+  │ ├ DETECTING_STATEMENTS│  the IFRS pipeline (processCaseDocuments)    │
+  │ ├ EXTRACTING_DATA    ┘                                              │
+  │ └ FINANCIAL_ANALYSIS     deterministic engine → underwriting HEADLINE│
+  │        → case ANALYSIS_READY NOW  (reviewable; headline shown)       │
+  └─────────────────────────────────────────────────────────────────────┘
+  ┌─ STAGE 2 — Deep Financial Intelligence (background; whole pipe ≤10s) ┐
+  │ └ AI_UNDERWRITING        the AI memo — best-effort, never gates       │
+  └─────────────────────────────────────────────────────────────────────┘
+COMPLETED  → job done (case already ANALYSIS_READY since end of Stage 1)
+FAILED     → case PROCESSING_FAILED   (Stage-1 failure only; case stays saved)
 ```
 
-**Processing completes at FINANCIAL_ANALYSIS. The AI underwriting memo is NOT
-generated here** — the deterministic Financial Intelligence Engine
-(Underwriting Capacity, Financial Health, Risk Score, Financial Trends, Status)
-is sufficient to make the case reviewable, and the contractor must never wait
-~6–7s on the LLM to finish submission. The memo is generated **lazily** instead
-(see "Lazy AI memo" below), so `AI_UNDERWRITING` is no longer a gating stage
-(the enum value is retained for labels/historical rows).
+**The pipeline is TWO stages** (docs rationale: "results in <3s, package in <10s"):
+
+- **Stage 1 — Fast Financial Intelligence.** Extract statement figures (statement
+  pages only, cached across retries) → the deterministic engine. The case flips
+  to **ANALYSIS_READY the instant Stage 1 finishes**, and the underwriting
+  HEADLINE — Underwriting Capacity /100, Rating (AAA…CCC), Financial Health /100,
+  Risk Level, Recommendation — is available (`lib/finance/headline.ts`,
+  `deriveHeadline`). The user already feels the analysis is complete.
+- **Stage 2 — Deep Financial Intelligence.** The job keeps RUNNING and generates
+  the AI memo in the **background**. It never gates readiness: a slow/failed LLM
+  leaves the case ANALYSIS_READY and the contractor never waits for GPT.
+
+**Critical-path discipline (why Stage 1 is fast):** the deterministic engine is
+~1ms; the cost is I/O. So Stage 1 avoids needless DB round-trips — the pipeline
+returns the just-persisted `FinancialStatement` rows (`createManyAndReturn`) so
+analysis needs no case re-read, and stage-progress writes (`advanceTo`) are
+FIRE-AND-FORGET (observational, never blocking). The headline is surfaced live
+by the poll payload (`getProcessingViewForOwner` → `{ ...snapshot, headline }`),
+so no full page reload is needed to show results.
 
 The job row is the durable, observable, retryable record of the work. Stage
 progress is written to it as the pipeline advances (monotonically — the
@@ -68,51 +86,54 @@ failed the whole submission — the case was never saved. Submission is now just
   re-upload required. Ownership-scoped to the case's contractor.
 - **AI underwriting never gates readiness.** Per the product principle "the AI
   assists the bank, it never replaces it", a flaky/slow external LLM must not
-  block underwriting — so it is off the processing path entirely (see "Lazy AI
-  memo"). Only the deterministic pipeline gates readiness.
+  block underwriting. It runs only in Stage 2 (background) and a Stage-2 failure
+  leaves the case ANALYSIS_READY; only Stage 1 (the deterministic pipeline) gates
+  readiness.
 
-## Lazy AI memo — the contractor never waits for GPT
+## The AI memo — background in Stage 2, never on the user's path
 
-The AI-drafted underwriting memo (`DecisionIntelligence`) is a bank-internal
-work product the contractor never sees. Generating it inline added ~6–7s of LLM
-latency to every submission for no contractor-facing benefit, so it is generated
-on demand from exactly two triggers:
+The AI-drafted underwriting memo (`DecisionIntelligence`) is generated from three
+places, none of which the contractor ever waits on:
 
-1. **A Risk Officer opens the case.** `review/[id]/page.tsx` fires
-   `ensureDecisionIntelligence(caseId)` in a Next.js `after()` — the page renders
-   immediately; the memo is prepared in the background. The call is idempotent
-   (a no-op once a memo exists) and de-duplicates concurrent opens of the same
-   case into a single provider call. System-attributed (`requestedById = null`).
-2. **Explicit "Generate AI Analysis".** `generateDecisionAction` →
+1. **Stage 2 of processing (background).** After Stage 1 flips the case to
+   ANALYSIS_READY, the same job runs `runDecisionIntelligence(caseId, null)` in
+   the background, then marks the job COMPLETED. Best-effort — a failure is
+   audited (`case.decision_deferred`) and leaves the case ANALYSIS_READY.
+2. **A Risk Officer opens the case.** `review/[id]/page.tsx` fires
+   `ensureDecisionIntelligence(caseId)` in a Next.js `after()` — idempotent, a
+   no-op once a memo exists, and de-duplicates concurrent opens. Acts as the
+   safety net if Stage 2 was deferred (e.g. an LLM rate-limit).
+3. **Explicit "Generate AI Analysis".** `generateDecisionAction` →
    `generateDecisionIntelligence` (officer-gated), unchanged.
 
-Both funnel through `runDecisionIntelligence`, whose `inputHash` cache means a
+All funnel through `runDecisionIntelligence`, whose `inputHash` cache means a
 repeat over the same engine output + prompt + model reuses the stored memo
-rather than calling the provider again. A failed lazy generation (e.g. provider
-rate-limit) is audited and simply leaves the "Generate AI Analysis" button for
-the officer — it never affects the case's ANALYSIS_READY state.
+rather than calling the provider again.
 
-## Live progress (the processing dashboard)
+## Live progress — "Preparing your underwriting package"
 
-The case page renders `ProcessingDashboard` while the case is `PROCESSING` /
-`PROCESSING_FAILED`. It polls `GET /api/cases/[caseId]/processing`
-(ownership-scoped) and renders the ordered step checklist derived by the pure
-`lib/processing.ts` (`buildProcessingSteps`):
+The case page renders `ProcessingDashboard` while the JOB is active (QUEUED /
+RUNNING — which now spans Stage 2, even after the case is ANALYSIS_READY) or
+failed. It polls `GET /api/cases/[caseId]/processing` (ownership-scoped),
+returning `{ ...snapshot, headline }`, and shows:
+
+- **Overall progress** + **estimated remaining time** + **current step** +
+  **completed steps** (`deriveProgress` in `lib/processing.ts`, weighted by
+  nominal stage durations — Stage 2/AI is the long pole).
+- The **underwriting headline** (`UnderwritingHeadlineCard`) the instant Stage 1
+  completes — Capacity /100, Rating, Health /100, Risk Level, Recommendation —
+  so results appear without any page reload while Stage 2 finishes.
 
 ```
-✓ Case Submitted
-✓ Documents Uploaded
-⟳ Reading Financial Statements
-⟳ Detecting Financial Statements
-⟳ Extracting Financial Data
-⟳ Financial Analysis
-✓ Completed
+✨ Preparing your underwriting package        [██████░░]  72% · ~7s left
+  ✓ Case Submitted        ✓ Reading / Detecting / Extracting
+  ✓ Documents Uploaded    ✓ Financial Analysis      ⟳ AI Underwriting Memo
+  ┌ Underwriting headline: Capacity 82/100 · AA · Health 79/100 · Low · Approve ┐
 ```
 
-On completion the page refreshes to reveal the deterministic Financial
-Intelligence (Underwriting Capacity, Financial Health, Risk Score, Financial
-Trends, Status) — no AI in the loop. On failure it shows the real reason and a
-**Retry Analysis** button.
+On COMPLETED the page refreshes to the full analysis. On failure (Stage 1 only)
+it shows the real reason and a **Retry Analysis** button — the old "Processing
+Stalled" wording is gone.
 
 ## Robustness
 

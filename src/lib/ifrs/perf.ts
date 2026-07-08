@@ -128,6 +128,21 @@ function recommendFor(stage: string, pct: number, durationMs: number): string | 
   }
 }
 
+/** Stage-1 (≤3s) and whole-pipeline (≤10s) targets, with pass/fail verdicts. */
+export const STAGE1_TARGET_MS = 3_000;
+export const PIPELINE_TARGET_MS = 10_000;
+
+/** Renders the two-stage target table (requirement: Stage / Duration / Target). */
+export function formatStageTargets(stage1Ms: number, totalMs: number): string {
+  const row = (label: string, ms: number, target: number) =>
+    `  ${label.padEnd(38)}${`${ms}ms`.padStart(8)}  target ≤${target}ms  ${ms <= target ? "✅" : "❌"}`;
+  return [
+    "=== Stage targets ===",
+    row("Stage 1 (Fast Financial Intelligence)", stage1Ms, STAGE1_TARGET_MS),
+    row("Entire pipeline", totalMs, PIPELINE_TARGET_MS),
+  ].join("\n");
+}
+
 /** Renders a report as a fixed-width block for structured logs / the CLI. */
 export function formatPerfReport(report: PerfReport, title: string): string {
   const lines: string[] = [];
