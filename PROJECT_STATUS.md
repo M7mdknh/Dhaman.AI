@@ -235,6 +235,32 @@ object storage were already DONE; the seed-password risk is guarded by
 - Verified: 89/89 unit tests; typecheck + lint + production build clean
   (`/api/cron/process` registered as a dynamic function).
 
+### Post-MVP — Financial Intelligence Dashboard redesign (2026-07-08)
+
+UI/UX only — **no engine, calculation, or figure changed**. The analysis panel
+(`FinancialIntelligencePanel`, shared by the contractor analysis page and the
+officer review workspace) was rebuilt to read top-down like an underwriting
+memo instead of a debugging view:
+
+- **Verdict hero** (`verdict-hero.tsx`) leads and dominates — answers "Can the
+  bank issue this guarantee?" with the bank-policy recommendation as the largest
+  element (still preliminary, Risk Officer decides).
+- **Three executive KPI cards** (`executive-kpis.tsx`): Underwriting Capacity
+  (score /100 + rating AAA…CCC + capacity status), Financial Health (score /100
+  + overall condition), Risk Level (score /100 + risk band). Fed from
+  `deriveHeadline` — no recomputation.
+- **Financial Drivers** (`financial-drivers.tsx`): Liquidity, Leverage,
+  Profitability, Cash Flow, Working Capital — each a clean status card (Excellent
+  → Poor word + meter + one supporting metric). **Raw engineering weights and
+  bare `0.00` sub-scores removed** — sub-scores sourced from engine components,
+  supporting metrics from the already-computed latest-year ratios.
+- Presentation helpers centralized in `lib/finance/display.ts` (status ladders +
+  the existing emerald/amber/red palette). Redundant KPI strip removed (drivers
+  now cover it); flags, trends, ratio tables retained below as evidence. The old
+  `capacity-card.tsx`, `risk-gauge.tsx`, `stat-tile.tsx` (weight-exposing) were
+  deleted as orphaned.
+- Verified: typecheck + lint + production build (turbopack) clean.
+
 ---
 
 ## Stack (decided 2026-07-05)

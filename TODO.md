@@ -261,6 +261,19 @@ migrations in this phase. Full detail in `PROJECT_STATUS.md` +
       officer verification (`VISION_ENABLED`, `VISION_MAX_PAGES`, `VISION_DPI`, `VISION_TIMEOUT_MS`)
 - [x] Statement-pages-first OCR with a bounded worker pool + extraction caching on retry
 
+## Financial Intelligence Dashboard redesign (UI/UX only — engine untouched)
+
+- [x] Verdict hero leads the page — answers "Can the bank issue this guarantee?"
+      with the bank-policy recommendation as the dominant element (`verdict-hero.tsx`)
+- [x] Three executive KPI cards — Underwriting Capacity (+rating), Financial
+      Health, Risk Level; each score /100 + status (`executive-kpis.tsx`)
+- [x] Financial Drivers — Liquidity/Leverage/Profitability/Cash Flow/Working
+      Capital as status cards (Excellent→Poor + meter + supporting metric);
+      raw weights and bare `0.00` sub-scores removed (`financial-drivers.tsx`)
+- [x] Display-only presentation helpers centralized in `lib/finance/display.ts`;
+      orphaned weight-exposing components (`capacity-card`, `risk-gauge`,
+      `stat-tile`) deleted
+
 ---
 
 # Future (do NOT implement — architecture-ready only)
