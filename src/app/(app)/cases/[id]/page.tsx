@@ -177,35 +177,37 @@ export default async function CaseDetailsPage({
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-6">
           {showDashboard && snapshot && (
             <ProcessingDashboard caseId={id} initial={{ ...snapshot, headline }} />
           )}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Company Information</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CompanySummary company={toCompanyInput(underwritingCase.company)} />
-            </CardContent>
-          </Card>
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Company Information</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CompanySummary company={toCompanyInput(underwritingCase.company)} />
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Contract Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {contract ? (
-                <ContractSummary contract={contract} />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Contract details have not been completed yet.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Contract Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {contract ? (
+                  <ContractSummary contract={contract} />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Contract details have not been completed yet.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           <Card>
             <CardHeader>
@@ -238,7 +240,7 @@ export default async function CaseDetailsPage({
           />
         </div>
 
-        <div>
+        <div className="xl:sticky xl:top-6 xl:self-start">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Timeline</CardTitle>

@@ -203,7 +203,7 @@ export default async function ReviewCasePage({
 
       {/* ---- Three-column workspace: timeline | intelligence | decision */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[16rem_minmax(0,1fr)_22rem]">
-        <div className="order-2 xl:order-1">
+        <div className="order-2 xl:order-1 xl:sticky xl:top-6 xl:self-start">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Timeline</CardTitle>

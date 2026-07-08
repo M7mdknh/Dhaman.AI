@@ -34,6 +34,21 @@ below. All work is committed on `main`.
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
 
+### Post-MVP — Full-width layout pass (2026-07-08)
+
+UI/UX only — no business logic, calculations, or APIs touched. The app shell
+was capped at `max-w-6xl` (1152px), leaving large empty margins on wide
+screens. Widened the shell to `max-w-[1600px]` (with `lg:px-10`) so every
+dashboard uses the available width. Case detail now places Company Information
+and Contract Details side-by-side (50/50) with a fixed 20rem sticky Timeline
+sidebar (was a 3-col split that left the timeline card half-empty); the review
+Timeline column is sticky too. Wizard pages (new/edit) went `max-w-3xl` →
+`max-w-5xl` so the 2-col field grids breathe. The underwriting package stays
+document-width (`max-w-4xl`) — a deliberate printable-report measure. Verified
+across officer/contractor dashboards, case detail, review, analysis, package
+and the wizard at 1920px and 1440px: no horizontal overflow, grids collapse
+cleanly. typecheck + lint clean.
+
 ### Post-MVP — Hybrid GPT-Vision Extraction (2026-07-08)
 
 Philosophy shift: Daman is an AI underwriting platform, not an OCR engine.
