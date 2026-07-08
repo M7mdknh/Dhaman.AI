@@ -3,7 +3,13 @@
  * JSON mode is requested (`response_format: json_object`); the decision
  * service still validates every byte with zod before anything is persisted.
  */
-import { LLMProviderError, type LLMProvider, type LLMRequest, type LLMResult } from "@/lib/ai/provider";
+import {
+  LLMProviderError,
+  type LLMProvider,
+  type LLMRequest,
+  type LLMResult,
+  type VisionExtractRequest,
+} from "@/lib/ai/provider";
 
 const API_URL = "https://api.openai.com/v1/chat/completions";
 
@@ -11,6 +17,11 @@ interface ChatCompletionResponse {
   choices?: { message?: { content?: string | null } }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
+
+/** A single Chat Completions message `content` — text or an image part. */
+type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
 
 export class OpenAIProvider implements LLMProvider {
   readonly name = "openai";
@@ -23,6 +34,38 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async completeJSON(request: LLMRequest): Promise<LLMResult> {
+    return this.chat(
+      [
+        { role: "system", content: request.system },
+        { role: "user", content: request.user },
+      ],
+      request,
+    );
+  }
+
+  async completeVisionJSON(request: VisionExtractRequest): Promise<LLMResult> {
+    // "high" detail keeps small statement figures legible; the caller sends
+    // only the statement pages, so the token cost stays bounded.
+    const content: ContentPart[] = [
+      { type: "text", text: request.user },
+      ...request.images.map(
+        (url): ContentPart => ({ type: "image_url", image_url: { url, detail: "high" } }),
+      ),
+    ];
+    return this.chat(
+      [
+        { role: "system", content: request.system },
+        { role: "user", content },
+      ],
+      request,
+    );
+  }
+
+  /** Shared POST + error mapping for both text and vision calls. */
+  private async chat(
+    messages: Array<{ role: string; content: string | ContentPart[] }>,
+    request: { temperature: number; maxOutputTokens: number; timeoutMs: number },
+  ): Promise<LLMResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), request.timeoutMs);
 
@@ -40,10 +83,7 @@ export class OpenAIProvider implements LLMProvider {
           temperature: request.temperature,
           max_tokens: request.maxOutputTokens,
           response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: request.system },
-            { role: "user", content: request.user },
-          ],
+          messages,
         }),
       });
     } catch (error) {

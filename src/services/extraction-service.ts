@@ -27,6 +27,7 @@ import { PdfReadError } from "@/lib/ifrs/types";
 import { prisma } from "@/lib/prisma";
 import { storage, StorageError } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
+import { extractViaVision } from "@/services/extraction/vision-extractor";
 
 import type { ExtractedLineItem, ValidationIssue, ValidationOutcome } from "@/lib/ifrs/types";
 import type { Document, FinancialStatement, Prisma } from "@/generated/prisma/client";
@@ -35,6 +36,10 @@ import type { ProcessingStage } from "@/generated/prisma/enums";
 /** Documents processed concurrently. A case has ≤3 statements; OCR contention
  * is bounded independently by the OCR worker pool (env.OCR_CONCURRENCY). */
 const DOCUMENT_CONCURRENCY = 3;
+
+/** Core figures (of 8) the fast text pass must yield to be trusted as-is;
+ * below this the document is treated as scanned/damaged → GPT-Vision. */
+const VISION_MIN_CORE = 5;
 
 /**
  * Reports pipeline progress to the caller (the processing orchestrator) so it
@@ -221,7 +226,21 @@ async function processDocument(
     }
 
     await onStage?.("DETECTING_STATEMENTS");
-    const extraction = await extractIfrs(bytes, { enableOcr: true });
+    // HYBRID extraction. 1) Fast text-only pass — for a digital PDF this is the
+    // whole story (no network, ~1s). 2) If it yields too few core figures the
+    // document is scanned/damaged → GPT-Vision reads the statement pages. 3) If
+    // vision is unavailable/failed, fall back to the deterministic OCR path.
+    let extraction = await extractIfrs(bytes, { enableOcr: false, allowLowText: true });
+    if (coreFigureCoverage(extraction.figures) < VISION_MIN_CORE) {
+      const vision = await extractViaVision(bytes, extraction.meta.quality, extraction.result.statements);
+      if (vision && coreFigureCoverage(vision.figures) > coreFigureCoverage(extraction.figures)) {
+        logStage("vision_extracted", document.id, startedAt, { years: vision.result.fiscalYears });
+        extraction = vision;
+      } else {
+        const ocr = await extractIfrs(bytes, { enableOcr: true });
+        if (coreFigureCoverage(ocr.figures) >= coreFigureCoverage(extraction.figures)) extraction = ocr;
+      }
+    }
     await onStage?.("EXTRACTING_DATA");
     const blocking = extraction.validation.errors;
     logStage("extracted", document.id, startedAt, {

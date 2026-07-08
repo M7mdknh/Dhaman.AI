@@ -79,6 +79,25 @@ Derivable figures are stored only when literally printed. Numbers that OCR
 cannot verify are flagged, not guessed — correctness over completeness, because
 a wrong figure in underwriting is worse than a missing one.
 
+## Hybrid extraction — text-layer first, GPT-Vision for scanned
+
+Daman is an AI underwriting platform, not an OCR engine — extraction exists only
+to feed underwriting. The pipeline picks the cheapest engine that yields the
+core figures (`src/services/extraction-service.ts` → `processDocument`):
+
+1. **Text layer (digital PDFs)** — `extractIfrs(bytes, { enableOcr:false, allowLowText:true })`.
+   ~1s, no network. If it yields ≥5 of the 8 core figures, done.
+2. **GPT-Vision (scanned/damaged)** — `extractViaVision` renders ONLY the
+   statement pages to images (`VISION_MAX_PAGES`, `VISION_DPI`) and asks a
+   vision model for structured JSON. Replaces OCR; far better on Arabic-Indic
+   tables. Output is a synthetic `IfrsExtraction` (so persistence/analysis/cache
+   are unchanged), carrying a `VISION_EXTRACTION` provenance warning.
+3. **OCR (last resort)** — if no vision provider is configured or it fails,
+   `extractIfrs(bytes, { enableOcr:true })` still runs, so capability is never lost.
+
+Vision figures are surfaced for underwriting but flagged for officer
+verification — believable fast, verified before final decisioning.
+
 ## Performance (MVP: optimize for speed)
 
 The engine optimizes for user-visible speed — a reliable underwriting package

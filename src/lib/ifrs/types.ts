@@ -80,8 +80,8 @@ export interface ExtractionResult {
   lineItems: ExtractedLineItem[];
 }
 
-/** How the text used for extraction was obtained. */
-export type TextSource = "TEXT_LAYER" | "OCR" | "HYBRID";
+/** How the figures were obtained. VISION = GPT multimodal over page images. */
+export type TextSource = "TEXT_LAYER" | "OCR" | "HYBRID" | "VISION";
 
 export interface ValidationIssue {
   code: string;

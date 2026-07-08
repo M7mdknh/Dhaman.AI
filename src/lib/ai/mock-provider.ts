@@ -9,7 +9,12 @@
  * must not depend on the decision service's types — providers stay below
  * the service layer.
  */
-import { LLMProviderError, type LLMProvider, type LLMRequest, type LLMResult } from "@/lib/ai/provider";
+import {
+  LLMProviderError,
+  type LLMProvider,
+  type LLMRequest,
+  type LLMResult,
+} from "@/lib/ai/provider";
 
 const PREFIX = "[Deterministic draft — generated without an AI provider]";
 
@@ -81,5 +86,14 @@ export class MockProvider implements LLMProvider {
     };
 
     return { text: JSON.stringify(body) };
+  }
+
+  /**
+   * No vision without a provider: returns an EMPTY extraction so the caller
+   * treats vision as unavailable and falls back to the deterministic OCR path.
+   * (The mock cannot see the images.)
+   */
+  async completeVisionJSON(): Promise<LLMResult> {
+    return { text: JSON.stringify({ currency: null, years: [] }) };
   }
 }

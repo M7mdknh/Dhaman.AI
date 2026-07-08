@@ -18,6 +18,24 @@ export interface LLMRequest {
   timeoutMs: number;
 }
 
+/**
+ * Multimodal JSON extraction: statement-page IMAGES in, structured JSON out.
+ * Used by the hybrid extraction path to read scanned/damaged statements that
+ * have no usable text layer — GPT-Vision replaces the OCR engine there. Digital
+ * PDFs never reach this (their text layer is read directly, no network hop).
+ */
+export interface VisionExtractRequest {
+  /** Role/instructions prompt. */
+  system: string;
+  /** Text instructions + the JSON schema the model must return. */
+  user: string;
+  /** Page images as `data:image/png;base64,…` URLs (statement pages only). */
+  images: string[];
+  maxOutputTokens: number;
+  temperature: number;
+  timeoutMs: number;
+}
+
 export interface LLMResult {
   /** Raw model output — expected to be a single JSON object. */
   text: string;
@@ -31,6 +49,11 @@ export interface LLMProvider {
   readonly model: string;
   /** Single completion call. Must reject with LLMProviderError on failure. */
   completeJSON(request: LLMRequest): Promise<LLMResult>;
+  /**
+   * Multimodal extraction over page images. Optional — a provider without
+   * vision omits it, and the caller falls back to the deterministic OCR path.
+   */
+  completeVisionJSON?(request: VisionExtractRequest): Promise<LLMResult>;
 }
 
 export type LLMErrorKind =

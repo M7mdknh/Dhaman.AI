@@ -19,6 +19,7 @@ export const STAGE = {
   DETECT_PAGES: "detect_pages",
   RASTERIZE: "rasterize",
   OCR: "ocr",
+  VISION: "vision",
   EXTRACT_LINES: "extract_line_items",
   NORMALIZE: "normalize_validate",
   FINANCIAL_ANALYSIS: "financial_analysis",
@@ -106,6 +107,10 @@ function recommendFor(stage: string, pct: number, durationMs: number): string | 
     case STAGE.RASTERIZE:
       return pct >= 30 && durationMs >= 4000
         ? "OCR dominates — ask the client for the original digital auditor PDF (selectable text) to skip OCR entirely; otherwise lower OCR_DPI or OCR_MAX_PAGES."
+        : null;
+    case STAGE.VISION:
+      return pct >= 40 && durationMs >= 4000
+        ? "GPT-Vision extraction dominates — expected for scanned docs. Send fewer pages (VISION_MAX_PAGES) or lower VISION_DPI; digital PDFs skip this path entirely."
         : null;
     case STAGE.READ_TEXT:
       return pct >= 45 && durationMs >= 3000

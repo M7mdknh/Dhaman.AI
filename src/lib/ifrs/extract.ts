@@ -74,6 +74,13 @@ export interface ExtractIfrsOptions {
   maxOcrPages?: number;
   /** Rasterization DPI for OCR pages. Defaults to `env.OCR_DPI`. */
   ocrDpi?: number;
+  /**
+   * When true, a document with little/no usable text is NOT rejected — the
+   * fast text-only pass returns whatever it found (possibly empty) so the
+   * caller can decide to fall back to GPT-Vision. Password/corrupted PDFs still
+   * reject. Used by the hybrid extraction path.
+   */
+  allowLowText?: boolean;
 }
 
 /** Below this OCR page confidence, numeric values are always treated as untrusted. */
@@ -88,9 +95,10 @@ export async function extractIfrs(
 ): Promise<IfrsExtraction> {
   const timer = new StageTimer();
   const enableOcr = options.enableOcr ?? false;
+  const allowLowText = options.allowLowText ?? false;
 
   const pages = await timer.time(STAGE.READ_TEXT, () =>
-    extractPdfPages(bytes, { allowImageOnly: enableOcr }),
+    extractPdfPages(bytes, { allowImageOnly: enableOcr || allowLowText }),
   );
   const quality = timer.sync(STAGE.ASSESS_QUALITY, () => assessDocument(pages));
 
@@ -125,7 +133,7 @@ export async function extractIfrs(
   }
 
   const usableChars = effective.reduce((n, p) => n + p.text.replace(/\s/g, "").length, 0);
-  if (usableChars < MIN_USABLE_CHARS) {
+  if (usableChars < MIN_USABLE_CHARS && !allowLowText) {
     throw new PdfReadError(
       "NO_TEXT",
       "No readable text could be recovered from this document, even with OCR. Please upload the original digital PDF issued by the auditor.",

@@ -112,7 +112,8 @@ const RULES: MappingRule[] = [
   { key: "capex", statements: CF, pattern: /^(purchases? of property,? plant and equipment|additions? to property,? plant|acquisition of property,? plant|capital expenditures?)/, ar: [["شراء", "ممتلكات"], ["اضافات", "ممتلكات"]] },
 ];
 
-const KEY_HOME: Record<CanonicalKey, StatementType[]> = Object.fromEntries(
+/** The statement(s) each canonical key is sourced from (its "home"). */
+export const KEY_HOME: Record<CanonicalKey, StatementType[]> = Object.fromEntries(
   CANONICAL_KEYS.map((key) => [key, RULES.filter((r) => r.key === key).flatMap((r) => r.statements)]),
 ) as Record<CanonicalKey, StatementType[]>;
 

@@ -76,6 +76,19 @@ const envSchema = z.object({
   OCR_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(2),
   OCR_DPI: z.coerce.number().int().min(120).max(400).default(200),
   OCR_MAX_PAGES: z.coerce.number().int().min(1).max(60).default(10),
+
+  // ---- GPT-Vision extraction (the hybrid document-understanding path). When
+  // a document has no usable text layer (scanned/damaged), the statement page
+  // IMAGES are sent to a vision-capable model instead of OCR. Requires a vision
+  // provider (OpenAI gpt-4o/gpt-4o-mini); without one the path degrades to OCR.
+  VISION_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  // Pages rasterized+sent to the model (statement pages only). Bounds cost/latency.
+  VISION_MAX_PAGES: z.coerce.number().int().min(1).max(20).default(6),
+  // Rasterization DPI for vision images. 150 is legible for figures yet compact.
+  VISION_DPI: z.coerce.number().int().min(96).max(300).default(150),
 });
 
 export const env = envSchema.parse({
@@ -98,4 +111,7 @@ export const env = envSchema.parse({
   OCR_CONCURRENCY: process.env.OCR_CONCURRENCY,
   OCR_DPI: process.env.OCR_DPI,
   OCR_MAX_PAGES: process.env.OCR_MAX_PAGES,
+  VISION_ENABLED: process.env.VISION_ENABLED,
+  VISION_MAX_PAGES: process.env.VISION_MAX_PAGES,
+  VISION_DPI: process.env.VISION_DPI,
 });

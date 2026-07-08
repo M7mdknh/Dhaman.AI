@@ -10,6 +10,29 @@ approved on 2026-07-07, and Sprint 6 was cancelled by user decision the same
 day: there is no Sprint 6, the roadmap ends at Sprint 5. All sprint work is
 committed on `main`.
 
+### Post-MVP — Hybrid GPT-Vision Extraction (2026-07-08)
+
+Philosophy shift: Daman is an AI underwriting platform, not an OCR engine.
+Extraction now picks the cheapest engine that yields the core underwriting
+figures. No schema migration. See `docs/IFRS_ENGINE.md` → "Hybrid extraction".
+
+- **`processDocument` (extraction-service):** text-layer first (digital, ~1s, no
+  network) → if <5/8 core figures, **GPT-Vision** on statement-page images only
+  (`extractViaVision`) → OCR only as a last-resort fallback. Digital demo
+  fixtures stay on the text path (verified: `textSource=TEXT_LAYER`, no vision).
+- **`LLMProvider.completeVisionJSON`** (new, optional) — OpenAI Chat Completions
+  with `image_url` parts (gpt-4o-mini); MockProvider returns empty → OCR
+  fallback. `src/services/extraction/vision-extractor.ts` renders pages, calls
+  the model, zod-validates, and emits a synthetic `IfrsExtraction` with a
+  `VISION_EXTRACTION` provenance warning (figures flagged for officer verify).
+- Engines untouched (Financial + Decision). New env: `VISION_ENABLED`,
+  `VISION_MAX_PAGES` (6), `VISION_DPI` (150). `TextSource` gains `"VISION"`.
+- Verified: 107/107 tests (new `vision-extractor.test.ts` — conversion +
+  full rasterize→parse path with a fake provider), typecheck + lint + build
+  clean. Live OpenAI vision call reached the API (payload format accepted) but
+  the demo key is rate-limited (429) — wiring validated, live output pending a
+  non-throttled key.
+
 ### Post-MVP — Two-Stage Processing Pipeline (2026-07-08)
 
 Redesigned processing for a hackathon-grade UX: **meaningful results in <3s, full
