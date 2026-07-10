@@ -2,7 +2,7 @@ import { AlertTriangle, Eye, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatMoney } from "@/lib/format";
+import { formatMoneyWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { FlagSeverity, RiskFlag } from "@/lib/finance/types";
@@ -30,7 +30,7 @@ const SEVERITY_META: Record<
 
 function evidenceValue(value: string, currency: string): string {
   // Money evidence is a plain decimal string; ratio/percent evidence already formatted.
-  return /^-?\d+(\.\d+)?$/.test(value) ? formatMoney(value, currency) : value;
+  return /^-?\d+(\.\d+)?$/.test(value) ? formatMoneyWhole(value, currency) : value;
 }
 
 /** Deterministic rule-based findings with evidence — never AI narrative. */

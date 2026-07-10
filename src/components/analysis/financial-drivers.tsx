@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { BADGE_TONE, BAR_TONE, driverConditionFor } from "@/lib/finance/display";
-import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
+import { formatMoneyWhole, formatPercent, formatRatio } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { FinancialIntelligenceReport, ScoreComponent } from "@/lib/finance/types";
@@ -67,7 +67,7 @@ function buildDrivers(report: FinancialIntelligenceReport): Driver[] {
       metricValue:
         latest.workingCapital === null
           ? "—"
-          : formatMoney(latest.workingCapital, report.currency),
+          : formatMoneyWhole(latest.workingCapital, report.currency),
     },
   ];
 }
@@ -133,7 +133,7 @@ export function FinancialDrivers({ report }: { report: FinancialIntelligenceRepo
           Latest fiscal year (FY{report.latestYear})
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-5">
         {buildDrivers(report).map((driver) => (
           <DriverCard key={driver.label} driver={driver} />
         ))}

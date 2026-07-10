@@ -34,14 +34,16 @@ function parseTab(value: string | undefined): QueueTab {
   return value === "all" || value === "decided" ? value : "pending";
 }
 
-/** The Risk Officer's review queue — the bank-side dashboard. */
+/** The bank-side dashboard: the officer's review queue; admins monitor it. */
 async function OfficerDashboard({
   userId,
   fullName,
+  isAdmin,
   searchParams,
 }: {
   userId: string;
   fullName: string;
+  isAdmin: boolean;
   searchParams: { tab?: string; q?: string; page?: string };
 }) {
   const tab = parseTab(searchParams.tab);
@@ -61,7 +63,9 @@ async function OfficerDashboard({
           Welcome, {fullName.split(" ")[0]}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review submitted underwriting cases and record decisions.
+          {isAdmin
+            ? "Monitor underwriting operations across the bank."
+            : "Review submitted underwriting cases and record decisions."}
         </p>
       </div>
 
@@ -90,6 +94,7 @@ export default async function DashboardPage({
       <OfficerDashboard
         userId={session.userId}
         fullName={session.fullName}
+        isAdmin={session.role === "ADMIN"}
         searchParams={await searchParams}
       />
     );

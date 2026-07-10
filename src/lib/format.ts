@@ -15,8 +15,32 @@ export function formatMoney(
       style: "currency",
       currency,
       currencyDisplay: "code",
+      // Banking convention: negatives in parentheses, e.g. (SAR 8,000,000.00).
+      currencySign: "accounting",
     });
     currencyFormatters.set(currency, formatter);
+  }
+  return formatter.format(Number(value.toString()));
+}
+
+const wholeMoneyFormatters = new Map<string, Intl.NumberFormat>();
+
+/** Table money: whole currency units ("SAR 6,000,000") — cents are noise in
+ * dense queue/list views. Detail views keep the 2-decimal formatMoney. */
+export function formatMoneyWhole(
+  value: string | number | { toString(): string },
+  currency = "SAR",
+): string {
+  let formatter = wholeMoneyFormatters.get(currency);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      currencyDisplay: "code",
+      currencySign: "accounting",
+      maximumFractionDigits: 0,
+    });
+    wholeMoneyFormatters.set(currency, formatter);
   }
   return formatter.format(Number(value.toString()));
 }

@@ -201,20 +201,11 @@ export default async function ReviewCasePage({
         </CardContent>
       </Card>
 
-      {/* ---- Three-column workspace: timeline | intelligence | decision */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[16rem_minmax(0,1fr)_22rem]">
-        <div className="order-2 xl:order-1 xl:sticky xl:top-6 xl:self-start">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Timeline</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CaseTimeline entries={buildTimeline(reviewCase)} />
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="order-1 min-w-0 space-y-6 xl:order-2">
+      {/* ---- Two-column workspace: intelligence | decision rail. The center
+           column carries the full Financial Intelligence panel, so it gets
+           every pixel it can — the timeline lives in the decision rail. */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
+        <div className="min-w-0 space-y-6">
           <DecisionSection
             caseId={id}
             decision={memo}
@@ -282,8 +273,8 @@ export default async function ReviewCasePage({
           </Card>
         </div>
 
-        {/* ---- Sticky decision sidebar */}
-        <div className="order-3 space-y-6 xl:sticky xl:top-6 xl:self-start">
+        {/* ---- Sticky decision rail: decision, lifecycle timeline, notes */}
+        <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Officer Decision</CardTitle>
@@ -388,6 +379,15 @@ export default async function ReviewCasePage({
                   <DecisionHistory decisions={decisions} />
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CaseTimeline entries={buildTimeline(reviewCase)} />
             </CardContent>
           </Card>
 

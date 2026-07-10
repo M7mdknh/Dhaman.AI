@@ -7,7 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatMoney, formatPercent, formatRatio } from "@/lib/format";
+import { formatMoneyWhole, formatPercent, formatRatio } from "@/lib/format";
 
 import type { GrowthKey, GrowthPeriod, RatioKey, YearRatios } from "@/lib/finance/types";
 
@@ -90,7 +90,7 @@ export function RatioTables({
   const years = ratiosByYear.map((y) => y.fiscalYear);
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="grid gap-6 @2xl:grid-cols-2">
       {CATEGORIES.map((category) => (
         <Card key={category.title}>
           <CardHeader>
@@ -146,7 +146,7 @@ export function RatioTables({
                 <TableCell className="text-muted-foreground">Working Capital</TableCell>
                 {ratiosByYear.map((y) => (
                   <TableCell key={y.fiscalYear} className="text-right tabular-nums">
-                    {y.workingCapital === null ? "—" : formatMoney(y.workingCapital, currency)}
+                    {y.workingCapital === null ? "—" : formatMoneyWhole(y.workingCapital, currency)}
                   </TableCell>
                 ))}
               </TableRow>
@@ -154,7 +154,7 @@ export function RatioTables({
                 <TableCell className="text-muted-foreground">Free Cash Flow</TableCell>
                 {ratiosByYear.map((y) => (
                   <TableCell key={y.fiscalYear} className="text-right tabular-nums">
-                    {y.freeCashFlow === null ? "—" : formatMoney(y.freeCashFlow, currency)}
+                    {y.freeCashFlow === null ? "—" : formatMoneyWhole(y.freeCashFlow, currency)}
                   </TableCell>
                 ))}
               </TableRow>

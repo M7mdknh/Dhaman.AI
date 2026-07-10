@@ -16,7 +16,7 @@ import type {
 import type { Recommendation } from "@/lib/validation/decision";
 import type { Company, ContractDetails } from "@/generated/prisma/client";
 
-export const PROMPT_VERSION = "v1";
+export const PROMPT_VERSION = "v2";
 
 export const SYSTEM_PROMPT = `You are a Senior Corporate Credit Underwriter working for Alinma Bank.
 
@@ -125,11 +125,16 @@ export interface DecisionInput {
   };
 }
 
+/** Ratios are handed to the model at memo precision (2dp) — it quotes values
+ * verbatim, and "2.33" belongs in a credit memo where "2.3333" does not. */
+const memoPrecision = (value: number | null): number | null =>
+  value === null ? null : Number(value.toFixed(2));
+
 const pickRatios = (
   ratios: Record<RatioKey, number | null>,
   keys: RatioKey[],
 ): Partial<Record<RatioKey, number | null>> =>
-  Object.fromEntries(keys.map((k) => [k, ratios[k]]));
+  Object.fromEntries(keys.map((k) => [k, memoPrecision(ratios[k])]));
 
 const mapComponents = (components: ScoreComponent[]) =>
   components.map(({ label, weight, score, detail }) => ({ label, weight, score, detail }));

@@ -83,8 +83,10 @@ export function ExecutiveKpis({ headline }: { headline: UnderwritingHeadline }) 
   const healthStatus = conditionFor(headline.healthScore);
   const riskStatus = RISK_META[headline.riskBand];
 
+  // Container query: the panel renders in both the wide analysis page and the
+  // narrower review column — column count follows the available width, not the viewport.
   return (
-    <section aria-label="Executive summary" className="grid gap-5 md:grid-cols-3">
+    <section aria-label="Executive summary" className="grid gap-5 @2xl:grid-cols-3">
       <KpiCard
         label="Underwriting Capacity"
         score={headline.capacityScore}

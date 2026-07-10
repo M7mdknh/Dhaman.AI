@@ -276,6 +276,21 @@ migrations in this phase. Full detail in `PROJECT_STATUS.md` +
 
 ---
 
+# Post-MVP — Demo-Day Polish ✅ (2026-07-11)
+
+Full-product review before Demo Day — no engine/schema change. Detail in
+`PROJECT_STATUS.md` → "Demo-day polish pass".
+
+- [x] Container-query layout for the shared Financial Intelligence panel;
+      review workspace re-flowed to two columns (timeline → decision rail)
+- [x] Crash fix: "Continue to Review" immediately after an upload
+- [x] Real extraction-status badges on every document list (shared meta)
+- [x] Accounting-style negatives + whole-SAR table money
+- [x] Memo prompt v2 (2dp ratios in AI quotes)
+- [x] Demo cast (Nawaf Alharthi / Omar Alkaltham · Alinma Bank / Abdulrahman
+      Yaghmour · Rawabi) + three-company demo queue
+- [x] Live E2E verification (wizard→results, officer→memo→package, REJECT path)
+
 # Future (do NOT implement — architecture-ready only)
 
 - [ ] Deep Extraction — production-grade document AI for scanned Arabic

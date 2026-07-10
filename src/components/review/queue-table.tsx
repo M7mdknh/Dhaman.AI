@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoneyWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { QueueResult, QueueTab } from "@/services/officer-case-service";
@@ -103,7 +103,7 @@ export function QueueTable({
                   <TableHead className="text-right">Risk</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Officer</TableHead>
+                  <TableHead className="hidden 2xl:table-cell">Officer</TableHead>
                   <TableHead>Submitted</TableHead>
                 </TableRow>
               </TableHeader>
@@ -124,7 +124,7 @@ export function QueueTable({
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {row.guaranteeAmount
-                        ? formatMoney(row.guaranteeAmount, row.currency)
+                        ? formatMoneyWhole(row.guaranteeAmount, row.currency)
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
@@ -143,7 +143,7 @@ export function QueueTable({
                     <TableCell>
                       <StatusBadge status={row.status} />
                     </TableCell>
-                    <TableCell className="max-w-36 truncate text-muted-foreground">
+                    <TableCell className="hidden max-w-36 truncate text-muted-foreground 2xl:table-cell">
                       {row.assignedOfficer ?? "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">

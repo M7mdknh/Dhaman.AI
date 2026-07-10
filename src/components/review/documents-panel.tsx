@@ -1,6 +1,7 @@
 import { ExternalLink, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { DOCUMENT_STATUS_META } from "@/lib/case-constants";
 import { formatFileSize } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -15,14 +16,6 @@ export interface ReviewDocumentView {
   extractionError: string | null;
 }
 
-const STATUS_META: Record<DocumentProcessingStatus, { label: string; className: string }> = {
-  UPLOADED: { label: "Uploaded", className: "border-border bg-muted text-muted-foreground" },
-  QUEUED: { label: "Queued", className: "border-border bg-muted text-muted-foreground" },
-  PROCESSING: { label: "Processing", className: "border-sky-200 bg-sky-50 text-sky-700" },
-  COMPLETED: { label: "Extracted", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  FAILED: { label: "Failed", className: "border-red-200 bg-red-50 text-red-700" },
-};
-
 /** IFRS uploads with their extraction status; opens the authenticated preview. */
 export function DocumentsPanel({ documents }: { documents: ReviewDocumentView[] }) {
   if (documents.length === 0) {
@@ -31,7 +24,7 @@ export function DocumentsPanel({ documents }: { documents: ReviewDocumentView[] 
   return (
     <ul className="space-y-2">
       {documents.map((doc) => {
-        const status = STATUS_META[doc.processingStatus];
+        const status = DOCUMENT_STATUS_META[doc.processingStatus];
         return (
           <li
             key={doc.id}

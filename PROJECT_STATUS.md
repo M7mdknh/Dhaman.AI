@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-08.**
+> of any session. **Last updated: 2026-07-11.**
 
 ## Product framing
 
@@ -33,6 +33,42 @@ below. All work is committed on `main`.
   All uploaded fiscal years read for full historical trend analysis; complete
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
+
+### Post-MVP — Demo-day polish pass (2026-07-11)
+
+Full-product review (UI/UX, banking presentation, AI pipeline, demo simulation)
+ahead of Demo Day. No engine, calculation, or schema change. Highlights:
+
+- **Container-query layout for the shared Financial Intelligence panel**
+  (`@container` + `@lg/@2xl/@3xl/@5xl` grids on KPIs, drivers, trends, ratio
+  tables, detail grids): the panel now adapts to its host column, fixing the
+  crushed/clipped officer review center column at 1440px. Review workspace
+  simplified to two columns (intelligence | decision rail); the timeline moved
+  into the decision rail.
+- **Fixed a crash on "Continue to Review" right after an upload** (upload API
+  response lacked `processingStatus`; the new document badge indexed
+  undefined). API now returns it; badge falls back to Uploaded.
+- **Honest document badges everywhere**: case page/wizard now show the real
+  extraction status (Uploaded/Queued/Processing/Extracted/Failed) via shared
+  `DOCUMENT_STATUS_META` — no more hardcoded "Pending Analysis" next to
+  extracted figures.
+- **Banking-grade money display**: accounting negatives `(SAR 8,000,000.00)`
+  everywhere; whole-SAR (`formatMoneyWhole`) in dense tables (queue, cases,
+  ratio/flag evidence, driver metric).
+- **Memo quality**: prompt v2 — ratios reach the model at 2dp so memos quote
+  "2.33", never "2.3333" (cache-invalidating bump; test updated).
+- **Demo cast + data**: seed personas are now Nawaf Alharthi (Admin), Omar
+  Alkaltham (Risk Officer · Alinma Bank — the topbar shows the bank for staff),
+  Abdulrahman Yaghmour (Contractor, Rawabi). `seed-demo-cases.mts` now assigns
+  the strong/moderate/weak cases to three DIFFERENT companies (Rawabi/Nimah/
+  Faisal, each with its own contractor login) so the officer queue reads
+  credibly. Admin dashboard has its own subtitle.
+- **Verified live end-to-end** (Playwright, real Neon + R2 + OpenAI):
+  login → wizard → upload → submit → headline in seconds; officer open →
+  lazy gpt-4o-mini memo → underwriting package; weak-case REJECT story; no
+  console/page errors. 107/107 tests, typecheck + lint + production build
+  clean. NOTE: the OpenAI account intermittently returned `insufficient_quota`
+  — top up credits before Demo Day (graceful retry/error states exist).
 
 ### Post-MVP — Full-width layout pass (2026-07-08)
 

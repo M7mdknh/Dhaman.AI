@@ -21,6 +21,7 @@ export interface DocumentView {
   fileName: string;
   fileSize: number;
   fiscalYear: number | null;
+  processingStatus: Document["processingStatus"];
   createdAt: string; // ISO
 }
 
@@ -87,6 +88,7 @@ export function toDocumentView(document: Document): DocumentView {
     fileName: document.fileName,
     fileSize: document.fileSize,
     fiscalYear: document.fiscalYear,
+    processingStatus: document.processingStatus,
     createdAt: document.createdAt.toISOString(),
   };
 }

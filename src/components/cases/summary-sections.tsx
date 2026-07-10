@@ -6,8 +6,13 @@
 import { FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { beneficiaryTypeLabel, guaranteeTypeLabel } from "@/lib/case-constants";
+import {
+  beneficiaryTypeLabel,
+  DOCUMENT_STATUS_META,
+  guaranteeTypeLabel,
+} from "@/lib/case-constants";
 import { formatDate, formatFileSize, formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 import type { DocumentView } from "@/lib/case-view";
 import type { CompanyInfoInput, ContractDetailsInput } from "@/lib/validation/case";
@@ -22,17 +27,23 @@ function DetailItem({
   wide?: boolean;
 }) {
   return (
-    <div className={wide ? "sm:col-span-2" : undefined}>
+    <div className={cn("min-w-0", wide && "@md:col-span-2")}>
       <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
-      <dd className="mt-1 text-sm text-foreground">{value || "—"}</dd>
+      <dd className="mt-1 break-words text-sm text-foreground">{value || "—"}</dd>
     </div>
   );
 }
 
+/** Two columns only when the card itself is wide enough (container query) —
+ * these blocks render in columns of very different widths across pages. */
 function DetailGrid({ children }: { children: React.ReactNode }) {
-  return <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">{children}</dl>;
+  return (
+    <div className="@container">
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-4 @md:grid-cols-2">{children}</dl>
+    </div>
+  );
 }
 
 export function CompanySummary({ company }: { company: CompanyInfoInput }) {
@@ -86,6 +97,9 @@ export function DocumentRow({
   document: DocumentView;
   children?: React.ReactNode;
 }) {
+  // Freshly uploaded wizard entries may predate a status — read as Uploaded.
+  const status =
+    DOCUMENT_STATUS_META[document.processingStatus] ?? DOCUMENT_STATUS_META.UPLOADED;
   return (
     <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
@@ -99,12 +113,8 @@ export function DocumentRow({
         <p className="text-xs text-muted-foreground">{formatFileSize(document.fileSize)}</p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
-        <Badge variant="outline" className="gap-1">
-          <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
-          Uploaded
-        </Badge>
-        <Badge variant="secondary" className="hidden sm:inline-flex">
-          Pending Analysis
+        <Badge variant="outline" className={cn("font-medium", status.className)}>
+          {status.label}
         </Badge>
         {children}
       </div>

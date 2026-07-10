@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoneyWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { CaseRowView } from "@/lib/case-view";
@@ -81,7 +81,7 @@ export function CasesTable({ cases, filtered }: CasesTableProps) {
                 {item.beneficiary ?? "—"}
               </TableCell>
               <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                {item.guaranteeAmount ? formatMoney(item.guaranteeAmount, item.currency) : "—"}
+                {item.guaranteeAmount ? formatMoneyWhole(item.guaranteeAmount, item.currency) : "—"}
               </TableCell>
               <TableCell>
                 <StatusBadge status={item.status} />

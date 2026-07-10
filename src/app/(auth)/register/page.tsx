@@ -40,7 +40,7 @@ export default function RegisterPage() {
             label="Full name"
             name="fullName"
             autoComplete="name"
-            placeholder="Khalid Al-Harbi"
+            placeholder="Abdulrahman Yaghmour"
             errors={state.fieldErrors.fullName}
           />
           <FormField

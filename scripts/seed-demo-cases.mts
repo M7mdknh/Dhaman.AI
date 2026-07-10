@@ -10,6 +10,8 @@
  */
 import "dotenv/config";
 
+import bcrypt from "bcryptjs";
+
 import { prisma } from "@/lib/prisma";
 import { addFinancialStatement } from "@/services/document-service";
 import { createDraftCase, saveContractDetails, submitCase } from "@/services/case-service";
@@ -24,6 +26,34 @@ import {
 } from "../tests/fixtures/statement-text";
 
 import type { ContractDetailsInput } from "@/lib/validation/case";
+
+/**
+ * Each strength profile belongs to its own seeded company (the generated
+ * statements literally carry these company names), so the officer queue shows
+ * three DIFFERENT applicants — not one company with three contradictory
+ * financial pictures. The Rawabi contractor is the on-stage demo persona;
+ * the other two exist to populate the queue realistically.
+ */
+const APPLICANTS: Record<
+  keyof typeof ALL_PROFILES,
+  { crNumber: string; email: string; fullName: string }
+> = {
+  strong: {
+    crNumber: "1010111111", // Rawabi Contracting Co.
+    email: "contractor@daman.local",
+    fullName: "Abdulrahman Yaghmour",
+  },
+  moderate: {
+    crNumber: "2050222222", // Nimah Construction & Trading
+    email: "contractor.nimah@daman.local",
+    fullName: "Mona Al-Zahrani",
+  },
+  weak: {
+    crNumber: "4030333333", // Faisal Trading & Contracting Est.
+    email: "contractor.faisal@daman.local",
+    fullName: "Faisal Al-Dossary",
+  },
+};
 
 const CONTRACTS: Record<keyof typeof ALL_PROFILES, ContractDetailsInput> = {
   strong: {
@@ -87,22 +117,47 @@ function profilePdf(profile: CompanyProfile): Buffer {
   ]);
 }
 
-async function main() {
-  const contractor = await prisma.user.findUniqueOrThrow({
-    where: { email: "contractor@daman.local" },
+/** Find-or-create the contractor user for one demo company. */
+async function ensureApplicant(applicant: {
+  crNumber: string;
+  email: string;
+  fullName: string;
+}) {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { crNumber: applicant.crNumber },
   });
+  const passwordHash = await bcrypt.hash(process.env.SEED_PASSWORD ?? "Daman!2026", 12);
+  return prisma.user.upsert({
+    where: { email: applicant.email },
+    update: { fullName: applicant.fullName, companyId: company.id },
+    create: {
+      email: applicant.email,
+      fullName: applicant.fullName,
+      role: "CONTRACTOR",
+      companyId: company.id,
+      passwordHash,
+    },
+  });
+}
+
+async function main() {
+  const companyIds = [];
+  for (const applicant of Object.values(APPLICANTS)) {
+    companyIds.push((await ensureApplicant(applicant)).companyId!);
+  }
 
   // Issued guarantees RESTRICT case deletion by design (a bank instrument
   // must never vanish with its case) — for the DEMO reset, remove them first.
   await prisma.guarantee.deleteMany({
-    where: { case: { companyId: contractor.companyId! } },
+    where: { case: { companyId: { in: companyIds } } },
   });
   const removed = await prisma.underwritingCase.deleteMany({
-    where: { companyId: contractor.companyId! },
+    where: { companyId: { in: companyIds } },
   });
   if (removed.count) console.log(`Removed ${removed.count} previous demo case(s).`);
 
   for (const [key, profile] of Object.entries(ALL_PROFILES)) {
+    const contractor = await ensureApplicant(APPLICANTS[key as keyof typeof APPLICANTS]);
     const draft = await createDraftCase(contractor.id);
     if (!draft.ok) throw new Error(`createDraftCase(${key}): ${draft.error}`);
     const { caseId, reference } = draft.data;

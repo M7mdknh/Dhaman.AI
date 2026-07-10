@@ -10,8 +10,11 @@ import type { SessionPayload } from "@/lib/auth/token";
 const ROLE_LABELS: Record<SessionPayload["role"], string> = {
   CONTRACTOR: "Contractor",
   RISK_OFFICER: "Risk Officer",
-  ADMIN: "Admin",
+  ADMIN: "Administrator",
 };
+
+/** Bank staff act on behalf of the institution; applicants act for themselves. */
+const BANK_NAME = "Alinma Bank";
 
 export function Topbar({ session }: { session: SessionPayload }) {
   return (
@@ -27,7 +30,9 @@ export function Topbar({ session }: { session: SessionPayload }) {
           <p className="text-[13px] font-medium leading-tight text-foreground">
             {session.fullName}
           </p>
-          <p className="text-[11px] leading-tight text-muted-foreground">{session.email}</p>
+          <p className="text-[11px] leading-tight text-muted-foreground">
+            {session.role === "CONTRACTOR" ? session.email : BANK_NAME}
+          </p>
         </div>
         <Badge variant="secondary">{ROLE_LABELS[session.role]}</Badge>
         <form action={logoutAction}>

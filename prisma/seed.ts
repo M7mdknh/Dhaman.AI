@@ -18,9 +18,9 @@ const prisma = new PrismaClient({
 const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
 
 const USERS: { email: string; fullName: string; role: UserRole }[] = [
-  { email: "admin@daman.local", fullName: "Abdullah Al-Rashid", role: "ADMIN" },
-  { email: "officer@daman.local", fullName: "Sara Al-Otaibi", role: "RISK_OFFICER" },
-  { email: "contractor@daman.local", fullName: "Khalid Al-Harbi", role: "CONTRACTOR" },
+  { email: "admin@daman.local", fullName: "Nawaf Alharthi", role: "ADMIN" },
+  { email: "officer@daman.local", fullName: "Omar Alkaltham", role: "RISK_OFFICER" },
+  { email: "contractor@daman.local", fullName: "Abdulrahman Yaghmour", role: "CONTRACTOR" },
 ];
 
 const COMPANIES = [
@@ -29,7 +29,7 @@ const COMPANIES = [
     name: "Rawabi Contracting Co.",
     sector: "General Construction",
     city: "Riyadh",
-    contactPerson: "Khalid Al-Harbi",
+    contactPerson: "Abdulrahman Yaghmour",
     contactEmail: "contractor@daman.local",
     phone: "+966 50 111 1111",
   },

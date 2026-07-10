@@ -57,9 +57,9 @@ export async function POST(
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
 
-  const { id, fileName, fileSize, fiscalYear, createdAt } = result.data;
+  const { id, fileName, fileSize, fiscalYear, processingStatus, createdAt } = result.data;
   return NextResponse.json(
-    { document: { id, fileName, fileSize, fiscalYear, createdAt } },
+    { document: { id, fileName, fileSize, fiscalYear, processingStatus, createdAt } },
     { status: 201 },
   );
 }

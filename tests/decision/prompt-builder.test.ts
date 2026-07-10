@@ -19,8 +19,9 @@ describe("decision prompt builder", () => {
     expect(input.contract.guaranteeAmount).toBe("6000000.00");
     expect(input.meta.fiscalYears).toEqual([2024, 2025]);
     expect(input.meta.latestFiscalYear).toBe(2025);
-    // Ratios are quoted verbatim from the engine (current ratio 70/30).
-    expect(input.financialRatios.at(-1)?.liquidity.currentRatio).toBeCloseTo(2.3333, 3);
+    // Ratios reach the model at memo precision — 2dp (current ratio 70/30),
+    // so the memo quotes "2.33", never "2.3333".
+    expect(input.financialRatios.at(-1)?.liquidity.currentRatio).toBe(2.33);
   });
 
   it("never includes personal contact data or raw statement rows", () => {

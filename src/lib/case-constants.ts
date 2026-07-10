@@ -3,7 +3,12 @@
  * Values mirror the Prisma enums (string literals so this file is safe to
  * import from client components without pulling in the generated client).
  */
-import type { BeneficiaryType, CaseStatus, GuaranteeType } from "@/generated/prisma/enums";
+import type {
+  BeneficiaryType,
+  CaseStatus,
+  DocumentProcessingStatus,
+  GuaranteeType,
+} from "@/generated/prisma/enums";
 
 export interface Option<T extends string = string> {
   value: T;
@@ -56,6 +61,21 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   APPROVED: "Approved",
   DECLINED: "Declined",
   ISSUED: "Issued",
+};
+
+/** Document extraction status → badge text + tone, shared by every document list. */
+export const DOCUMENT_STATUS_META: Record<
+  DocumentProcessingStatus,
+  { label: string; className: string }
+> = {
+  UPLOADED: { label: "Uploaded", className: "border-border bg-muted text-muted-foreground" },
+  QUEUED: { label: "Queued", className: "border-border bg-muted text-muted-foreground" },
+  PROCESSING: { label: "Processing", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  COMPLETED: {
+    label: "Extracted",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  },
+  FAILED: { label: "Failed", className: "border-red-200 bg-red-50 text-red-700" },
 };
 
 export function guaranteeTypeLabel(value: GuaranteeType): string {

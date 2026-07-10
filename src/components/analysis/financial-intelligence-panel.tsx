@@ -32,8 +32,12 @@ export function FinancialIntelligencePanel({
 }) {
   const headline = deriveHeadline(report);
 
+  // @container: the panel is shared by the wide contractor analysis page and
+  // the narrower officer review column — its internal grids (KPIs, drivers,
+  // trends, ratio tables) respond to the panel's own width via container
+  // queries so neither host ever crushes them.
   return (
-    <div className="space-y-8">
+    <div className="@container space-y-8">
       {/* The verdict leads — it answers "can the bank issue this guarantee?". */}
       <VerdictHero headline={headline} />
 
@@ -51,7 +55,7 @@ export function FinancialIntelligencePanel({
             need at least two.
           </p>
         )}
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 @lg:grid-cols-2 @4xl:grid-cols-3">
           {CHARTED_TRENDS.map((key) => {
             const trend = report.trends.find((t) => t.key === key);
             if (!trend) return null;
