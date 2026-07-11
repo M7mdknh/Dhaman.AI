@@ -153,8 +153,8 @@ function inferStatements(figures: FiguresByYear, pages: number[]): DetectedState
 
 /**
  * Runs the vision extraction. Returns a synthetic `IfrsExtraction`, or null when
- * vision is unavailable / disabled / yielded no figures — so the caller can
- * fall back to the deterministic OCR path. Never throws.
+ * vision is unavailable / disabled / yielded no figures — the caller then fails
+ * fast (Express) or falls back to the OCR path (Comprehensive). Never throws.
  */
 export async function extractViaVision(
   bytes: Buffer,

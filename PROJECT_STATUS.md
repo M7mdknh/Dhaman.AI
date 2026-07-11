@@ -34,6 +34,32 @@ below. All work is committed on `main`.
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
 
+### Post-MVP — Express extraction redesign: OCR removed from Express (2026-07-11)
+
+The fundamental bottleneck was the OCR *fallback*: tesseract.js (ara+eng, 200
+DPI, 2 workers, up to 10 pages) runs **150–300s per scanned document** — and
+its Arabic numeric tables usually fail the trust gate afterwards, so minutes
+were spent producing a blocking error. It was entered whenever GPT-Vision
+returned null (quota errors, timeouts, bad JSON). Express now never OCRs:
+
+- **Express pipeline**: MuPDF text pass locates statement pages (no OCR, no
+  full-document reconstruction) → if <5/8 core figures, GPT-Vision reads ≤5
+  statement-page images (`VISION_MAX_PAGES` 6→5) with the 10-field
+  minimum-JSON prompt → figures feed the deterministic Financial Intelligence
+  Engine unchanged. If vision yields nothing for a scanned doc, the document
+  **fails fast (~2s) with an honest message** (retry is cheap — checkpointed).
+  OCR remains available in Comprehensive only, still watchdog-budgeted.
+- **Vision model split from the memo model**: new `OPENAI_VISION_MODEL`
+  (default `gpt-4.1`); on 404 the provider retries once on `gpt-4o`
+  automatically. The memo stays on `OPENAI_MODEL` (gpt-4o-mini). Measured
+  live: gpt-4.1 read the scanned fixture in **3.1s** (vs 6.2s on gpt-4o-mini)
+  at 3,593 input tokens (vs ~110,800 — mini inflates image tokens ~33×).
+- **Verified end-to-end** (real OpenAI + Neon): scanned doc + mock provider →
+  FAILED honestly with zero OCR; scanned doc + real provider → COMPLETED /
+  ANALYSIS_READY, extraction wall 5.1s in a cold child process (storage 0.4s,
+  raster 0.3s, vision 3.1s, engine 0.2s — warm server lands ≈5s; digital PDFs
+  stay ~1–2s, no network). 113/113 tests, typecheck + lint + build clean.
+
 ### Post-MVP — Processing orchestration fix: checkpointed resume + live stage log (2026-07-11)
 
 Root cause of "OpenAI succeeds but the contractor never sees results": the

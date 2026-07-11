@@ -23,18 +23,24 @@ type ContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
 
+/** Retried once when the configured vision model is unavailable (404). */
+const VISION_FALLBACK_MODEL = "gpt-4o";
+
 export class OpenAIProvider implements LLMProvider {
   readonly name = "openai";
   readonly model: string;
+  private readonly visionModel: string;
   private readonly apiKey: string;
 
-  constructor(options: { apiKey: string; model: string }) {
+  constructor(options: { apiKey: string; model: string; visionModel?: string }) {
     this.apiKey = options.apiKey;
     this.model = options.model;
+    this.visionModel = options.visionModel ?? options.model;
   }
 
   async completeJSON(request: LLMRequest): Promise<LLMResult> {
     return this.chat(
+      this.model,
       [
         { role: "system", content: request.system },
         { role: "user", content: request.user },
@@ -52,17 +58,31 @@ export class OpenAIProvider implements LLMProvider {
         (url): ContentPart => ({ type: "image_url", image_url: { url, detail: "high" } }),
       ),
     ];
-    return this.chat(
-      [
-        { role: "system", content: request.system },
-        { role: "user", content },
-      ],
-      request,
-    );
+    const messages = [
+      { role: "system", content: request.system },
+      { role: "user", content },
+    ];
+    try {
+      return await this.chat(this.visionModel, messages, request);
+    } catch (error) {
+      // A 404 means THIS account/model combination doesn't exist (e.g. gpt-4.1
+      // not yet available on the key) — the request itself is fine, so retry
+      // it once on the widely-available fallback instead of failing extraction.
+      const modelUnavailable =
+        error instanceof LLMProviderError &&
+        error.status === 404 &&
+        this.visionModel !== VISION_FALLBACK_MODEL;
+      if (!modelUnavailable) throw error;
+      console.warn(
+        `[openai-provider] vision model "${this.visionModel}" unavailable (404); retrying with "${VISION_FALLBACK_MODEL}"`,
+      );
+      return this.chat(VISION_FALLBACK_MODEL, messages, request);
+    }
   }
 
   /** Shared POST + error mapping for both text and vision calls. */
   private async chat(
+    model: string,
     messages: Array<{ role: string; content: string | ContentPart[] }>,
     request: { temperature: number; maxOutputTokens: number; timeoutMs: number },
   ): Promise<LLMResult> {
@@ -79,7 +99,7 @@ export class OpenAIProvider implements LLMProvider {
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
-          model: this.model,
+          model,
           temperature: request.temperature,
           max_tokens: request.maxOutputTokens,
           response_format: { type: "json_object" },
@@ -106,7 +126,11 @@ export class OpenAIProvider implements LLMProvider {
       if (response.status >= 500) {
         throw new LLMProviderError("BAD_RESPONSE", `OpenAI server error (${response.status})`);
       }
-      throw new LLMProviderError("BAD_RESPONSE", `OpenAI request failed (${response.status})`);
+      throw new LLMProviderError(
+        "BAD_RESPONSE",
+        `OpenAI request failed (${response.status})`,
+        response.status,
+      );
     }
 
     let payload: ChatCompletionResponse;

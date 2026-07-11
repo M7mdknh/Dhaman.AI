@@ -193,7 +193,7 @@ export async function processCaseDocuments(
   const deferred: Promise<unknown>[] = [];
 
   const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, (document) =>
-    processDocument(document, timer, onStage),
+    processDocument(document, timer, onStage, mode),
   );
 
   // Release the shared OCR workers; a failure here must not fail the pipeline.
@@ -257,6 +257,7 @@ async function processDocument(
   document: DocumentWithExtraction,
   timer: StageTimer,
   onStage?: StageReporter,
+  mode: "express" | "comprehensive" = env.UNDERWRITING_MODE,
 ): Promise<DocumentResult> {
   const startedAt = new Date();
   logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
@@ -290,12 +291,14 @@ async function processDocument(
     }
 
     await onStage?.("DETECTING_STATEMENTS");
-    // HYBRID extraction. 1) Fast text-only pass — for a digital PDF this is the
-    // whole story (no network, ~1s). 2) If it yields too few core figures the
-    // document is scanned/damaged → GPT-Vision reads the statement pages. 3) If
-    // vision is unavailable/failed, fall back to the deterministic OCR path —
-    // BOUNDED by a watchdog budget so a heavy scanned report produces an honest
-    // failure instead of an eternally-RUNNING job.
+    // HYBRID extraction. 1) Fast text-only pass — MuPDF locates the statement
+    // pages on the text layer; for a digital PDF this is the whole story (no
+    // network, ~1s). 2) If it yields too few core figures the document is
+    // scanned/damaged → GPT-Vision reads ONLY the statement-page images (≤5).
+    // 3) The OCR fallback is COMPREHENSIVE-ONLY: tesseract on Arabic statement
+    // tables runs minutes per document and its numbers usually fail the trust
+    // gate anyway — Express fails fast and honestly instead, keeping the
+    // upload → intelligence → dashboard path seconds long.
     let extraction = await extractIfrs(bytes, { enableOcr: false, allowLowText: true });
     if (coreFigureCoverage(extraction.figures) < VISION_MIN_CORE) {
       await onStage?.("DETECTING_STATEMENTS", "Reading scanned statement pages with AI vision");
@@ -303,7 +306,7 @@ async function processDocument(
       if (vision && coreFigureCoverage(vision.figures) > coreFigureCoverage(extraction.figures)) {
         logStage("vision_extracted", document.id, startedAt, { years: vision.result.fiscalYears });
         extraction = vision;
-      } else {
+      } else if (mode === "comprehensive") {
         await onStage?.("DETECTING_STATEMENTS", "Reading statement pages with OCR");
         const ocr = await withBudget(
           () => extractIfrs(bytes, { enableOcr: true }),
@@ -311,6 +314,16 @@ async function processDocument(
           document.fileName,
         );
         if (coreFigureCoverage(ocr.figures) >= coreFigureCoverage(extraction.figures)) extraction = ocr;
+      } else if (coreFigureCoverage(extraction.figures) === 0) {
+        // Express + scanned document + vision yielded nothing: nothing usable
+        // exists and OCR is off the table. Fail in seconds with a way forward
+        // (the checkpointed retry makes "try again" genuinely cheap).
+        throw new PdfReadError(
+          "NO_TEXT",
+          `${document.fileName} appears to be a scanned statement and the AI document reader ` +
+            "could not read it just now. Resume processing to try again, or upload the " +
+            "original digital PDF issued by the auditor for instant extraction.",
+        );
       }
     }
     await onStage?.("EXTRACTING_DATA");

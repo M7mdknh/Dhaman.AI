@@ -51,7 +51,8 @@ export interface LLMProvider {
   completeJSON(request: LLMRequest): Promise<LLMResult>;
   /**
    * Multimodal extraction over page images. Optional — a provider without
-   * vision omits it, and the caller falls back to the deterministic OCR path.
+   * vision omits it; scanned documents then fail fast in Express, or fall
+   * back to the deterministic OCR path in Comprehensive.
    */
   completeVisionJSON?(request: VisionExtractRequest): Promise<LLMResult>;
 }
@@ -74,11 +75,14 @@ const RETRYABLE: Record<LLMErrorKind, boolean> = {
 export class LLMProviderError extends Error {
   readonly kind: LLMErrorKind;
   readonly retryable: boolean;
+  /** HTTP status when the provider rejected the request (404 = unknown model). */
+  readonly status?: number;
 
-  constructor(kind: LLMErrorKind, message: string) {
+  constructor(kind: LLMErrorKind, message: string, status?: number) {
     super(message);
     this.name = "LLMProviderError";
     this.kind = kind;
     this.retryable = RETRYABLE[kind];
+    this.status = status;
   }
 }

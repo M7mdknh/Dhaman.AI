@@ -54,6 +54,11 @@ const envSchema = z.object({
   // with the deterministic MockProvider and stays fully deployable).
   OPENAI_API_KEY: z.string().min(1).optional(),
   OPENAI_MODEL: z.string().min(1).default("gpt-4o-mini"),
+  // Vision EXTRACTION model (separate from the memo model above): reading
+  // scanned statement figures is the Express critical path, so it gets the
+  // strongest vision reader. If OpenAI reports this model unavailable (404),
+  // the provider retries the request once on gpt-4o automatically.
+  OPENAI_VISION_MODEL: z.string().min(1).default("gpt-4.1"),
   // Force a provider regardless of key presence ("mock" | "openai").
   LLM_PROVIDER: z.enum(["openai", "mock"]).optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
@@ -96,16 +101,17 @@ const envSchema = z.object({
   OCR_DPI: z.coerce.number().int().min(120).max(400).default(200),
   OCR_MAX_PAGES: z.coerce.number().int().min(1).max(60).default(10),
 
-  // ---- GPT-Vision extraction (the hybrid document-understanding path). When
-  // a document has no usable text layer (scanned/damaged), the statement page
-  // IMAGES are sent to a vision-capable model instead of OCR. Requires a vision
-  // provider (OpenAI gpt-4o/gpt-4o-mini); without one the path degrades to OCR.
+  // ---- GPT-Vision extraction (the document-understanding path). When a
+  // document has no usable text layer (scanned/damaged), the statement page
+  // IMAGES are sent to a vision-capable model (OPENAI_VISION_MODEL). This is
+  // the ONLY reader for scanned statements in Express; Comprehensive may still
+  // degrade to the OCR fallback when vision is unavailable.
   VISION_ENABLED: z
     .enum(["true", "false"])
     .default("true")
     .transform((v) => v === "true"),
   // Pages rasterized+sent to the model (statement pages only). Bounds cost/latency.
-  VISION_MAX_PAGES: z.coerce.number().int().min(1).max(20).default(6),
+  VISION_MAX_PAGES: z.coerce.number().int().min(1).max(20).default(5),
   // Rasterization DPI for vision images. 150 is legible for figures yet compact.
   VISION_DPI: z.coerce.number().int().min(96).max(300).default(150),
 });
@@ -122,6 +128,7 @@ export const env = envSchema.parse({
   S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   OPENAI_MODEL: process.env.OPENAI_MODEL,
+  OPENAI_VISION_MODEL: process.env.OPENAI_VISION_MODEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
   LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
   VISION_TIMEOUT_MS: process.env.VISION_TIMEOUT_MS,

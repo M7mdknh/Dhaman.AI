@@ -14,7 +14,11 @@ export function getLLMProvider(): LLMProvider {
   if (env.LLM_PROVIDER === "mock") return new MockProvider();
 
   if (env.OPENAI_API_KEY) {
-    return new OpenAIProvider({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL });
+    return new OpenAIProvider({
+      apiKey: env.OPENAI_API_KEY,
+      model: env.OPENAI_MODEL,
+      visionModel: env.OPENAI_VISION_MODEL,
+    });
   }
 
   // LLM_PROVIDER=openai without a key still degrades gracefully.
