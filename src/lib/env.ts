@@ -57,11 +57,17 @@ const envSchema = z.object({
   // Force a provider regardless of key presence ("mock" | "openai").
   LLM_PROVIDER: z.enum(["openai", "mock"]).optional(),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
-  // Vision extraction sits ON the Stage-1 critical path (a scanned statement
-  // must be read before the engine runs), so it gets a TIGHTER timeout than the
-  // background memo: a throttled/slow key fails fast to the OCR fallback instead
-  // of stalling the "results in seconds" moment.
-  VISION_TIMEOUT_MS: z.coerce.number().int().positive().default(12_000),
+  // Vision extraction sits on the Stage-1 critical path, but aborting it early
+  // is the worst of all worlds: OpenAI BILLS the completed request while the
+  // client has already discarded it, and the pipeline falls into the far
+  // slower OCR path. A multi-image vision request on a real scanned statement
+  // routinely needs 15–40s, so the default waits it out — the live stage
+  // dashboard tells the user exactly what is happening in the meantime.
+  VISION_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // Wall-clock budget for the last-resort OCR fallback (per document). On
+  // timeout the document FAILS with an honest message instead of leaving the
+  // job RUNNING forever — orchestration guard, not an OCR quality knob.
+  OCR_FALLBACK_BUDGET_MS: z.coerce.number().int().positive().default(120_000),
 
   // ---- Underwriting mode. EXPRESS (default) optimizes for the fastest
   // believable assessment: only the LATEST audited statement is required and
@@ -119,6 +125,7 @@ export const env = envSchema.parse({
   LLM_PROVIDER: process.env.LLM_PROVIDER,
   LLM_TIMEOUT_MS: process.env.LLM_TIMEOUT_MS,
   VISION_TIMEOUT_MS: process.env.VISION_TIMEOUT_MS,
+  OCR_FALLBACK_BUDGET_MS: process.env.OCR_FALLBACK_BUDGET_MS,
   UNDERWRITING_MODE: process.env.UNDERWRITING_MODE,
   TESSERACT_LANG_PATH: process.env.TESSERACT_LANG_PATH,
   TESSERACT_CORE_PATH: process.env.TESSERACT_CORE_PATH,

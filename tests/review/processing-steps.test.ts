@@ -4,6 +4,7 @@ import {
   PROCESSING_STAGES,
   buildProcessingSteps,
   deriveProgress,
+  deriveStageTimings,
   isProcessingActive,
   type ProcessingSnapshot,
   type StepState,
@@ -16,6 +17,7 @@ function snapshot(overrides: Partial<ProcessingSnapshot>): ProcessingSnapshot {
     failedStage: null,
     attempts: 1,
     error: null,
+    stageEvents: [],
     startedAt: null,
     completedAt: null,
     updatedAt: new Date().toISOString(),
@@ -112,6 +114,57 @@ describe("deriveProgress", () => {
     expect(p.overallPct).toBe(100);
     expect(p.estRemainingMs).toBe(0);
     expect(p.stage1Complete).toBe(true);
+  });
+});
+
+describe("deriveStageTimings", () => {
+  const t0 = Date.parse("2026-07-11T10:00:00.000Z");
+
+  it("derives durations: a stage ends when the next begins", () => {
+    const timings = deriveStageTimings(
+      snapshot({
+        state: "RUNNING",
+        stage: "EXTRACTING_DATA",
+        stageEvents: [
+          { stage: "READING_STATEMENTS", startedAt: new Date(t0).toISOString() },
+          { stage: "DETECTING_STATEMENTS", startedAt: new Date(t0 + 800).toISOString() },
+          {
+            stage: "EXTRACTING_DATA",
+            startedAt: new Date(t0 + 2100).toISOString(),
+            note: "Reading scanned statement pages with AI vision",
+          },
+        ],
+      }),
+      t0 + 6100,
+    );
+
+    expect(timings.READING_STATEMENTS).toMatchObject({ durationMs: 800, running: false });
+    expect(timings.DETECTING_STATEMENTS).toMatchObject({ durationMs: 1300, running: false });
+    expect(timings.EXTRACTING_DATA).toMatchObject({
+      durationMs: 4000,
+      running: true,
+      note: "Reading scanned statement pages with AI vision",
+    });
+  });
+
+  it("freezes the last stage at completedAt on finished runs", () => {
+    const timings = deriveStageTimings(
+      snapshot({
+        state: "COMPLETED",
+        stage: "AI_UNDERWRITING",
+        completedAt: new Date(t0 + 9000).toISOString(),
+        stageEvents: [
+          { stage: "FINANCIAL_ANALYSIS", startedAt: new Date(t0).toISOString() },
+          { stage: "AI_UNDERWRITING", startedAt: new Date(t0 + 500).toISOString() },
+        ],
+      }),
+      t0 + 999_999, // "now" far in the future must not inflate the duration
+    );
+    expect(timings.AI_UNDERWRITING).toMatchObject({ durationMs: 8500, running: false });
+  });
+
+  it("returns empty for a run with no events", () => {
+    expect(deriveStageTimings(snapshot({}))).toEqual({});
   });
 });
 

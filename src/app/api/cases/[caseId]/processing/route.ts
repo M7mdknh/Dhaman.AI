@@ -11,7 +11,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { after } from "next/server";
 
 import { getSession } from "@/lib/auth/session";
-import { getProcessingViewForOwner, runCaseProcessing } from "@/services/case-processing-service";
+import {
+  getProcessingViewForOwner,
+  resumeStalledProcessing,
+  runCaseProcessing,
+} from "@/services/case-processing-service";
 
 export async function GET(
   _request: NextRequest,
@@ -30,6 +34,13 @@ export async function GET(
 
   if (view.snapshot.state === "QUEUED") {
     after(() => runCaseProcessing(caseId));
+  } else if (view.snapshot.state === "RUNNING" && view.snapshot.stalled) {
+    // A live run heartbeats; a stalled one is DEAD (killed process). Re-queue
+    // and resume it — checkpointed extraction means no work (and no paid AI
+    // call) is ever repeated. Attempt-capped inside; atomic against races.
+    after(async () => {
+      if (await resumeStalledProcessing(caseId)) await runCaseProcessing(caseId);
+    });
   }
 
   // Never cache: the dashboard needs the live state on every poll. The payload

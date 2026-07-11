@@ -21,7 +21,7 @@ import { env } from "@/lib/env";
 import { deriveHeadline, type UnderwritingHeadline } from "@/lib/finance/headline";
 import { formatPerfReport, formatStageTargets, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
-import { PROCESSING_STAGES, type ProcessingSnapshot } from "@/lib/processing";
+import { PROCESSING_STAGES, type ProcessingSnapshot, type StageEvent } from "@/lib/processing";
 import { recordAudit } from "@/services/audit-service";
 import { runDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { processCaseDocuments } from "@/services/extraction-service";
@@ -30,8 +30,18 @@ import { buildFinancialIntelligence } from "@/services/finance/financial-intelli
 import type { Prisma } from "@/generated/prisma/client";
 import type { ProcessingStage } from "@/generated/prisma/enums";
 
-/** A RUNNING job untouched for this long is treated as stalled (crashed mid-run). */
-const STALE_RUNNING_MS = 5 * 60 * 1000;
+/**
+ * A RUNNING job untouched for this long is treated as stalled (crashed
+ * mid-run). A LIVE run can never look stalled: it heartbeats the job row
+ * every HEARTBEAT_MS even while deep inside a long extraction, so quiet
+ * really does mean dead — and the poll can safely auto-resume it.
+ */
+const STALE_RUNNING_MS = 90 * 1000;
+const HEARTBEAT_MS = 15 * 1000;
+
+/** Auto-resume (poll-triggered) stops after this many attempts; the manual
+ * Retry button keeps working — a human can always insist. */
+const MAX_AUTO_ATTEMPTS = 5;
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -47,6 +57,7 @@ export function enqueueProcessing(tx: Prisma.TransactionClient, caseId: string) 
     stage: null,
     failedStage: null,
     error: null,
+    stageEvents: [] as Prisma.InputJsonValue,
     startedAt: null,
     completedAt: null,
     queuedAt: new Date(),
@@ -73,11 +84,22 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
       stage: null,
       error: null,
       failedStage: null,
+      stageEvents: [],
       startedAt: new Date(),
       attempts: { increment: 1 },
     },
   });
   if (claim.count === 0) return; // already running, completed, or no job
+
+  // Heartbeat: bump the job row while the run is alive so a long stage (vision
+  // on a scanned report, the OCR fallback) never reads as a stall. Scoped to
+  // state=RUNNING so it can never resurrect a job another actor re-queued.
+  const heartbeat = setInterval(() => {
+    void prisma.caseProcessing
+      .updateMany({ where: { caseId, state: "RUNNING" }, data: { state: "RUNNING" } })
+      .catch(() => {});
+  }, HEARTBEAT_MS);
+  heartbeat.unref?.();
 
   // Kick off the two writes/reads that DON'T depend on extraction so they run
   // CONCURRENTLY with the ~1s document pipeline instead of adding ~350ms of
@@ -96,16 +118,38 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
 
   // Advance the persisted stage monotonically: the extraction pipeline reports
   // Reading/Detecting/Extracting repeatedly across documents, so we never let
-  // the dashboard move backwards. The write is FIRE-AND-FORGET: stage progress
+  // the dashboard move backwards. Each advance appends a timestamped event to
+  // the run's execution log (`stageEvents`) — the dashboard derives live
+  // per-stage durations from it. The write is FIRE-AND-FORGET: stage progress
   // is observational (it drives the live dashboard), not correctness, so a
   // progress round-trip must never sit on the ≤3s Stage-1 critical path. The
   // dashboard poll simply reads whatever stage has committed.
   let stageIndex = -1;
-  const advanceTo = async (stage: ProcessingStage) => {
+  const stageEvents: StageEvent[] = [];
+  const advanceTo = async (stage: ProcessingStage, note?: string) => {
     const next = PROCESSING_STAGES.indexOf(stage);
-    if (next <= stageIndex) return;
+    if (next <= stageIndex) {
+      // Same stage, richer context (e.g. "AI vision reading scanned pages"):
+      // annotate the existing event so the dashboard can explain the wait.
+      if (note && next === stageIndex && stageEvents.length > 0) {
+        stageEvents[stageEvents.length - 1].note = note;
+        void prisma.caseProcessing
+          .update({
+            where: { caseId },
+            data: { stageEvents: stageEvents as unknown as Prisma.InputJsonValue },
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     stageIndex = next;
-    void prisma.caseProcessing.update({ where: { caseId }, data: { stage } }).catch(() => {});
+    stageEvents.push({ stage, startedAt: new Date().toISOString(), ...(note ? { note } : {}) });
+    void prisma.caseProcessing
+      .update({
+        where: { caseId },
+        data: { stage, stageEvents: stageEvents as unknown as Prisma.InputJsonValue },
+      })
+      .catch(() => {});
   };
 
   // End-to-end timer for the whole-case performance report (every stage:
@@ -176,9 +220,17 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     // and never un-readies the case.
     let memoGenerated = false;
     if (mode === "comprehensive") {
-      const decision = await timer.time(STAGE.AI_UNDERWRITING, () =>
-        runDecisionIntelligence(caseId, null),
-      );
+      // RESUME GUARD: a memo that already exists (an earlier run got this far,
+      // or an officer generated one) is never regenerated — a succeeded AI
+      // request is never repeated. runDecisionIntelligence additionally caches
+      // by input hash, so even a forced re-entry cannot double-call the model.
+      const existingMemo = await prisma.decisionIntelligence.findFirst({
+        where: { caseId },
+        select: { id: true },
+      });
+      const decision = existingMemo
+        ? { ok: true as const }
+        : await timer.time(STAGE.AI_UNDERWRITING, () => runDecisionIntelligence(caseId, null));
       memoGenerated = decision.ok;
       if (!decision.ok) {
         deferred.push(
@@ -233,6 +285,8 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
       stage,
       "An unexpected error interrupted processing. You can retry the analysis.",
     );
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -280,15 +334,68 @@ export async function retryProcessing(userId: string, caseId: string): Promise<A
     return { ok: false, error: "Processing is not in a state that can be retried." };
   }
 
+  await requeueJob(caseId);
+  await recordAudit({ action: "case.processing_retried", actorId: userId, caseId });
+  return { ok: true };
+}
+
+/** Re-arms a job to QUEUED for another (resuming) run. Completed work is
+ * never redone: extraction results are checkpointed per document, so the next
+ * run reuses them and continues from the first unfinished stage. */
+async function requeueJob(caseId: string): Promise<void> {
   await prisma.$transaction([
     prisma.caseProcessing.update({
       where: { caseId },
-      data: { state: "QUEUED", stage: null, failedStage: null, error: null, startedAt: null, completedAt: null, queuedAt: new Date() },
+      data: {
+        state: "QUEUED",
+        stage: null,
+        failedStage: null,
+        error: null,
+        stageEvents: [],
+        startedAt: null,
+        completedAt: null,
+        queuedAt: new Date(),
+      },
     }),
     prisma.underwritingCase.update({ where: { id: caseId }, data: { status: "PROCESSING" } }),
   ]);
-  await recordAudit({ action: "case.processing_retried", actorId: userId, caseId });
-  return { ok: true };
+}
+
+/**
+ * Self-healing for a DEAD run (poll-triggered): a RUNNING job whose heartbeat
+ * has gone quiet past the stall threshold is re-queued so the next
+ * `runCaseProcessing` resumes it — no human intervention, no lost case.
+ * Attempt-capped so a genuinely broken document cannot loop forever; the
+ * manual Retry button has no cap. Returns true when a resume was armed.
+ */
+export async function resumeStalledProcessing(caseId: string): Promise<boolean> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS);
+  // Atomic: only one poller wins the RUNNING→QUEUED flip for a stale job.
+  const requeued = await prisma.caseProcessing.updateMany({
+    where: {
+      caseId,
+      state: "RUNNING",
+      updatedAt: { lt: cutoff },
+      attempts: { lt: MAX_AUTO_ATTEMPTS },
+    },
+    data: {
+      state: "QUEUED",
+      stage: null,
+      failedStage: null,
+      error: null,
+      stageEvents: [],
+      startedAt: null,
+      completedAt: null,
+      queuedAt: new Date(),
+    },
+  });
+  if (requeued.count === 0) return false;
+  await recordAudit({
+    action: "case.processing_auto_resumed",
+    caseId,
+    detail: { reason: "stalled run heartbeat went quiet" },
+  });
+  return true;
 }
 
 /**
@@ -302,6 +409,7 @@ export function toProcessingSnapshot(job: {
   failedStage: ProcessingSnapshot["failedStage"];
   attempts: number;
   error: string | null;
+  stageEvents?: unknown;
   startedAt: Date | null;
   completedAt: Date | null;
   updatedAt: Date;
@@ -312,6 +420,7 @@ export function toProcessingSnapshot(job: {
     failedStage: job.failedStage,
     attempts: job.attempts,
     error: job.error,
+    stageEvents: Array.isArray(job.stageEvents) ? (job.stageEvents as StageEvent[]) : [],
     startedAt: job.startedAt?.toISOString() ?? null,
     completedAt: job.completedAt?.toISOString() ?? null,
     updatedAt: job.updatedAt.toISOString(),

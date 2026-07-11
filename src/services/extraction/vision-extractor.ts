@@ -42,22 +42,22 @@ const SYSTEM_PROMPT =
   "Statement of Cash Flows), which may be in Arabic and/or English. You transcribe figures EXACTLY as " +
   "printed and never invent, estimate, or derive values that are not shown. Return ONLY strict JSON.";
 
+// MINIMUM underwriting set only — no full statement reconstruction. Fewer
+// requested fields = fewer output tokens = lower latency and a smaller
+// failure surface on the Stage-1 critical path. The deterministic engine
+// treats anything absent as "not printed" and renormalizes.
 const CORE_FIELDS =
   "revenue, netIncome, cash, currentAssets, currentLiabilities, totalAssets, totalLiabilities, " +
   "totalEquity, operatingCashFlow, totalDebt";
-const EXTENDED_FIELDS =
-  "cogs, grossProfit, operatingIncome, ebitda, interestExpense, receivables, inventory, " +
-  "shortTermDebt, longTermDebt, investingCashFlow, financingCashFlow, capex";
 
 const USER_PROMPT =
-  `From the attached statement page images, extract the figures below for EACH fiscal year column shown ` +
+  `From the attached statement page images, extract ONLY the figures below for EACH fiscal year column shown ` +
   `(usually the reporting year and one comparative).\n` +
   `- Report ABSOLUTE amounts in the reporting currency: if figures are presented in thousands/millions, multiply them out to full units.\n` +
   `- Use NEGATIVE numbers for losses, net cash outflows, and any figure printed in parentheses.\n` +
-  `- If a value is not printed on these pages, use null. Do not compute values that are not shown.\n\n` +
-  `Core fields: ${CORE_FIELDS}\n` +
-  `Extended fields (include only if printed): ${EXTENDED_FIELDS}\n\n` +
-  `Return JSON exactly of this shape:\n` +
+  `- If a value is not printed on these pages, use null. Do not compute, derive, or estimate anything.\n\n` +
+  `Fields: ${CORE_FIELDS}\n\n` +
+  `Return ONLY strict JSON of exactly this shape — no explanations, no markdown:\n` +
   `{"currency": "SAR" | null, "years": [{"fiscalYear": 2025, "revenue": 120000000, "netIncome": 18000000, "...": null}]}`;
 
 /** Vision output: a number or null for every canonical key, per fiscal year. */
@@ -174,6 +174,7 @@ export async function extractViaVision(
     );
     const images = raster.map((p) => `data:image/png;base64,${p.png.toString("base64")}`);
 
+    const visionStarted = Date.now();
     const result = await timer.time(STAGE.VISION, () =>
       provider.completeVisionJSON!({
         system: SYSTEM_PROMPT,
@@ -181,12 +182,28 @@ export async function extractViaVision(
         images,
         maxOutputTokens: 1_500,
         temperature: 0,
-        // Critical-path timeout: fail fast to OCR rather than stall Stage 1.
+        // Generous by design: aborting a vision call wastes a BILLED request
+        // and drops us into the far slower OCR fallback. See env.ts.
         timeoutMs: env.VISION_TIMEOUT_MS,
       }),
     );
 
+    const validationStarted = Date.now();
     const parsed = parseVisionJson(result.text);
+    // Measurement: the model call is expected to dominate; validation ~0ms.
+    console.log(
+      "[vision-extraction]",
+      JSON.stringify({
+        stage: "measured",
+        pages: pages.length,
+        openaiMs: validationStarted - visionStarted,
+        validationMs: Date.now() - validationStarted,
+        inputTokens: result.usage?.inputTokens ?? null,
+        outputTokens: result.usage?.outputTokens ?? null,
+        parsed: Boolean(parsed),
+        years: parsed?.years.length ?? 0,
+      }),
+    );
     if (!parsed || parsed.years.length === 0) return null;
 
     const { figures, lineItems } = toFigures(parsed.years);

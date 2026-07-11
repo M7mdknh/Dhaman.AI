@@ -13,9 +13,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   buildProcessingSteps,
   deriveProgress,
+  deriveStageTimings,
   isProcessingActive,
   type ProcessingSnapshot,
   type ProcessingStep,
+  type StageTiming,
 } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +34,13 @@ type Snapshot = ProcessingSnapshot & { stalled: boolean; headline?: Underwriting
 const POLL_FAST_MS = 900;
 const POLL_SLOW_MS = 2000;
 
-function StepRow({ step }: { step: ProcessingStep }) {
+/** "0.8s" under 10s, "12s" after — matches how people read short durations. */
+function formatDuration(ms: number): string {
+  const s = ms / 1000;
+  return s < 10 ? `${s.toFixed(1)}s` : `${Math.round(s)}s`;
+}
+
+function StepRow({ step, timing }: { step: ProcessingStep; timing?: StageTiming }) {
   const icon =
     step.state === "complete" ? (
       <Check className="size-4 text-emerald-600" aria-hidden />
@@ -45,21 +53,38 @@ function StepRow({ step }: { step: ProcessingStep }) {
     );
 
   return (
-    <li className="flex items-center gap-3">
-      <span className="flex size-5 items-center justify-center" aria-hidden>
+    <li className="flex items-start gap-3">
+      <span className="mt-0.5 flex size-5 items-center justify-center" aria-hidden>
         {icon}
       </span>
-      <span
-        className={cn(
-          "text-sm",
-          step.state === "complete" && "text-foreground",
-          step.state === "active" && "font-medium text-foreground",
-          step.state === "failed" && "font-medium text-red-600",
-          step.state === "pending" && "text-muted-foreground",
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block text-sm",
+            step.state === "complete" && "text-foreground",
+            step.state === "active" && "font-medium text-foreground",
+            step.state === "failed" && "font-medium text-red-600",
+            step.state === "pending" && "text-muted-foreground",
+          )}
+        >
+          {step.label}
+        </span>
+        {step.state === "active" && timing?.note && (
+          <span className="block text-xs text-muted-foreground">{timing.note}</span>
         )}
-      >
-        {step.label}
       </span>
+      {timing && (step.state === "complete" || step.state === "active") && (
+        <span
+          className={cn(
+            "shrink-0 text-xs tabular-nums",
+            step.state === "active" ? "text-blue-600" : "text-muted-foreground",
+          )}
+        >
+          {step.state === "active"
+            ? `Running… ${formatDuration(timing.durationMs)}`
+            : formatDuration(timing.durationMs)}
+        </span>
+      )}
     </li>
   );
 }
@@ -128,9 +153,10 @@ export function ProcessingDashboard({
         stage: null,
         failedStage: null,
         error: null,
+        stageEvents: [],
         stalled: false,
       }));
-      toast.success("Retrying analysis");
+      toast.success("Resuming analysis");
       router.refresh();
     } else if (result.error) {
       toast.error(result.error);
@@ -138,6 +164,9 @@ export function ProcessingDashboard({
   }
 
   const steps = buildProcessingSteps(snapshot);
+  // Live per-stage durations from the run's event log. Recomputed on every
+  // render; the poll ticks every 1–2s, which keeps the active timer moving.
+  const timings = deriveStageTimings(snapshot);
   const failed = snapshot.state === "FAILED";
   const showRetry = failed || snapshot.stalled;
 
@@ -201,7 +230,11 @@ export function ProcessingDashboard({
 
         <ol className="space-y-2.5">
           {steps.map((step) => (
-            <StepRow key={step.key} step={step} />
+            <StepRow
+              key={step.key}
+              step={step}
+              timing={timings[step.key as keyof typeof timings]}
+            />
           ))}
         </ol>
 
@@ -212,8 +245,9 @@ export function ProcessingDashboard({
             <AlertDescription>
               {failed
                 ? (snapshot.error ?? "An error interrupted processing.")
-                : "We'll keep trying, or you can retry now."}{" "}
-              Your case and its documents are saved — retry without re-uploading anything.
+                : "We'll keep trying, or you can resume now."}{" "}
+              Your case, documents, and completed steps are saved — resuming never repeats
+              finished work and never re-uploads anything.
             </AlertDescription>
           </Alert>
         )}
@@ -226,7 +260,7 @@ export function ProcessingDashboard({
               ) : (
                 <RotateCw className="size-4" aria-hidden />
               )}
-              Retry Analysis
+              Resume Processing
             </Button>
             {snapshot.attempts > 1 && (
               <span className="text-xs text-muted-foreground">Attempt {snapshot.attempts}</span>

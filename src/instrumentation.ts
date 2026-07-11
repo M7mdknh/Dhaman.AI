@@ -12,25 +12,29 @@
  * again, cold, on first use).
  */
 export async function register(): Promise<void> {
-  // Only the Node.js server runtime talks to Postgres (not Edge).
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  try {
-    const { prisma } = await import("@/lib/prisma");
-    // Pre-open SEVERAL pooled connections, not one: Stage-1 fires a handful of
-    // queries concurrently, and each would otherwise open its own cold
-    // connection on the judge's first request. Firing N warmups in parallel
-    // forces the pool to establish N connections now (idle-timeout is disabled,
-    // so they stay warm). ~175ms/round-trip Stage 1 instead of ~2s of handshakes.
-    const WARM_CONNECTIONS = 5;
-    const started = Date.now();
-    await Promise.all(
-      Array.from({ length: WARM_CONNECTIONS }, () => prisma.$queryRaw`SELECT 1`),
-    );
-    console.log(`[instrumentation] warmed ${WARM_CONNECTIONS} DB connections in ${Date.now() - started}ms`);
-  } catch (error) {
-    console.warn(
-      "[instrumentation] pool warmup skipped:",
-      error instanceof Error ? error.message : String(error),
-    );
+  // Only the Node.js server runtime talks to Postgres (not Edge). The import
+  // must sit INSIDE this positive guard: NEXT_RUNTIME is statically replaced
+  // per compiler, and webpack only drops the pg driver from the edge bundle
+  // when the import lives in a statically-false branch.
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const { prisma } = await import("@/lib/prisma");
+      // Pre-open SEVERAL pooled connections, not one: Stage-1 fires a handful of
+      // queries concurrently, and each would otherwise open its own cold
+      // connection on the judge's first request. Firing N warmups in parallel
+      // forces the pool to establish N connections now (idle-timeout is disabled,
+      // so they stay warm). ~175ms/round-trip Stage 1 instead of ~2s of handshakes.
+      const WARM_CONNECTIONS = 5;
+      const started = Date.now();
+      await Promise.all(
+        Array.from({ length: WARM_CONNECTIONS }, () => prisma.$queryRaw`SELECT 1`),
+      );
+      console.log(`[instrumentation] warmed ${WARM_CONNECTIONS} DB connections in ${Date.now() - started}ms`);
+    } catch (error) {
+      console.warn(
+        "[instrumentation] pool warmup skipped:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   }
 }

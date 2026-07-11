@@ -66,6 +66,17 @@ export interface ProcessingStep {
 }
 
 /**
+ * One live execution event: stage X began at T (optionally with a human note,
+ * e.g. "Reading scanned pages with AI vision"). A stage's duration is derived:
+ * it ends when the next stage begins, or when the run completes/fails.
+ */
+export interface StageEvent {
+  stage: ProcessingStage;
+  startedAt: string; // ISO
+  note?: string;
+}
+
+/**
  * Serializable snapshot of a case's processing job. Flattened (Dates → ISO)
  * so it crosses the server→client boundary and the poll endpoint verbatim.
  */
@@ -75,9 +86,47 @@ export interface ProcessingSnapshot {
   failedStage: ProcessingStage | null;
   attempts: number;
   error: string | null;
+  /** Live per-stage execution log of the current run (may be empty). */
+  stageEvents: StageEvent[];
   startedAt: string | null;
   completedAt: string | null;
   updatedAt: string;
+}
+
+/** Timing readout for one dashboard step, derived from the event log. */
+export interface StageTiming {
+  /** Milliseconds the stage ran (still counting while active). */
+  durationMs: number;
+  /** True while this is the currently-executing stage. */
+  running: boolean;
+  note?: string;
+}
+
+/**
+ * Derives per-stage durations from the event log (pure — safe on the client).
+ * A stage ends when the next event begins; the last event ends at
+ * `completedAt` (finished runs) or `now` (still running).
+ */
+export function deriveStageTimings(
+  job: ProcessingSnapshot,
+  now: number = Date.now(),
+): Partial<Record<ProcessingStage, StageTiming>> {
+  const timings: Partial<Record<ProcessingStage, StageTiming>> = {};
+  const events = job.stageEvents;
+  const terminal = job.completedAt ? new Date(job.completedAt).getTime() : null;
+
+  events.forEach((event, i) => {
+    const start = new Date(event.startedAt).getTime();
+    const next = events[i + 1] ? new Date(events[i + 1].startedAt).getTime() : null;
+    const running = next === null && terminal === null && job.state === "RUNNING";
+    const end = next ?? terminal ?? now;
+    timings[event.stage] = {
+      durationMs: Math.max(0, end - start),
+      running,
+      note: event.note,
+    };
+  });
+  return timings;
 }
 
 /** True while the job still needs watching (poller keeps polling). */

@@ -34,6 +34,48 @@ below. All work is committed on `main`.
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
 
+### Post-MVP — Processing orchestration fix: checkpointed resume + live stage log (2026-07-11)
+
+Root cause of "OpenAI succeeds but the contractor never sees results": the
+extraction result (including the paid GPT-Vision response) was persisted as a
+**deferred, fire-and-forget write** settled only at the very end of the run —
+any dev-reload/serverless kill mid-run lost it, the job sat RUNNING until the
+stall detector fired, and Retry re-ran everything (re-billing the model).
+Compounding it, `VISION_TIMEOUT_MS=12s` aborted real multi-image vision calls
+client-side while OpenAI still billed them. Smallest-change fixes, all verified
+end-to-end with a real kill/resume test (scanned PDF → SIGKILL right after the
+checkpoint → auto-resume → COMPLETED, exactly 1 vision call, 1 memo):
+
+- **Synchronous extraction checkpoint** (`extraction-service`): the extraction
+  row + document status commit before the pipeline proceeds. A resumed run
+  reuses it (`resume_checkpoint`) — no re-read, no re-parse, no second vision
+  call. Memo resume guard: an existing `DecisionIntelligence` row (or an
+  identical `inputHash`) is never regenerated.
+- **Retry = Resume** everywhere: manual retry re-queues without clearing
+  checkpoints; the poll route auto-resumes a dead RUNNING job (heartbeat quiet
+  > 90s, attempt-capped ×5). Runs heartbeat every 15s so a LIVE long stage is
+  never mistaken for a stall. Button/copy now say "Resume Processing".
+- **Live stage execution log**: `CaseProcessing.stageEvents` (Json, migration
+  `20260711001206`) — `[{stage, startedAt, note?}]` appended as each stage
+  begins; the dashboard derives per-stage durations (`deriveStageTimings`,
+  pure + tested) and renders `✓ 0.8s` / `⟳ Running… 6.2s` rows with in-stage
+  notes ("Reading scanned statement pages with AI vision").
+- **Timeout sanity**: `VISION_TIMEOUT_MS` 12s → 60s (never abort a billed
+  call into the slower OCR path); new `OCR_FALLBACK_BUDGET_MS` (120s) watchdog
+  fails a document honestly instead of leaving the job RUNNING forever.
+- **Vision prompt trimmed to the 10-field minimum underwriting set** (strict
+  JSON only, extended fields dropped) + latency instrumentation
+  (`[vision-extraction] measured`: openaiMs / validationMs / tokens).
+  Measured: OpenAI ~6.2s for 3 scanned pages; JSON validation ~2ms; DB
+  checkpoint ~0.4s — the model call is the whole bottleneck, everything else
+  is noise. Express Stage 1 on resume: ~1.3s. 110/110 tests, typecheck clean.
+- **Fixed a pre-existing production-build break** (present at HEAD before this
+  work): `instrumentation.ts` used an early-return runtime guard, so the edge
+  compile still tried to bundle the pg driver and failed on node built-ins.
+  The prisma import now sits inside the positive `NEXT_RUNTIME === "nodejs"`
+  branch (the statically-eliminated pattern from the Next docs). `next build`
+  passes again.
+
 ### Post-MVP — Demo-day polish pass (2026-07-11)
 
 Full-product review (UI/UX, banking presentation, AI pipeline, demo simulation)

@@ -444,6 +444,11 @@ model CaseProcessing {
   attempts    Int              @default(0)
   // User-facing failure reason on a FAILED run (never a raw stack trace).
   error       String?
+  // Live per-stage execution log for the current run:
+  // [{ stage, startedAt, note? }] appended as each stage begins. Durations are
+  // derived (a stage ends when the next begins / the run completes). Reset on
+  // every (re)queue so it always describes the run in progress.
+  stageEvents Json?            @map("stage_events")
 
   queuedAt    DateTime  @default(now()) @map("queued_at")
   startedAt   DateTime? @map("started_at")

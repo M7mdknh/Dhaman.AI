@@ -55,9 +55,10 @@ const VISION_MIN_CORE = 5;
 /**
  * Reports pipeline progress to the caller (the processing orchestrator) so it
  * can persist the live stage. Reports may repeat or arrive out of order across
- * documents; the caller advances the dashboard monotonically.
+ * documents; the caller advances the dashboard monotonically. The optional
+ * note explains a long wait inside a stage (e.g. AI vision on scanned pages).
  */
-export type StageReporter = (stage: ProcessingStage) => Promise<void>;
+export type StageReporter = (stage: ProcessingStage, note?: string) => Promise<void>;
 
 export interface DocumentFailure {
   documentId: string;
@@ -192,7 +193,7 @@ export async function processCaseDocuments(
   const deferred: Promise<unknown>[] = [];
 
   const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, (document) =>
-    processDocument(document, timer, deferred, onStage),
+    processDocument(document, timer, onStage),
   );
 
   // Release the shared OCR workers; a failure here must not fail the pipeline.
@@ -255,21 +256,32 @@ export async function processCaseDocuments(
 async function processDocument(
   document: DocumentWithExtraction,
   timer: StageTimer,
-  deferred: Promise<unknown>[],
   onStage?: StageReporter,
 ): Promise<DocumentResult> {
   const startedAt = new Date();
   logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
 
   try {
+    // RESUME CHECKPOINT: a document that already completed extraction is never
+    // reworked — not re-read from storage, not re-parsed, and above all never
+    // re-sent to GPT-Vision. Documents are immutable after submission (uploads
+    // are draft-only), so the persisted extraction row IS the document's result.
+    const resumed = reuseCachedExtraction(document, document.sha256);
+    if (resumed) {
+      await onStage?.("EXTRACTING_DATA");
+      logStage("resume_checkpoint", document.id, startedAt, {
+        years: [...resumed.figures.keys()],
+      });
+      return { ok: true, completed: resumed, perf: null };
+    }
+
     await onStage?.("READING_STATEMENTS");
     const bytes = await timer.time(STAGE.STORAGE_READ, () => storage.read(document.storageKey));
     const sha256 = createHash("sha256").update(bytes).digest("hex");
     logStage("storage_read", document.id, startedAt, { bytes: bytes.length });
 
-    // Cache: identical bytes that already completed successfully need no rework.
-    // The extraction row was loaded with the document, so this is a no-round-trip
-    // check.
+    // Cache: identical bytes that already completed successfully need no rework
+    // (covers a legacy row whose sha was recorded by an older run).
     const cached = reuseCachedExtraction(document, sha256);
     if (cached) {
       await onStage?.("EXTRACTING_DATA");
@@ -281,15 +293,23 @@ async function processDocument(
     // HYBRID extraction. 1) Fast text-only pass — for a digital PDF this is the
     // whole story (no network, ~1s). 2) If it yields too few core figures the
     // document is scanned/damaged → GPT-Vision reads the statement pages. 3) If
-    // vision is unavailable/failed, fall back to the deterministic OCR path.
+    // vision is unavailable/failed, fall back to the deterministic OCR path —
+    // BOUNDED by a watchdog budget so a heavy scanned report produces an honest
+    // failure instead of an eternally-RUNNING job.
     let extraction = await extractIfrs(bytes, { enableOcr: false, allowLowText: true });
     if (coreFigureCoverage(extraction.figures) < VISION_MIN_CORE) {
+      await onStage?.("DETECTING_STATEMENTS", "Reading scanned statement pages with AI vision");
       const vision = await extractViaVision(bytes, extraction.meta.quality, extraction.result.statements);
       if (vision && coreFigureCoverage(vision.figures) > coreFigureCoverage(extraction.figures)) {
         logStage("vision_extracted", document.id, startedAt, { years: vision.result.fiscalYears });
         extraction = vision;
       } else {
-        const ocr = await extractIfrs(bytes, { enableOcr: true });
+        await onStage?.("DETECTING_STATEMENTS", "Reading statement pages with OCR");
+        const ocr = await withBudget(
+          () => extractIfrs(bytes, { enableOcr: true }),
+          env.OCR_FALLBACK_BUDGET_MS,
+          document.fileName,
+        );
         if (coreFigureCoverage(ocr.figures) >= coreFigureCoverage(extraction.figures)) extraction = ocr;
       }
     }
@@ -307,18 +327,17 @@ async function processDocument(
       warnings: extraction.validation.warnings.length,
     });
 
-    // Persist the extraction row + document status OFF the critical path. The
-    // figures the pipeline needs are already in memory; these writes are
-    // provenance + cache-for-retry, so the caller settles them before closing
-    // the job rather than making the ANALYSIS_READY flip wait ~2 round-trips.
-    deferred.push(
-      persistExtraction(document.id, startedAt, extraction, null).then(() =>
-        prisma.document.update({
-          where: { id: document.id },
-          data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
-        }),
-      ),
-    );
+    // CHECKPOINT — persisted SYNCHRONOUSLY, on purpose. This row is what makes
+    // a retry a RESUME: it is the durable record of work (possibly a paid
+    // GPT-Vision call) that must survive a killed run. Deferring it once lost
+    // every result whenever a run died before settling its deferred writes —
+    // and each retry re-billed the model. Two ~150ms round-trips are a fair
+    // price for never doing the same work twice.
+    await persistExtraction(document.id, startedAt, extraction, null);
+    await prisma.document.update({
+      where: { id: document.id },
+      data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
+    });
 
     if (blocking.length > 0) {
       logStage("failed_validation", document.id, startedAt, { errors: blocking.map((e) => e.code) });
@@ -392,7 +411,7 @@ async function processDocument(
  */
 function reuseCachedExtraction(
   document: DocumentWithExtraction,
-  sha256: string,
+  sha256: string | null,
 ): CompletedExtraction | null {
   if (document.processingStatus !== "COMPLETED" || document.sha256 !== sha256) return null;
   const row = document.extraction;
@@ -408,6 +427,41 @@ function reuseCachedExtraction(
     scale: row.scale,
     warnings: (validation?.warnings ?? []).map((w) => ({ ...w, message: `${document.fileName}: ${w.message}` })),
   };
+}
+
+/**
+ * Watchdog for the OCR fallback: races the work against a wall-clock budget.
+ * On timeout the OCR workers are torn down and a clean, user-facing
+ * `PdfReadError` is thrown — the document FAILS honestly instead of leaving
+ * the job RUNNING forever. Orchestration guard only: OCR itself is untouched.
+ */
+async function withBudget<T>(
+  work: () => Promise<T>,
+  budgetMs: number,
+  fileName: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Kill the worker pool so a hung/CPU-bound OCR cannot outlive the race.
+      void terminateOcr().catch(() => {});
+      reject(
+        new PdfReadError(
+          "NO_TEXT",
+          `${fileName} could not be read automatically within the time budget. ` +
+            "The document appears to be a large scanned report — please upload the " +
+            "audited financial statements section (statement of financial position, " +
+            "profit or loss, and cash flows) as a smaller PDF.",
+        ),
+      );
+    }, budgetMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([work(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Runs `fn` over `items` with at most `limit` in flight, preserving order. */
