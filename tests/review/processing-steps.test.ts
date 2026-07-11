@@ -92,7 +92,8 @@ describe("deriveProgress", () => {
     const p = deriveProgress(snapshot({ state: "QUEUED" }));
     expect(p.overallPct).toBe(0);
     expect(p.stage1Complete).toBe(false);
-    expect(p.currentStepLabel).toBe("Queued");
+    // Never a bare "Queued" — the user must know work is about to start.
+    expect(p.currentStepLabel).toBe("Starting analysis");
   });
 
   it("advances the bar while running and names the current step", () => {

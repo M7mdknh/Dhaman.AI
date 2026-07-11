@@ -76,6 +76,8 @@ export const DOCUMENT_STATUS_META: Record<
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
   },
   FAILED: { label: "Failed", className: "border-red-200 bg-red-50 text-red-700" },
+  // Express underwriting reads only the latest audited statement by design.
+  SKIPPED: { label: "Not needed", className: "border-border bg-muted text-muted-foreground" },
 };
 
 export function guaranteeTypeLabel(value: GuaranteeType): string {

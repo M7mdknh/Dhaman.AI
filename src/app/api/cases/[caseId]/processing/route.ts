@@ -44,9 +44,10 @@ export async function GET(
   }
 
   // Never cache: the dashboard needs the live state on every poll. The payload
-  // is { ...snapshot, headline } so Stage-1 results render without a reload.
+  // is { ...snapshot, documents, headline } so per-document lifecycles and
+  // Stage-1 results render without a reload.
   return NextResponse.json(
-    { ...view.snapshot, headline: view.headline },
+    { ...view.snapshot, documents: view.documents, headline: view.headline },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

@@ -26,6 +26,7 @@ import { terminateOcr } from "@/lib/ifrs/ocr";
 import { formatPerfReport, StageTimer, STAGE, type PerfReport } from "@/lib/ifrs/perf";
 import { PdfReadError } from "@/lib/ifrs/types";
 import { prisma } from "@/lib/prisma";
+import type { DocumentEvent, DocumentEventStage } from "@/lib/processing";
 import { storage, StorageError } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
 import { extractViaVision } from "@/services/extraction/vision-extractor";
@@ -192,9 +193,44 @@ export async function processCaseDocuments(
   // Deferred (off-critical-path) writes, awaited by the caller before COMPLETED.
   const deferred: Promise<unknown>[] = [];
 
-  const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, (document) =>
-    processDocument(document, timer, onStage, mode),
-  );
+  // Express skips older uploads BY DESIGN — say so explicitly. Without this
+  // they would sit on "Queued" forever, which reads as a hang to the user.
+  const skipped = all.filter((d) => !documents.includes(d) && d.processingStatus !== "COMPLETED");
+  if (skipped.length > 0) {
+    deferred.push(
+      prisma.document
+        .updateMany({
+          where: { id: { in: skipped.map((d) => d.id) } },
+          data: { processingStatus: "SKIPPED" },
+        })
+        .catch(() => {}),
+    );
+  }
+
+  // INCREMENTAL Financial Intelligence: rebuild the case's FinancialStatement
+  // rows the moment EACH document completes (serialized — the rows are a
+  // case-level resource), so the dashboard headline appears as soon as the
+  // FIRST statement lands, while the rest keep processing. The batch is
+  // re-sorted newest-first each time so the final state never depends on
+  // which document happened to finish first.
+  const completedSoFar: CompletedExtraction[] = [];
+  let rebuildChain: Promise<FinancialStatement[]> = Promise.resolve([]);
+  const queueIncrementalRebuild = (entry: CompletedExtraction) => {
+    completedSoFar.push(entry);
+    const batch = [...completedSoFar].sort(
+      (a, b) => (b.document.fiscalYear ?? 0) - (a.document.fiscalYear ?? 0),
+    );
+    rebuildChain = rebuildChain.then(
+      () => rebuildFinancialStatements(caseId, batch),
+      () => rebuildFinancialStatements(caseId, batch),
+    );
+  };
+
+  const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, async (document) => {
+    const result = await processDocument(document, timer, onStage, mode);
+    if (result.ok) queueIncrementalRebuild(result.completed);
+    return result;
+  });
 
   // Release the shared OCR workers; a failure here must not fail the pipeline.
   await terminateOcr().catch(() => {});
@@ -212,8 +248,11 @@ export async function processCaseDocuments(
     }
   }
 
-  const statements =
-    failures.length === 0 ? await rebuildFinancialStatements(caseId, completed) : [];
+  // The chain's last link already rebuilt with every completed document — its
+  // rows ARE the final statements (a failure of the final rebuild still throws,
+  // exactly as the old single rebuild did). On a failed pipeline the partial
+  // rows stay: the dashboard keeps showing the progress that WAS made.
+  const statements = failures.length === 0 ? await rebuildChain : [];
   const years = statements.map((s) => s.fiscalYear).sort((a, b) => b - a);
 
   const perf = timer.report();
@@ -262,11 +301,46 @@ async function processDocument(
   const startedAt = new Date();
   logStage("start", document.id, startedAt, { fileName: document.fileName, fiscalYear: document.fiscalYear });
 
+  // This document's OWN event log — every stage transition lands here and is
+  // persisted, so the dashboard renders each document's independent lifecycle.
+  // Progress writes never block the pipeline, but they are SERIALIZED through
+  // a per-document chain: a fire-and-forget write that commits late must never
+  // land after (and clobber) the terminal COMPLETED/FAILED write — the
+  // terminal writer awaits the chain first.
+  const docEvents: DocumentEvent[] = [];
+  let progressWrites: Promise<unknown> = Promise.resolve();
+  const emitDoc = (stage: DocumentEventStage, note?: string) => {
+    const last = docEvents[docEvents.length - 1];
+    if (last && last.stage === stage) {
+      // Same stage, richer context — annotate instead of duplicating.
+      if (note) last.note = note;
+    } else {
+      docEvents.push({ stage, startedAt: new Date().toISOString(), ...(note ? { note } : {}) });
+    }
+    const snapshot = [...docEvents] as unknown as Prisma.InputJsonValue;
+    progressWrites = progressWrites
+      .then(() =>
+        prisma.document.update({
+          where: { id: document.id },
+          data: { processingStatus: "PROCESSING", processingEvents: snapshot },
+        }),
+      )
+      .catch(() => {});
+  };
+  /** Terminal event: drains in-flight progress writes, then returns the final
+   * log so the caller persists it WITH the status flip — nothing can clobber it. */
+  const terminalEvents = async (stage: "COMPLETED" | "FAILED", note?: string) => {
+    docEvents.push({ stage, startedAt: new Date().toISOString(), ...(note ? { note } : {}) });
+    await progressWrites.catch(() => {});
+    return docEvents as unknown as Prisma.InputJsonValue;
+  };
+
   try {
     // RESUME CHECKPOINT: a document that already completed extraction is never
     // reworked — not re-read from storage, not re-parsed, and above all never
     // re-sent to GPT-Vision. Documents are immutable after submission (uploads
     // are draft-only), so the persisted extraction row IS the document's result.
+    // Its event log from the completed run is left untouched.
     const resumed = reuseCachedExtraction(document, document.sha256);
     if (resumed) {
       await onStage?.("EXTRACTING_DATA");
@@ -276,6 +350,7 @@ async function processDocument(
       return { ok: true, completed: resumed, perf: null };
     }
 
+    emitDoc("PREPARING");
     await onStage?.("READING_STATEMENTS");
     const bytes = await timer.time(STAGE.STORAGE_READ, () => storage.read(document.storageKey));
     const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -287,9 +362,20 @@ async function processDocument(
     if (cached) {
       await onStage?.("EXTRACTING_DATA");
       logStage("cache_hit", document.id, startedAt, { years: [...cached.figures.keys()] });
+      await prisma.document.update({
+        where: { id: document.id },
+        data: {
+          processingStatus: "COMPLETED",
+          processingEvents: await terminalEvents(
+            "COMPLETED",
+            "Reused the verified result of a previous run",
+          ),
+        },
+      });
       return { ok: true, completed: cached, perf: null };
     }
 
+    emitDoc("READING_STATEMENTS");
     await onStage?.("DETECTING_STATEMENTS");
     // HYBRID extraction. 1) Fast text-only pass — MuPDF locates the statement
     // pages on the text layer; for a digital PDF this is the whole story (no
@@ -300,13 +386,16 @@ async function processDocument(
     // gate anyway — Express fails fast and honestly instead, keeping the
     // upload → intelligence → dashboard path seconds long.
     let extraction = await extractIfrs(bytes, { enableOcr: false, allowLowText: true });
+    emitDoc("DETECTING_STATEMENTS");
     if (coreFigureCoverage(extraction.figures) < VISION_MIN_CORE) {
+      emitDoc("DETECTING_STATEMENTS", "Reading scanned statement pages with AI vision");
       await onStage?.("DETECTING_STATEMENTS", "Reading scanned statement pages with AI vision");
       const vision = await extractViaVision(bytes, extraction.meta.quality, extraction.result.statements);
       if (vision && coreFigureCoverage(vision.figures) > coreFigureCoverage(extraction.figures)) {
         logStage("vision_extracted", document.id, startedAt, { years: vision.result.fiscalYears });
         extraction = vision;
       } else if (mode === "comprehensive") {
+        emitDoc("DETECTING_STATEMENTS", "Reading statement pages with OCR");
         await onStage?.("DETECTING_STATEMENTS", "Reading statement pages with OCR");
         const ocr = await withBudget(
           () => extractIfrs(bytes, { enableOcr: true }),
@@ -326,6 +415,7 @@ async function processDocument(
         );
       }
     }
+    emitDoc("EXTRACTING_DATA");
     await onStage?.("EXTRACTING_DATA");
     const blocking = extraction.validation.errors;
     logStage("extracted", document.id, startedAt, {
@@ -345,11 +435,17 @@ async function processDocument(
     // GPT-Vision call) that must survive a killed run. Deferring it once lost
     // every result whenever a run died before settling its deferred writes —
     // and each retry re-billed the model. Two ~150ms round-trips are a fair
-    // price for never doing the same work twice.
-    await persistExtraction(document.id, startedAt, extraction, null);
+    // price for never doing the same work twice. The terminal lifecycle event
+    // rides the same write, so status, events, and figures land atomically.
+    const blockingMessage = blocking.map((e) => e.message).join(" ") || null;
+    await persistExtraction(document.id, startedAt, extraction, blockingMessage);
     await prisma.document.update({
       where: { id: document.id },
-      data: { sha256, processingStatus: blocking.length ? "FAILED" : "COMPLETED" },
+      data: {
+        sha256,
+        processingStatus: blocking.length ? "FAILED" : "COMPLETED",
+        processingEvents: await terminalEvents(blocking.length ? "FAILED" : "COMPLETED"),
+      },
     });
 
     if (blocking.length > 0) {
@@ -400,7 +496,7 @@ async function processDocument(
     await persistExtraction(document.id, startedAt, null, userMessage);
     await prisma.document.update({
       where: { id: document.id },
-      data: { processingStatus: "FAILED" },
+      data: { processingStatus: "FAILED", processingEvents: await terminalEvents("FAILED") },
     });
     return {
       ok: false,

@@ -87,6 +87,10 @@ enum DocumentProcessingStatus {
   PROCESSING
   COMPLETED
   FAILED
+  // Express underwriting reads only the LATEST audited statement; older
+  // uploads are marked SKIPPED (an explicit, honest state — never an
+  // eternally-"Queued" document the user wonders about).
+  SKIPPED
 }
 
 model User {
@@ -217,6 +221,11 @@ model Document {
   fiscalYear   Int?         @map("fiscal_year")
   // IFRS pipeline status; set to QUEUED at case submission.
   processingStatus DocumentProcessingStatus @default(UPLOADED) @map("processing_status")
+  // Live per-stage execution log of THIS document's current processing run:
+  // [{ stage, startedAt, note? }] appended as the document moves through its
+  // own lifecycle (Preparing → Reading → Detecting → Extracting → terminal).
+  // Drives the per-document rows of the live processing dashboard.
+  processingEvents Json? @map("processing_events")
   // Content hash, computed at processing time — used for duplicate detection.
   sha256       String?
   createdAt    DateTime     @default(now()) @map("created_at")

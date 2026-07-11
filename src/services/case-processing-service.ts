@@ -21,7 +21,13 @@ import { env } from "@/lib/env";
 import { deriveHeadline, type UnderwritingHeadline } from "@/lib/finance/headline";
 import { formatPerfReport, formatStageTargets, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
-import { PROCESSING_STAGES, type ProcessingSnapshot, type StageEvent } from "@/lib/processing";
+import {
+  PROCESSING_STAGES,
+  type DocumentEvent,
+  type DocumentSnapshot,
+  type ProcessingSnapshot,
+  type StageEvent,
+} from "@/lib/processing";
 import { recordAudit } from "@/services/audit-service";
 import { runDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { processCaseDocuments } from "@/services/extraction-service";
@@ -446,10 +452,39 @@ export async function getProcessingForOwner(
   return job ? toProcessingSnapshot(job) : null;
 }
 
-/** The poll payload: the job snapshot plus the Stage-1 underwriting headline
- * (present the instant deterministic analysis exists — before the AI memo). */
+/**
+ * Maps document rows (with their extraction's error) to the serializable
+ * per-document snapshots the dashboard consumes. Sorted newest-first — the
+ * exact order the pipeline processes them, so queue positions line up.
+ */
+export function toDocumentSnapshots(
+  documents: Array<{
+    id: string;
+    fileName: string;
+    fiscalYear: number | null;
+    processingStatus: DocumentSnapshot["status"];
+    processingEvents?: unknown;
+    extraction?: { error: string | null } | null;
+  }>,
+): DocumentSnapshot[] {
+  return [...documents]
+    .sort((a, b) => (b.fiscalYear ?? 0) - (a.fiscalYear ?? 0))
+    .map((d) => ({
+      documentId: d.id,
+      fileName: d.fileName,
+      fiscalYear: d.fiscalYear,
+      status: d.processingStatus,
+      events: Array.isArray(d.processingEvents) ? (d.processingEvents as DocumentEvent[]) : [],
+      error: d.extraction?.error ?? null,
+    }));
+}
+
+/** The poll payload: the job snapshot, each document's live lifecycle, and the
+ * Stage-1 underwriting headline (present the instant deterministic analysis
+ * exists — the first completed statement is enough, before the AI memo). */
 export interface ProcessingView {
   snapshot: ProcessingSnapshot & { stalled: boolean };
+  documents: DocumentSnapshot[];
   headline: UnderwritingHeadline | null;
 }
 
@@ -476,6 +511,17 @@ export async function getProcessingViewForOwner(
       processing: true,
       contractDetails: true,
       financialStatements: { orderBy: { fiscalYear: "desc" } },
+      documents: {
+        where: { docType: "FINANCIAL_STATEMENT" },
+        select: {
+          id: true,
+          fileName: true,
+          fiscalYear: true,
+          processingStatus: true,
+          processingEvents: true,
+          extraction: { select: { error: true } },
+        },
+      },
     },
   });
   if (!underwritingCase?.processing) return null;
@@ -486,6 +532,7 @@ export async function getProcessingViewForOwner(
   );
   return {
     snapshot: toProcessingSnapshot(underwritingCase.processing),
+    documents: toDocumentSnapshots(underwritingCase.documents),
     headline: report ? deriveHeadline(report) : null,
   };
 }

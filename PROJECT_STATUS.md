@@ -34,6 +34,52 @@ below. All work is committed on `main`.
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
 
+### Post-MVP — Per-document processing lifecycles (2026-07-11)
+
+The dashboard used to show one case-wide stage list (and a bare "Queued");
+now every uploaded statement renders its OWN independently-updating lifecycle
+(GitHub-Actions style). Documents were already extracted in parallel
+(concurrency 3) with per-document checkpoints — this pass made that
+observable and made partial progress land immediately:
+
+- **Schema**: `Document.processingEvents` (Json) — per-run event log
+  `[{stage, startedAt, note?}]` (PREPARING → READING → DETECTING →
+  EXTRACTING → COMPLETED/FAILED; terminal events ride the synchronous
+  checkpoint write). New `DocumentProcessingStatus.SKIPPED`: Express marks
+  older uploads SKIPPED explicitly ("Not needed — Express uses your latest
+  audited statement") instead of leaving them "Queued" forever. Migration
+  `20260711090303_document_processing_lifecycle`.
+- **Incremental Financial Intelligence**: FinancialStatement rows are rebuilt
+  the moment EACH document completes (serialized, batch re-sorted
+  newest-first so the final state is order-independent) — the underwriting
+  headline appears when the FIRST statement lands while the rest keep
+  processing. On a partly-failed run the completed documents' rows stay.
+- **Poll payload** (`ProcessingView`) now carries `documents[]` (status,
+  events, human-readable error from the extraction row); the case page seeds
+  the same data into the initial render.
+- **Dashboard**: per-document rows with live stage, note, progress bar,
+  ticking elapsed (1s ticker between polls), estimated remaining, queue
+  position + start estimate while queued (never a bare "Queued" — the job
+  label is now "Starting analysis"), per-document "Retry this document" on
+  failure (checkpoints make retry per-document), and an expandable per-stage
+  timing breakdown. Case-wide steps (Financial Intelligence, AI memo) stay
+  below the document list.
+- Pure derivations (`deriveDocumentViews`) in `lib/processing.ts`,
+  exhaustively tested; `STAGE_LABELS.FINANCIAL_ANALYSIS` renamed to
+  "Financial Intelligence".
+- **Write-race fix found by live verification**: fire-and-forget progress
+  writes could commit AFTER the terminal COMPLETED/FAILED write on a slow
+  link and clobber it (document stuck at "PROCESSING" forever). Per-document
+  progress writes are now serialized through a chain the terminal writer
+  drains first.
+- **Verified live** (real Neon + R2, mock LLM): (A) comprehensive ×3 docs —
+  all three ran their own PREPARING→…→COMPLETED lifecycles in parallel and
+  FinancialStatement rows were observable WHILE the job was still RUNNING
+  (incremental FI); (B) express ×2 docs — older statement SKIPPED, latest
+  COMPLETED; (C) unreadable doc — FAILED at the named stage with the
+  human-readable reason persisted. 120/120 tests, typecheck + lint +
+  production build clean.
+
 ### Post-MVP — Express extraction redesign: OCR removed from Express (2026-07-11)
 
 The fundamental bottleneck was the OCR *fallback*: tesseract.js (ara+eng, 200

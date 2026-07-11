@@ -27,7 +27,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { isProcessingActive } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
-import { toProcessingSnapshot } from "@/services/case-processing-service";
+import { toDocumentSnapshots, toProcessingSnapshot } from "@/services/case-processing-service";
 import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
@@ -180,7 +180,16 @@ export default async function CaseDetailsPage({
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-6">
           {showDashboard && snapshot && (
-            <ProcessingDashboard caseId={id} initial={{ ...snapshot, headline }} />
+            <ProcessingDashboard
+              caseId={id}
+              initial={{
+                ...snapshot,
+                headline,
+                documents: toDocumentSnapshots(
+                  underwritingCase.documents.filter((d) => d.docType === "FINANCIAL_STATEMENT"),
+                ),
+              }}
+            />
           )}
 
           <div className="grid gap-6 md:grid-cols-2">

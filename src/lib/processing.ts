@@ -37,7 +37,7 @@ export const STAGE_LABELS: Record<ProcessingStage, string> = {
   READING_STATEMENTS: "Reading Financial Statements",
   DETECTING_STATEMENTS: "Detecting Financial Statements",
   EXTRACTING_DATA: "Extracting Financial Data",
-  FINANCIAL_ANALYSIS: "Financial Analysis",
+  FINANCIAL_ANALYSIS: "Financial Intelligence",
   AI_UNDERWRITING: "AI Underwriting Memo",
 };
 
@@ -134,6 +134,242 @@ export function isProcessingActive(state: ProcessingState): boolean {
   return state === "QUEUED" || state === "RUNNING";
 }
 
+// ---------------------------------------------------------------------------
+// Per-document lifecycle (each uploaded statement progresses independently).
+// ---------------------------------------------------------------------------
+
+/** The stages ONE document moves through inside the extraction pipeline. */
+export type DocumentStage =
+  | "PREPARING"
+  | "READING_STATEMENTS"
+  | "DETECTING_STATEMENTS"
+  | "EXTRACTING_DATA";
+
+export const DOCUMENT_STAGES: DocumentStage[] = [
+  "PREPARING",
+  "READING_STATEMENTS",
+  "DETECTING_STATEMENTS",
+  "EXTRACTING_DATA",
+];
+
+export const DOCUMENT_STAGE_LABELS: Record<DocumentStage, string> = {
+  PREPARING: "Preparing",
+  READING_STATEMENTS: "Reading Financial Statements",
+  DETECTING_STATEMENTS: "Detecting Financial Statements",
+  EXTRACTING_DATA: "Extracting Financial Data",
+};
+
+/** Event stages include the terminal markers so total elapsed time is exact. */
+export type DocumentEventStage = DocumentStage | "COMPLETED" | "FAILED";
+
+/** One live event in a document's own execution log. */
+export interface DocumentEvent {
+  stage: DocumentEventStage;
+  startedAt: string; // ISO
+  note?: string;
+}
+
+export type DocumentRunStatus =
+  | "UPLOADED"
+  | "QUEUED"
+  | "PROCESSING"
+  | "COMPLETED"
+  | "FAILED"
+  | "SKIPPED";
+
+/** Serializable per-document snapshot carried by the poll payload. */
+export interface DocumentSnapshot {
+  documentId: string;
+  fileName: string;
+  fiscalYear: number | null;
+  status: DocumentRunStatus;
+  /** This document's own event log (may be empty for legacy runs). */
+  events: DocumentEvent[];
+  /** Human-readable failure reason when status is FAILED. */
+  error: string | null;
+}
+
+/** Nominal per-stage durations (ms) for ONE document — progress/ETA only. */
+const DOC_STAGE_WEIGHTS: Record<DocumentStage, number> = {
+  PREPARING: 400,
+  READING_STATEMENTS: 700,
+  DETECTING_STATEMENTS: 1400, // AI vision on scanned pages dominates here
+  EXTRACTING_DATA: 700,
+};
+const DOC_TOTAL_WEIGHT = DOCUMENT_STAGES.reduce((sum, s) => sum + DOC_STAGE_WEIGHTS[s], 0);
+
+/** Documents extracted concurrently by the pipeline (mirrors the server). */
+const DOC_CONCURRENCY = 3;
+/** Nominal delay before a QUEUED job's run claims and starts (the poll/`after()` trigger). */
+const JOB_START_MS = 1_500;
+
+export type DocumentRowState = "queued" | "running" | "complete" | "failed" | "skipped";
+
+/** Timing readout for one stage of one document, derived from its event log. */
+export interface DocumentStageTiming {
+  stage: DocumentStage;
+  label: string;
+  durationMs: number;
+  running: boolean;
+  note?: string;
+}
+
+/** Everything a dashboard row needs to render one document's live lifecycle. */
+export interface DocumentViewModel {
+  documentId: string;
+  fileName: string;
+  fiscalYear: number | null;
+  state: DocumentRowState;
+  /** Current stage / terminal summary — never a bare "Queued". */
+  statusLabel: string;
+  /** Extra context for a long wait (e.g. "Reading scanned pages with AI vision"). */
+  note: string | null;
+  progressPct: number;
+  /** Wall time since this document started (live while running). */
+  elapsedMs: number | null;
+  /** Rough nominal remaining time while running. */
+  estRemainingMs: number | null;
+  /** 1-based position among documents that have not started yet. */
+  queuePosition: number | null;
+  /** Rough nominal wait until this document starts. */
+  estStartMs: number | null;
+  /** Per-stage breakdown for the expandable details view. */
+  timings: DocumentStageTiming[];
+  error: string | null;
+}
+
+/** Derives the per-stage breakdown of one document from its event log. */
+function deriveDocTimings(events: DocumentEvent[], now: number): DocumentStageTiming[] {
+  const active = events.filter((e) => e.stage !== "COMPLETED" && e.stage !== "FAILED");
+  const terminal = events.find((e) => e.stage === "COMPLETED" || e.stage === "FAILED");
+  const terminalAt = terminal ? new Date(terminal.startedAt).getTime() : null;
+
+  return active.map((event, i) => {
+    const start = new Date(event.startedAt).getTime();
+    const next = active[i + 1] ? new Date(active[i + 1].startedAt).getTime() : null;
+    const end = next ?? terminalAt ?? now;
+    return {
+      stage: event.stage as DocumentStage,
+      label: DOCUMENT_STAGE_LABELS[event.stage as DocumentStage] ?? event.stage,
+      durationMs: Math.max(0, end - start),
+      running: next === null && terminalAt === null,
+      note: event.note,
+    };
+  });
+}
+
+/**
+ * Derives the live view models for ALL of a case's documents (pure — safe on
+ * the client; call with a ticking `now` for live timers). Queue positions and
+ * start estimates come from list order: documents that have not emitted any
+ * event yet are waiting, and up to DOC_CONCURRENCY of them run at once.
+ */
+export function deriveDocumentViews(
+  documents: DocumentSnapshot[],
+  jobState: ProcessingState,
+  now: number = Date.now(),
+): DocumentViewModel[] {
+  let waiting = 0;
+
+  return documents.map((doc) => {
+    const timings = deriveDocTimings(doc.events, now);
+    const startedAt = doc.events.length > 0 ? new Date(doc.events[0].startedAt).getTime() : null;
+    const terminal = doc.events.find((e) => e.stage === "COMPLETED" || e.stage === "FAILED");
+    const terminalAt = terminal ? new Date(terminal.startedAt).getTime() : null;
+    const elapsedMs =
+      startedAt !== null ? Math.max(0, (terminalAt ?? now) - startedAt) : null;
+
+    if (doc.status === "SKIPPED") {
+      return view(doc, {
+        state: "skipped",
+        statusLabel: "Not needed — Express underwriting uses your latest audited statement",
+        progressPct: 100,
+        timings,
+        elapsedMs: null,
+      });
+    }
+    if (doc.status === "COMPLETED") {
+      return view(doc, {
+        state: "complete",
+        statusLabel: "Completed",
+        progressPct: 100,
+        timings,
+        elapsedMs,
+      });
+    }
+    if (doc.status === "FAILED") {
+      const lastStage = timings[timings.length - 1];
+      return view(doc, {
+        state: "failed",
+        statusLabel: lastStage ? `Failed at ${lastStage.label}` : "Failed",
+        progressPct: docProgressPct(timings, false),
+        timings,
+        elapsedMs,
+        error: doc.error,
+      });
+    }
+
+    const running = doc.status === "PROCESSING" && jobState === "RUNNING" && timings.length > 0;
+    if (running) {
+      const current = timings[timings.length - 1];
+      const donePct = docProgressPct(timings, true);
+      return view(doc, {
+        state: "running",
+        statusLabel: current.label,
+        note: current.note ?? null,
+        progressPct: donePct,
+        timings,
+        elapsedMs,
+        estRemainingMs: Math.max(500, Math.round(DOC_TOTAL_WEIGHT * (1 - donePct / 100))),
+      });
+    }
+
+    // Not started yet (job queued, or job running with more docs than slots).
+    waiting += 1;
+    const batchesAhead = Math.floor((waiting - 1) / DOC_CONCURRENCY);
+    const estStartMs =
+      (jobState === "QUEUED" ? JOB_START_MS : 0) + batchesAhead * DOC_TOTAL_WEIGHT;
+    return view(doc, {
+      state: "queued",
+      statusLabel: `Queued — position ${waiting}, starting in ~${Math.max(1, Math.round(estStartMs / 1000))}s`,
+      progressPct: 0,
+      timings,
+      elapsedMs: null,
+      queuePosition: waiting,
+      estStartMs,
+    });
+  });
+}
+
+/** Weight-based completion of one document; the active stage is half-credited. */
+function docProgressPct(timings: DocumentStageTiming[], hasActive: boolean): number {
+  let done = 0;
+  timings.forEach((t, i) => {
+    const isLast = i === timings.length - 1;
+    const weight = DOC_STAGE_WEIGHTS[t.stage] ?? 0;
+    done += hasActive && isLast ? weight / 2 : weight;
+  });
+  return Math.min(100, Math.round((done / DOC_TOTAL_WEIGHT) * 100));
+}
+
+function view(
+  doc: DocumentSnapshot,
+  fields: Partial<DocumentViewModel> & Pick<DocumentViewModel, "state" | "statusLabel" | "progressPct" | "timings">,
+): DocumentViewModel {
+  return {
+    documentId: doc.documentId,
+    fileName: doc.fileName,
+    fiscalYear: doc.fiscalYear,
+    note: null,
+    elapsedMs: null,
+    estRemainingMs: null,
+    queuePosition: null,
+    estStartMs: null,
+    error: null,
+    ...fields,
+  };
+}
+
 /** Live progress readout for the "Preparing your underwriting package" UI. */
 export interface ProcessingProgress {
   /** Overall completion, 0-100. */
@@ -170,7 +406,7 @@ export function deriveProgress(job: ProcessingSnapshot): ProcessingProgress {
   const currentStepLabel = isDone
     ? null
     : job.state === "QUEUED"
-      ? "Queued"
+      ? "Starting analysis"
       : stageIndex >= 0
         ? STAGE_LABELS[PROCESSING_STAGES[stageIndex]]
         : STAGE_LABELS[PROCESSING_STAGES[0]];
