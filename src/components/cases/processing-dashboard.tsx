@@ -170,7 +170,7 @@ function DocumentRow({
       </button>
 
       {open && expandable && (
-        <ol className="space-y-1.5 border-t px-3 py-2.5 pl-11">
+        <ol className="animate-in fade-in-0 slide-in-from-top-1 space-y-1.5 border-t px-3 py-2.5 pl-11 duration-200">
           {doc.timings.map((t) => (
             <li key={t.stage} className="flex items-baseline justify-between gap-3 text-xs">
               <span className="min-w-0">
@@ -359,7 +359,7 @@ export function ProcessingDashboard({
       <CardContent className="space-y-4">
         {/* Headline first: the moment the first statement lands, the verdict is here. */}
         {headline && (
-          <div className="space-y-2">
+          <div className="rise-in space-y-2">
             <UnderwritingHeadlineCard headline={headline} />
             {!failed && snapshot.state !== "COMPLETED" && (
               <p className="text-xs text-muted-foreground">

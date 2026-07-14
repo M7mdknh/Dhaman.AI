@@ -4,7 +4,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 
-import { applyActionErrors, fieldErrors } from "@/components/cases/wizard/form-errors";
+import {
+  applyActionErrors,
+  fieldErrors,
+  focusFirstInvalidField,
+} from "@/components/cases/wizard/form-errors";
 import { FormField } from "@/components/forms/form-field";
 import { SelectField } from "@/components/forms/select-field";
 import { Button } from "@/components/ui/button";
@@ -31,13 +35,19 @@ export function CompanyStep({ defaults, isNew, onSave }: CompanyStepProps) {
   const form = useForm<CompanyInfoInput>({
     resolver: zodResolver(companyInfoSchema),
     defaultValues: defaults,
+    // We focus errors ourselves: RHF's built-in focus jumps abruptly and
+    // cannot reach the ref-less sector select at all.
+    shouldFocusError: false,
   });
   const { register, control, handleSubmit, setError, formState } = form;
 
-  const submit = handleSubmit(async (values) => {
-    const result = await onSave(values);
-    if (!result.ok) applyActionErrors(setError, result);
-  });
+  const submit = handleSubmit(
+    async (values) => {
+      const result = await onSave(values);
+      if (!result.ok) applyActionErrors(setError, result);
+    },
+    (errors) => focusFirstInvalidField(errors),
+  );
 
   return (
     <form onSubmit={submit} noValidate>

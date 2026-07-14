@@ -17,7 +17,7 @@ export type CaseWithRelations = Prisma.UnderwritingCaseGetPayload<{
     contractDetails: true;
     documents: {
       orderBy: { fiscalYear: "desc" };
-      include: { extraction: { select: { validation: true; error: true; currency: true; scale: true; detectedStatements: true } } };
+      include: { extraction: { select: { validation: true; error: true; currency: true; scale: true; detectedStatements: true; companyName: true } } };
     };
     financialStatements: { orderBy: { fiscalYear: "desc" } };
     // Officer decisions power the contractor-visible decision status. The AI
@@ -101,6 +101,7 @@ export async function getOwnedCase(
               currency: true,
               scale: true,
               detectedStatements: true,
+              companyName: true,
             },
           },
         },

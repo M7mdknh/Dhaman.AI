@@ -20,6 +20,60 @@ function money(label: string, fiscalYear: number, value: Money | null): FlagEvid
   return value == null ? [] : [{ label, fiscalYear, value: value.toFixed(2) }];
 }
 
+/** Company name as extracted from one uploaded statement, with its year. */
+export interface StatementIdentity {
+  companyName: string | null;
+  fiscalYear: number | null;
+}
+
+/**
+ * Uppercase, collapse punctuation/whitespace. Keeps Arabic letters so
+ * bilingual statements compare sensibly.
+ */
+function normalizeCompanyName(name: string): string {
+  return name
+    .toUpperCase()
+    .replace(/[^A-Z0-9؀-ۿ]+/g, " ")
+    .trim();
+}
+
+/**
+ * Documentary-identity check: the parser records the company name printed on
+ * each statement; when it clearly names a different company than the case
+ * applicant, the officer must know. Matching is containment either way after
+ * normalization ("Tamara" matches "TAMARA FINANCE COMPANY") so legal-form
+ * suffixes and translations don't false-positive. Statements whose name the
+ * parser could not read are never flagged.
+ */
+export function detectCompanyMismatchFlags(
+  caseCompanyName: string,
+  statementIdentities: StatementIdentity[],
+): RiskFlag[] {
+  const applicant = normalizeCompanyName(caseCompanyName);
+  if (applicant.length < 3) return [];
+
+  const flags: RiskFlag[] = [];
+  const seen = new Set<string>();
+  for (const identity of statementIdentities) {
+    if (!identity.companyName) continue;
+    const extracted = normalizeCompanyName(identity.companyName);
+    if (extracted.length < 3 || seen.has(extracted)) continue;
+    seen.add(extracted);
+    if (extracted.includes(applicant) || applicant.includes(extracted)) continue;
+
+    // Both names live in the explanation — year-tagged numeric evidence
+    // does not fit an identity finding.
+    flags.push({
+      type: "COMPANY_NAME_MISMATCH",
+      severity: "HIGH",
+      explanation: `The uploaded statements identify "${identity.companyName.trim()}" but this case's applicant is "${caseCompanyName.trim()}" — verify the documents belong to the applicant before relying on this analysis.`,
+      affectedYears: identity.fiscalYear ? [identity.fiscalYear] : [],
+      evidence: [],
+    });
+  }
+  return flags;
+}
+
 /** Runs every rule over ascending years; ordering: HIGH → MEDIUM → LOW. */
 export function detectRiskFlags(years: YearFinancials[]): RiskFlag[] {
   const sorted = [...years].sort((a, b) => a.fiscalYear - b.fiscalYear);

@@ -28,7 +28,10 @@ import {
   buildDecisionInput,
   buildUserMessage,
 } from "@/services/decision/prompt-builder";
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
+import {
+  buildFinancialIntelligence,
+  toIdentityInputs,
+} from "@/services/finance/financial-intelligence-service";
 
 import type { DecisionIntelligence, Prisma } from "@/generated/prisma/client";
 
@@ -190,6 +193,9 @@ export async function runDecisionIntelligence(
       company: true,
       contractDetails: true,
       financialStatements: { orderBy: { fiscalYear: "desc" } },
+      documents: {
+        select: { fiscalYear: true, extraction: { select: { companyName: true } } },
+      },
     },
   });
   if (!underwritingCase) return { ok: false, error: "Case not found." };
@@ -200,6 +206,7 @@ export async function runDecisionIntelligence(
   const report = buildFinancialIntelligence(
     underwritingCase.financialStatements,
     underwritingCase.contractDetails,
+    toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
   );
   if (!report) {
     return { ok: false, error: "No parsed financial statements are available for this case." };

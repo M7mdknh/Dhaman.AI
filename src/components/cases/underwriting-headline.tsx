@@ -54,7 +54,7 @@ function ScoreTile({ label, score, tone }: { label: string; score: number | null
           </p>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full rounded-full", {
+              className={cn("grow-in h-full rounded-full", {
                 "bg-emerald-500": tone === "emerald",
                 "bg-amber-500": tone === "amber",
                 "bg-red-500": tone === "red",
@@ -77,7 +77,7 @@ export function UnderwritingHeadlineCard({ headline }: { headline: UnderwritingH
   const riskTone = RISK_TONE[headline.riskBand];
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="rise-in-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <ScoreTile
           label="Underwriting Capacity"
           score={headline.capacityScore}

@@ -7,7 +7,10 @@ import { StatusBadge } from "@/components/cases/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
 import { getOwnedCase } from "@/services/case-service";
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
+import {
+  buildFinancialIntelligence,
+  toIdentityInputs,
+} from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
 
@@ -28,6 +31,7 @@ export default async function FinancialAnalysisPage({
   const report = buildFinancialIntelligence(
     underwritingCase.financialStatements,
     underwritingCase.contractDetails,
+    toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
   );
 
   return (

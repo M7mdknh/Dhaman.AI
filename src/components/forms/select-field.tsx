@@ -61,7 +61,10 @@ export function SelectField({
         </SelectContent>
       </Select>
       {error && (
-        <p id={errorId} className="text-xs text-destructive">
+        <p
+          id={errorId}
+          className="animate-in fade-in-0 slide-in-from-top-1 text-xs text-destructive duration-200"
+        >
           {error}
         </p>
       )}

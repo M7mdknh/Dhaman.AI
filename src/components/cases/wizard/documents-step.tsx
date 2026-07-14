@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Trash2, Upload } from "lucide-react";
+import { FileText, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { removeDocumentAction } from "@/app/(app)/cases/actions";
@@ -205,6 +205,7 @@ export function DocumentsStep({
     {},
   );
   const [removing, startRemoving] = useTransition();
+  const uploading = Object.keys(progressByYear).length > 0;
 
   async function handleFile(fiscalYear: number, file: File | undefined) {
     if (!file) return;
@@ -377,16 +378,29 @@ export function DocumentsStep({
           );
         })}
         {documents.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            At least one audited statement is required before the case can be submitted.
-          </p>
+          <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 dark:border-amber-400/25 dark:bg-amber-400/10">
+            <FileText
+              className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden
+            />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                A financial statement is required to continue
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                {uploading
+                  ? "Your upload is in progress — you can continue to review once it finishes."
+                  : "Upload at least one audited financial statement above. The Financial Intelligence analysis is built from it."}
+              </p>
+            </div>
+          </div>
         )}
       </CardContent>
       <CardFooter className="justify-between">
         <Button type="button" variant="outline" onClick={onBack}>
           Back
         </Button>
-        <Button type="button" onClick={onContinue}>
+        <Button type="button" onClick={onContinue} disabled={documents.length === 0}>
           Continue to Review
         </Button>
       </CardFooter>

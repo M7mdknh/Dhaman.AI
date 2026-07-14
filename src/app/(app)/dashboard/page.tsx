@@ -79,7 +79,7 @@ async function OfficerDashboard({
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+      <div className="rise-in-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Pending Review" value={stats.pending} icon={Inbox} />
         <StatCard label="In Review" value={stats.underReview} icon={SearchCheck} />
         <StatCard label="Decided" value={stats.decided} icon={Gavel} />
@@ -142,7 +142,7 @@ export default async function DashboardPage({
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="rise-in-stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Draft Cases" value={stats.draft} icon={FilePen} />
         <StatCard label="Submitted" value={stats.submitted} icon={Send} />
         <StatCard label="Under Review" value={stats.underReview} icon={SearchCheck} />

@@ -4,7 +4,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
-import { applyActionErrors, fieldErrors } from "@/components/cases/wizard/form-errors";
+import {
+  applyActionErrors,
+  fieldErrors,
+  focusFirstInvalidField,
+} from "@/components/cases/wizard/form-errors";
 import { FormField } from "@/components/forms/form-field";
 import { SelectField } from "@/components/forms/select-field";
 import { TextareaField } from "@/components/forms/textarea-field";
@@ -59,18 +63,30 @@ interface ContractStepProps {
   onSave: (values: ContractDetailsInput) => Promise<CaseActionState>;
 }
 
+/** Fields rendered as Controller-driven selects — their DOM ids carry the
+ * `contract-` prefix (ids must stay unique across the CSS-hidden steps). */
+const SELECT_FIELDS = new Set(["beneficiaryType", "sector", "currency", "guaranteeType"]);
+const contractFieldId = (field: string) =>
+  SELECT_FIELDS.has(field) ? `contract-${field}` : field;
+
 export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
   const form = useForm<ContractDetailsInput>({
     resolver: zodResolver(contractDetailsSchema),
     defaultValues: defaults ?? EMPTY_DEFAULTS,
+    // We focus errors ourselves: RHF's built-in focus jumps abruptly and
+    // cannot reach the ref-less selects at all.
+    shouldFocusError: false,
   });
   const { register, control, handleSubmit, setError, formState } = form;
   const guaranteeType = useWatch({ control, name: "guaranteeType" });
 
-  const submit = handleSubmit(async (values) => {
-    const result = await onSave(values);
-    if (!result.ok) applyActionErrors(setError, result);
-  });
+  const submit = handleSubmit(
+    async (values) => {
+      const result = await onSave(values);
+      if (!result.ok) applyActionErrors(setError, result);
+    },
+    (errors) => focusFirstInvalidField(errors, contractFieldId),
+  );
 
   const selectField = (
     name: "beneficiaryType" | "sector" | "currency" | "guaranteeType",

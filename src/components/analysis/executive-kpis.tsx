@@ -1,3 +1,4 @@
+import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -52,13 +53,13 @@ function KpiCard({
           <>
             <div className="mt-5 flex items-baseline gap-1.5">
               <span className="text-5xl font-semibold tabular-nums tracking-tight text-foreground">
-                {score}
+                <AnimatedNumber value={score} />
               </span>
               <span className="text-sm text-muted-foreground">/ 100</span>
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
               <div
-                className={cn("h-full rounded-full transition-all", BAR_TONE[status.tone])}
+                className={cn("grow-in h-full rounded-full transition-all", BAR_TONE[status.tone])}
                 style={{ width: `${Math.max(0, Math.min(100, meter ?? 0))}%` }}
               />
             </div>
@@ -86,7 +87,7 @@ export function ExecutiveKpis({ headline }: { headline: UnderwritingHeadline }) 
   // Container query: the panel renders in both the wide analysis page and the
   // narrower review column — column count follows the available width, not the viewport.
   return (
-    <section aria-label="Executive summary" className="grid gap-5 @2xl:grid-cols-3">
+    <section aria-label="Executive summary" className="rise-in-stagger grid gap-5 @2xl:grid-cols-3">
       <KpiCard
         label="Underwriting Capacity"
         score={headline.capacityScore}

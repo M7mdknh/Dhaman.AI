@@ -101,7 +101,7 @@ function DriverCard({ driver }: { driver: Driver }) {
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
           {driver.score !== null && (
             <div
-              className={cn("h-full rounded-full", BAR_TONE[condition.tone])}
+              className={cn("grow-in h-full rounded-full", BAR_TONE[condition.tone])}
               style={{ width: `${pct}%` }}
             />
           )}
@@ -133,7 +133,7 @@ export function FinancialDrivers({ report }: { report: FinancialIntelligenceRepo
           Latest fiscal year (FY{report.latestYear})
         </p>
       </div>
-      <div className="grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-5">
+      <div className="rise-in-stagger grid gap-4 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-5">
         {buildDrivers(report).map((driver) => (
           <DriverCard key={driver.label} driver={driver} />
         ))}

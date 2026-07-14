@@ -36,6 +36,7 @@ deliberately parked.
 | 24 | **OCR language traineddata is fetched from a public CDN by default.** The tesseract WASM core resolves from `node_modules`, and `TESSERACT_LANG_PATH` / `TESSERACT_CACHE_PATH` are now env-configurable (cache defaults to the writable `/tmp`), but no `ara`/`eng` traineddata is bundled in-repo. | First OCR on a fresh instance needs egress to the CDN | Bundle traineddata on a private mirror/volume and set `TESSERACT_LANG_PATH` for egress-restricted / air-gapped deploys |
 | 25 | **Full-size uploads (>4.4 MB) on Vercel REQUIRE the bucket CORS rule** (README → Deploying). Direct-to-storage presigned uploads bypass Vercel's hard 4.5 MB function-body cap; without the CORS rule the client silently falls back to the through-the-server route, which that cap breaks for real annual reports. The R2 API token in use is object-scoped and cannot set CORS programmatically — it is a one-time dashboard step. | Uploads of real (5–10 MB) reports fail on a fresh deployment until CORS is configured | Configure the rule now; consider an admin health check that verifies bucket CORS at boot |
 | 26 | **Real listed-company statement layouts defeat the deterministic text extractor** (verified with STC 2024 consolidated financial statements: rich text layer, but two-page-spread layout → <5 core figures found). GPT-Vision on the detected statement pages is the designed recovery and needs `OPENAI_API_KEY` in production; with the mock provider such documents fail fast with an honest per-document message and the case continues on sibling documents. | A demo without an OpenAI key cannot extract real-world annual-report layouts — use fixture-style statements or set the key | Teach the line extractor multi-column spreads if real-statement extraction without AI becomes a requirement |
+| 27 | **Scroll-driven section reveals (`.scroll-reveal`) are Chromium-only progressive enhancement** (`@supports (animation-timeline: view())`). Firefox/Safari render those sections statically (always visible — never hidden or broken); all other motion utilities are plain CSS animations and work everywhere. | Demo on a non-Chromium browser loses the scroll fade-ins (cosmetic only) | When Firefox/Safari ship scroll-timeline support, or swap for an IntersectionObserver if cross-browser reveals become a requirement |
 
 ## Environment constraints (not code debt, but bites us)
 
@@ -117,6 +118,12 @@ deliberately parked.
 - Arabic/RTL localization
 
 ## Future improvements (nice-to-have, unscheduled)
+
+- **Per-case company snapshot.** Case views join the live Company row; the
+  2026-07-15 identity lock prevents renames once cases are submitted, but a
+  legitimate registration change (admin-approved) would still relabel history.
+  The durable fix is snapshotting company identity onto the case at submission
+  (as ContractDetails already does for the contract).
 
 - DB-level audit immutability (`REVOKE UPDATE/DELETE` or a trigger) instead of
   convention-only

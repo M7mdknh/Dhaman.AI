@@ -133,3 +133,79 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Motion — subtle, enterprise register (Stripe/Linear, never marketing).
+ * Everything here is opt-in via utility classes, runs on compositor-friendly
+ * properties (opacity/transform), and is disabled under reduced motion.
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-in-soft {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Meters/bars grow from zero to their inline-style width on first paint. */
+@keyframes grow-x {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes shimmer-x {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Route-level page transition: a soft fade + 6px rise on navigation. */
+  .page-enter {
+    animation: rise-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  .rise-in {
+    animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+
+  /* Children animate in sequence — cards in a grid, timeline entries, rows.
+     Delays cap at the 8th child so long lists never feel sluggish. */
+  .rise-in-stagger > * {
+    animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  .rise-in-stagger > :nth-child(2) { animation-delay: 50ms; }
+  .rise-in-stagger > :nth-child(3) { animation-delay: 100ms; }
+  .rise-in-stagger > :nth-child(4) { animation-delay: 150ms; }
+  .rise-in-stagger > :nth-child(5) { animation-delay: 200ms; }
+  .rise-in-stagger > :nth-child(6) { animation-delay: 250ms; }
+  .rise-in-stagger > :nth-child(7) { animation-delay: 300ms; }
+  .rise-in-stagger > :nth-child(n + 8) { animation-delay: 350ms; }
+
+  .grow-in {
+    animation: grow-x 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Sections gently fade in as they scroll into view. Scroll-driven
+     animations are progressive enhancement: unsupported browsers simply
+     render the content immediately — never hidden, never broken. */
+  @supports (animation-timeline: view()) {
+    .scroll-reveal {
+      animation: rise-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-timeline: view();
+      /* Absolute end offset: the reveal always completes within ~160px of
+         scroll, even for sections taller than the viewport — a tall trends
+         grid must never sit half-transparent while it is being read. */
+      animation-range: entry 0% entry 160px;
+    }
+  }
+}

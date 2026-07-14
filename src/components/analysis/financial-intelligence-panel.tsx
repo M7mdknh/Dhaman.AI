@@ -39,15 +39,21 @@ export function FinancialIntelligencePanel({
   return (
     <div className="@container space-y-8">
       {/* The verdict leads — it answers "can the bank issue this guarantee?". */}
-      <VerdictHero headline={headline} />
+      <div className="rise-in">
+        <VerdictHero headline={headline} />
+      </div>
 
       <ExecutiveKpis headline={headline} />
 
-      <FinancialDrivers report={report} />
+      <div className="scroll-reveal">
+        <FinancialDrivers report={report} />
+      </div>
 
-      <FlagList flags={report.flags} currency={report.currency} />
+      <div className="scroll-reveal">
+        <FlagList flags={report.flags} currency={report.currency} />
+      </div>
 
-      <section aria-label="Financial trends">
+      <section aria-label="Financial trends" className="scroll-reveal">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Trends</h2>
         {report.years.length < 2 && (
           <p className="mb-3 text-xs text-muted-foreground">
@@ -76,7 +82,7 @@ export function FinancialIntelligencePanel({
         </div>
       </section>
 
-      <section aria-label="Financial ratios" className="space-y-6">
+      <section aria-label="Financial ratios" className="scroll-reveal space-y-6">
         <h2 className="text-sm font-semibold text-foreground">Financial Ratios</h2>
         <RatioTables ratiosByYear={report.ratiosByYear} currency={report.currency} />
         <GrowthTable periods={report.growthPeriods} />

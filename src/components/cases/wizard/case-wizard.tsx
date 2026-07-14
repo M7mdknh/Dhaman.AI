@@ -48,7 +48,9 @@ export function CaseWizard(props: CaseWizardProps) {
   const canOpen = (id: number) => {
     if (isNew) return id === 1;
     if (id <= 2) return true;
-    return contract !== null;
+    if (id === 3) return contract !== null;
+    // Review needs something to review — at least one statement uploaded.
+    return contract !== null && documents.length > 0;
   };
 
   const completedSteps = [

@@ -70,6 +70,7 @@ export type ReviewCase = Prisma.UnderwritingCaseGetPayload<{
             currency: true;
             scale: true;
             detectedStatements: true;
+            companyName: true;
           };
         };
       };
@@ -114,6 +115,7 @@ export async function getCaseForReview(
               currency: true,
               scale: true,
               detectedStatements: true,
+              companyName: true,
             },
           },
         },

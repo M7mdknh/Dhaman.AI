@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-14.**
+> of any session. **Last updated: 2026-07-15.**
 
 ## Product framing
 
@@ -34,6 +34,56 @@ below. All work is committed on `main`.
   Same first-success orchestration, plus the OCR fallback for unreadable scans
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
+
+### Post-MVP — Demo Day UI/UX polish (2026-07-15)
+
+Final pre-demo polish pass — no feature, workflow, or engine changes.
+
+- **Wizard Step 2 first-click validation fixed.** Root cause: react-hook-form
+  can only focus fields it holds a ref for; the Controller-driven Base UI
+  selects have none, so a form whose first errors were selects showed messages
+  far off-screen with no scroll or focus (and RHF's own focus jump was abrupt).
+  Both wizard forms now use `shouldFocusError: false` + a shared
+  `focusFirstInvalidField` (form-errors.ts): errors render immediately, and the
+  first invalid field — input or select, in DOM order — is smooth-scrolled to
+  center and focused. Error messages animate in.
+- **Wizard Step 3 gated.** "Continue to Review" is disabled until at least one
+  statement is uploaded, with an amber notice explaining why (upload-aware
+  copy); the stepper equally refuses to open Review & Submit without one.
+- **Motion system** (globals.css): `rise-in` / `rise-in-stagger` entrance
+  utilities, `grow-in` meter fill, `page-enter` route transition (via
+  `(app)/template.tsx`), and `scroll-reveal` scroll-driven section fades
+  (`@supports animation-timeline: view()` — progressive enhancement, absolute
+  160px range end so tall sections never sit half-transparent). All utilities
+  are compositor-only (opacity/transform) and disabled under
+  `prefers-reduced-motion`.
+- **Micro-interactions:** KPI scores and dashboard stats count up
+  (`AnimatedNumber`, rAF, reduced-motion aware), trend charts animate on first
+  render, skeletons gained a shimmer sweep, upload/processing progress bars
+  ease, dialog open/close softened, processing detail expand animates.
+- Verified end-to-end with Playwright: all four roles, 13 pages, zero console
+  errors; scroll-reveal confirmed to fully reveal on scroll and on jump-to-end.
+
+### Post-MVP — Company identity integrity (2026-07-15)
+
+Root-caused a demo incident where the Risk Officer's case showed an excellent
+"Tamara" assessment while the contractor's Tamara case showed BBB with 5 risk
+flags: the wizard's Step 1 renamed the shared Company row in place
+("Rawabi Contracting Co." → "Tamara"), retroactively relabeling an older case
+(built from the Rawabi demo statements) as a Tamara case in every live view.
+Two deterministic fixes, no schema change:
+
+- **Identity lock**: `upsertCompanyForUser` refuses changes to the company
+  name or CR number once any non-DRAFT case references the company (contact
+  and profile fields stay editable), with an explanatory error. Historical
+  underwriting records keep the identity they were decided under.
+- **COMPANY_NAME_MISMATCH risk flag**: the IFRS parser already extracts the
+  company name printed on each statement; `detectCompanyMismatchFlags`
+  (HIGH severity) now fires on the analysis, review, and package pages and in
+  the memo inputs whenever the statement's company clearly differs from the
+  case applicant (normalized containment matching, so "Tamara" matches
+  "TAMARA FINANCE COMPANY"; unreadable names are never flagged). The flag is
+  display/memo-only — risk & capacity scores remain purely financial.
 
 ### Post-MVP — Reliable full-size statement uploads (2026-07-14)
 

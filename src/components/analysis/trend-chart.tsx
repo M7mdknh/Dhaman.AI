@@ -92,7 +92,8 @@ export function TrendChart({ title, unit, currency, points, latestChange }: Tren
                 dataKey="value"
                 radius={[4, 4, 0, 0]}
                 maxBarSize={48}
-                isAnimationActive={false}
+                animationDuration={600}
+                animationEasing="ease-out"
                 // Sign-aware label placement: above positive bars, below the
                 // bottom edge of negative bars (never over the axis ticks).
                 label={(props) => {

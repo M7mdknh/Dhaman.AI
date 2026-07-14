@@ -16,7 +16,7 @@ export interface TimelineEntry {
  */
 export function CaseTimeline({ entries }: { entries: TimelineEntry[] }) {
   return (
-    <ol className="space-y-0">
+    <ol className="rise-in-stagger space-y-0">
       {entries.map((entry, index) => {
         const isLast = index === entries.length - 1;
         const complete = entry.state === "complete";

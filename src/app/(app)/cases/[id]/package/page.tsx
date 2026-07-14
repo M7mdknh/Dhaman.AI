@@ -20,7 +20,10 @@ import { getSession } from "@/lib/auth/session";
 import { toCompanyInput, toContractInput } from "@/lib/case-view";
 import { formatDateTime, formatMoney, formatPercent, formatRatio } from "@/lib/format";
 import { getCaseForReview } from "@/services/officer-case-service";
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
+import {
+  buildFinancialIntelligence,
+  toIdentityInputs,
+} from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
@@ -90,6 +93,7 @@ export default async function UnderwritingPackagePage({
   const report = buildFinancialIntelligence(
     underwritingCase.financialStatements,
     underwritingCase.contractDetails,
+    toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
   );
   if (!report) redirect(`/cases/${id}`);
 

@@ -9,12 +9,37 @@
  */
 import { assessExecutionCapacity } from "@/services/finance/execution-capacity-service";
 import { computeGrowth, computeRatios } from "@/services/finance/financial-ratio-service";
-import { detectRiskFlags } from "@/services/finance/risk-flag-service";
+import { detectCompanyMismatchFlags, detectRiskFlags } from "@/services/finance/risk-flag-service";
 import { assessRisk } from "@/services/finance/risk-score-service";
 import { computeTrends } from "@/services/finance/trend-analysis-service";
 
+import type { StatementIdentity } from "@/services/finance/risk-flag-service";
 import type { FinancialIntelligenceReport, YearFinancials } from "@/lib/finance/types";
 import type { ContractDetails, FinancialStatement } from "@/generated/prisma/client";
+
+/**
+ * Who the case says the applicant is vs. who the uploaded statements say
+ * they are (parser-extracted). Optional — callers without extraction data
+ * simply skip the documentary-identity check.
+ */
+export interface IdentityInputs {
+  caseCompanyName: string;
+  statementIdentities: StatementIdentity[];
+}
+
+/** Maps a case's documents (+parser extraction) into IdentityInputs. */
+export function toIdentityInputs(
+  caseCompanyName: string,
+  documents: { fiscalYear: number | null; extraction: { companyName: string | null } | null }[],
+): IdentityInputs {
+  return {
+    caseCompanyName,
+    statementIdentities: documents.map((d) => ({
+      companyName: d.extraction?.companyName ?? null,
+      fiscalYear: d.fiscalYear,
+    })),
+  };
+}
 
 const AVG_DAYS_PER_MONTH = 30.44;
 
@@ -71,6 +96,7 @@ export function contractDurationMonths(contract: ContractDetails): number | null
 export function buildFinancialIntelligence(
   statements: FinancialStatement[],
   contract: ContractDetails | null,
+  identity?: IdentityInputs | null,
 ): FinancialIntelligenceReport | null {
   if (statements.length === 0) return null;
 
@@ -88,6 +114,12 @@ export function buildFinancialIntelligence(
       }
     : null;
   const flags = detectRiskFlags(years);
+  // Documentary-identity flags are surfaced to the reader but kept OUT of
+  // the score inputs: scores measure the financials; whether the financials
+  // belong to the applicant is the officer's call, loudly flagged.
+  const identityFlags = identity
+    ? detectCompanyMismatchFlags(identity.caseCompanyName, identity.statementIdentities)
+    : [];
 
   return {
     years: years.map((y) => y.fiscalYear),
@@ -96,7 +128,7 @@ export function buildFinancialIntelligence(
     ratiosByYear: computeRatios(years),
     growthPeriods: computeGrowth(years),
     trends: computeTrends(years),
-    flags,
+    flags: [...identityFlags, ...flags],
     risk: assessRisk(years, flags, contractInputs),
     capacity: contractInputs ? assessExecutionCapacity(latest, contractInputs) : null,
   };

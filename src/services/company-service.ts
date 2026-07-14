@@ -35,6 +35,29 @@ export async function upsertCompanyForUser(
   }
 
   if (user.companyId) {
+    // Company IDENTITY (legal name + CR number) is frozen once any case has
+    // been submitted under it: submitted cases, memos, and decisions all
+    // reference this row, and renaming it would silently relabel the bank's
+    // historical underwriting records. Contact/profile fields stay editable.
+    const existing = await prisma.company.findUnique({ where: { id: user.companyId } });
+    const identityChanged =
+      existing && (existing.name !== input.name || existing.crNumber !== input.crNumber);
+    if (identityChanged) {
+      const submittedCases = await prisma.underwritingCase.count({
+        where: { companyId: user.companyId, status: { not: "DRAFT" } },
+      });
+      if (submittedCases > 0) {
+        return {
+          ok: false,
+          error:
+            `The company name and CR number are locked because ${submittedCases} submitted ` +
+            `case${submittedCases === 1 ? " references" : "s reference"} this company. ` +
+            "Underwriting records must keep the identity they were decided under — " +
+            "ask your bank administrator to correct a genuine registration change.",
+        };
+      }
+    }
+
     const company = await prisma.company.update({
       where: { id: user.companyId },
       data: input,

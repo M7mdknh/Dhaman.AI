@@ -37,7 +37,10 @@ import { derivePriority } from "@/lib/review";
 import { cn } from "@/lib/utils";
 import { getCaseForReview, type ReviewCase } from "@/services/officer-case-service";
 import { ensureDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
+import {
+  buildFinancialIntelligence,
+  toIdentityInputs,
+} from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
 
@@ -126,7 +129,11 @@ export default async function ReviewCasePage({
   if (!reviewCase) notFound();
 
   const contract = reviewCase.contractDetails;
-  const report = buildFinancialIntelligence(reviewCase.financialStatements, contract);
+  const report = buildFinancialIntelligence(
+    reviewCase.financialStatements,
+    contract,
+    toIdentityInputs(reviewCase.company.name, reviewCase.documents),
+  );
   const priority = derivePriority(
     report?.risk.band ?? null,
     contract?.guaranteeAmount ?? null,
@@ -307,7 +314,7 @@ export default async function ReviewCasePage({
         </div>
 
         {/* ---- Sticky decision rail: decision (or RM review), timeline, notes */}
-        <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+        <div className="rise-in-stagger space-y-6 xl:sticky xl:top-6 xl:self-start">
           {isRm ? (
             <Card>
               <CardHeader>

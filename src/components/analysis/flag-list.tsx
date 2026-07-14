@@ -65,9 +65,11 @@ export function FlagList({ flags, currency }: { flags: RiskFlag[]; currency: str
                     <span className="text-[13px] font-medium text-foreground">
                       {flag.type.replaceAll("_", " ")}
                     </span>
-                    <span className="text-[11px] tabular-nums text-muted-foreground">
-                      FY{flag.affectedYears.join(" → FY")}
-                    </span>
+                    {flag.affectedYears.length > 0 && (
+                      <span className="text-[11px] tabular-nums text-muted-foreground">
+                        FY{flag.affectedYears.join(" → FY")}
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
                     {flag.explanation}
