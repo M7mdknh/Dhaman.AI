@@ -19,6 +19,11 @@ import { IssueGuaranteeButton } from "@/components/review/issue-guarantee-button
 import { NotesPanel, type NoteView } from "@/components/review/notes-panel";
 import { PriorityBadge } from "@/components/review/priority-badge";
 import {
+  RmAssessmentPanel,
+  type MemoRevisionView,
+} from "@/components/review/rm-assessment-panel";
+import { RmReviewForm } from "@/components/review/rm-review-form";
+import {
   ResumeReviewButton,
   StartReviewButton,
 } from "@/components/review/review-lifecycle-buttons";
@@ -64,6 +69,13 @@ function buildTimeline(reviewCase: ReviewCase): TimelineEntry[] {
       label: "Decision Intelligence",
       timestamp: memo ? formatDateTime(memo.createdAt) : undefined,
       state: memo ? "complete" : "upcoming",
+    },
+    {
+      label: "RM Review",
+      timestamp: reviewCase.rmSubmittedAt
+        ? formatDateTime(reviewCase.rmSubmittedAt)
+        : undefined,
+      state: reviewCase.rmSubmittedAt ? "complete" : "upcoming",
     },
     {
       label: "Officer Review Started",
@@ -122,6 +134,18 @@ export default async function ReviewCasePage({
   const memo = reviewCase.decisionIntelligence[0] ?? null;
   const status = reviewCase.status;
   const analysisReady = reviewCase.financialStatements.length > 0;
+  const isRm = session.role === "RELATIONSHIP_MANAGER";
+  // Newest-first (ordered by version desc in the service).
+  const latestRevision = reviewCase.memoRevisions[0] ?? null;
+  const latestRevisionView: MemoRevisionView | null = latestRevision
+    ? {
+        version: latestRevision.version,
+        summary: latestRevision.summary,
+        relationshipContext: latestRevision.relationshipContext,
+        author: latestRevision.author?.fullName ?? "Former staff member",
+        createdAt: latestRevision.createdAt.toISOString(),
+      }
+    : null;
 
   // Lazy AI: a Risk Officer opening the case is one of the two triggers for the
   // underwriting memo (the other is the explicit "Generate AI Analysis" button).
@@ -206,6 +230,15 @@ export default async function ReviewCasePage({
            every pixel it can — the timeline lives in the decision rail. */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
         <div className="min-w-0 space-y-6">
+          {(latestRevisionView || reviewCase.rmSubmittedAt) && (
+            <RmAssessmentPanel
+              revision={latestRevisionView}
+              revisionCount={reviewCase.memoRevisions.length}
+              routedBy={reviewCase.rmReviewer?.fullName ?? null}
+              routedAt={reviewCase.rmSubmittedAt?.toISOString() ?? null}
+            />
+          )}
+
           <DecisionSection
             caseId={id}
             decision={memo}
@@ -273,8 +306,82 @@ export default async function ReviewCasePage({
           </Card>
         </div>
 
-        {/* ---- Sticky decision rail: decision, lifecycle timeline, notes */}
+        {/* ---- Sticky decision rail: decision (or RM review), timeline, notes */}
         <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+          {isRm ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">RM Review</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Refine the AI draft, add relationship context, and route the
+                  package. The final decision rests with the Risk Officer.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(status === "SUBMITTED" ||
+                  status === "PROCESSING" ||
+                  status === "PARSING") && (
+                  <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+                    <Hourglass className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    Statement extraction is still in progress — the memo can be
+                    reviewed once the analysis is ready.
+                  </p>
+                )}
+
+                {status === "PROCESSING_FAILED" && (
+                  <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+                    <Hourglass className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
+                    Financial processing did not complete for this case. The
+                    applicant can retry the analysis from their side.
+                  </p>
+                )}
+
+                {(status === "ANALYSIS_READY" || status === "RM_REVIEWED") && (
+                  <>
+                    {status === "RM_REVIEWED" && (
+                      <p className="text-[13px] text-muted-foreground">
+                        Routed to the Risk Officer
+                        {reviewCase.rmSubmittedAt
+                          ? ` on ${formatDate(reviewCase.rmSubmittedAt)}`
+                          : ""}
+                        . You can keep refining the memo until the review starts.
+                      </p>
+                    )}
+                    <RmReviewForm
+                      caseId={id}
+                      reference={reviewCase.reference}
+                      defaultSummary={latestRevisionView?.summary ?? memo?.summary ?? ""}
+                      defaultContext={latestRevisionView?.relationshipContext ?? ""}
+                      canSubmit={status === "ANALYSIS_READY"}
+                    />
+                  </>
+                )}
+
+                {(status === "UNDER_REVIEW" || status === "INFO_REQUESTED") && (
+                  <p className="text-[13px] text-muted-foreground">
+                    The Risk Officer&apos;s review is in progress — memo
+                    refinements are locked.
+                  </p>
+                )}
+
+                {(status === "APPROVED" || status === "DECLINED" || status === "ISSUED") && (
+                  <p className="text-[13px] text-muted-foreground">
+                    This case has been decided by the Risk Officer. The decision
+                    record is below.
+                  </p>
+                )}
+
+                {decisions.length > 0 && (
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Decision Record
+                    </h3>
+                    <DecisionHistory decisions={decisions} />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Officer Decision</CardTitle>
@@ -307,6 +414,17 @@ export default async function ReviewCasePage({
                   <p className="text-[13px] text-muted-foreground">
                     Viewing never changes case state. Start the review to take
                     ownership and unlock decisions.
+                  </p>
+                  <StartReviewButton caseId={id} reference={reviewCase.reference} />
+                </>
+              )}
+
+              {status === "RM_REVIEWED" && (
+                <>
+                  <p className="text-[13px] text-muted-foreground">
+                    Reviewed and routed by{" "}
+                    {reviewCase.rmReviewer?.fullName ?? "the Relationship Manager"}.
+                    Start the review to take ownership and unlock decisions.
                   </p>
                   <StartReviewButton caseId={id} reference={reviewCase.reference} />
                 </>
@@ -381,6 +499,7 @@ export default async function ReviewCasePage({
               )}
             </CardContent>
           </Card>
+          )}
 
           <Card>
             <CardHeader>

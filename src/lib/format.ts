@@ -100,3 +100,14 @@ export function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** Compact duration for SLA display: "42s", "3m 20s", "1.2h". */
+export function formatDurationShort(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    const rest = Math.round(seconds % 60);
+    return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  }
+  return `${(seconds / 3600).toFixed(1)}h`;
+}

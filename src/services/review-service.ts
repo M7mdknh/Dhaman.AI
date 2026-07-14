@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   PROCESSING_FAILED: "blocked by a processing failure",
   PARSING: "still parsing",
   ANALYSIS_READY: "ready for review",
+  RM_REVIEWED: "ready for review",
   UNDER_REVIEW: "under review",
   INFO_REQUESTED: "awaiting requested information",
   APPROVED: "already decided",

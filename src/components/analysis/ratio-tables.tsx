@@ -111,7 +111,8 @@ export function RatioTables({
               <TableBody>
                 {category.rows.map((row) => (
                   <TableRow key={row.key}>
-                    <TableCell className="text-muted-foreground">{row.label}</TableCell>
+                    {/* Labels may wrap — the year columns must never be pushed out of view. */}
+                    <TableCell className="whitespace-normal text-muted-foreground">{row.label}</TableCell>
                     {ratiosByYear.map((y) => (
                       <TableCell key={y.fiscalYear} className="text-right tabular-nums">
                         {format(row.display, y.ratios[row.key])}
@@ -143,7 +144,7 @@ export function RatioTables({
             </TableHeader>
             <TableBody>
               <TableRow>
-                <TableCell className="text-muted-foreground">Working Capital</TableCell>
+                <TableCell className="whitespace-normal text-muted-foreground">Working Capital</TableCell>
                 {ratiosByYear.map((y) => (
                   <TableCell key={y.fiscalYear} className="text-right tabular-nums">
                     {y.workingCapital === null ? "—" : formatMoneyWhole(y.workingCapital, currency)}
@@ -151,7 +152,7 @@ export function RatioTables({
                 ))}
               </TableRow>
               <TableRow>
-                <TableCell className="text-muted-foreground">Free Cash Flow</TableCell>
+                <TableCell className="whitespace-normal text-muted-foreground">Free Cash Flow</TableCell>
                 {ratiosByYear.map((y) => (
                   <TableCell key={y.fiscalYear} className="text-right tabular-nums">
                     {y.freeCashFlow === null ? "—" : formatMoneyWhole(y.freeCashFlow, currency)}
@@ -189,7 +190,7 @@ export function GrowthTable({ periods }: { periods: GrowthPeriod[] }) {
           <TableBody>
             {(Object.keys(GROWTH_LABELS) as GrowthKey[]).map((key) => (
               <TableRow key={key}>
-                <TableCell className="text-muted-foreground">{GROWTH_LABELS[key]}</TableCell>
+                <TableCell className="whitespace-normal text-muted-foreground">{GROWTH_LABELS[key]}</TableCell>
                 {periods.map((p) => (
                   <TableCell key={p.toYear} className="text-right tabular-nums">
                     {formatPercent(p.growth[key])}

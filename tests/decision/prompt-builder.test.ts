@@ -35,6 +35,26 @@ describe("decision prompt builder", () => {
     expect(message).not.toContain('"revenue": "120000000.00"');
   });
 
+  it("growth and trend changes are unambiguous percent strings, never raw fractions", () => {
+    const input = build();
+    for (const period of input.growth) {
+      for (const value of [period.revenueGrowth, period.assetGrowth, period.netIncomeGrowth]) {
+        if (value !== null) expect(value).toMatch(/^[+-]\d+(\.\d)?%$/);
+      }
+    }
+    for (const trend of input.trends) {
+      if (trend.latestChange !== null) expect(trend.latestChange).toMatch(/^[+-]\d+(\.\d+)?(%|pp)$/);
+    }
+  });
+
+  it("carries the product-specific analysis focus for the narrative (framework §3)", () => {
+    const input = build();
+
+    // The strong fixture is a Performance Bond — the flagship product.
+    expect(input.contract.guaranteeType).toBe("PERFORMANCE");
+    expect(input.contract.analysisFocus).toContain("working-capital");
+  });
+
   it("embeds the deterministic bank-policy recommendation for the risk band", () => {
     const input = build();
 

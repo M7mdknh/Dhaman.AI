@@ -9,6 +9,7 @@ import type { SessionPayload } from "@/lib/auth/token";
 
 const ROLE_LABELS: Record<SessionPayload["role"], string> = {
   CONTRACTOR: "Contractor",
+  RELATIONSHIP_MANAGER: "Relationship Manager",
   RISK_OFFICER: "Risk Officer",
   ADMIN: "Administrator",
 };

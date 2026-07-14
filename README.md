@@ -148,6 +148,23 @@ Delivered (Post-MVP — Express Underwriting & speed, 2026-07-08)
   warming; critical-path round-trip collapse (measured Stage 1 ~2.4s on
   remote Neon + R2)
 
+Delivered (Post-MVP — Framework conformance: RM stage, Letter of Credit, SLA
+metric, 2026-07-14)
+
+- Relationship Manager role and review stage (framework step 8): the RM reads
+  the same queue and case detail, refines the AI-drafted memo with
+  version-tracked revisions (append-only — the AI original is never mutated),
+  adds relationship context, and routes the package to the Risk Officer
+  (`ANALYSIS_READY → RM_REVIEWED`). The officer sees the RM Assessment beside
+  the untouched AI memo, and can still start directly from `ANALYSIS_READY` —
+  the RM stage improves the package, it never blocks it. RMs never decide.
+- Letter of Credit as the fifth guarantee product (Bid Bond, Performance,
+  Advance Payment, Retention, LC), with a per-product analysis focus shown in
+  the wizard and passed to the memo prompt (prompt v4) — narrative emphasis
+  only, the deterministic engines are product-agnostic
+- North-star SLA metric on the bank dashboard: average time from submission
+  to completed assessment, computed live from processing jobs
+
 Future
 
 - Deep Extraction (production-grade document AI for scanned Arabic statements)
@@ -221,7 +238,10 @@ submission:
   seconds; **Stage 2** (the AI memo) runs in the background and never gates
   readiness. The case page shows live stage progress; a lost trigger self-heals
   on the next status check, and a stalled run offers a one-click **Retry
-  Analysis**. No cron and no scheduled jobs are used.
+  Analysis**. One unreadable document never fails the case: underwriting
+  proceeds as a partial assessment on the statements that were verified, and
+  the failed document keeps its own per-document retry. No cron and no
+  scheduled jobs are used.
 - Set `S3_BUCKET` (+ credentials) — the read-only serverless filesystem cannot
   persist uploads; production refuses to boot on local disk otherwise.
 - Optionally set `TESSERACT_LANG_PATH` to a private traineddata mirror to drop
@@ -232,6 +252,7 @@ submission:
 | Email | Role | Password |
 | --- | --- | --- |
 | admin@daman.local | Admin | `Daman!2026` |
+| rm@daman.local | Relationship Manager | `Daman!2026` |
 | officer@daman.local | Risk Officer | `Daman!2026` |
 | contractor@daman.local | Contractor | `Daman!2026` |
 

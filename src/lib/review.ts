@@ -18,6 +18,7 @@ export const QUEUE_STATUSES: CaseStatus[] = [
   "PROCESSING_FAILED",
   "PARSING",
   "ANALYSIS_READY",
+  "RM_REVIEWED",
   "UNDER_REVIEW",
   "INFO_REQUESTED",
   "APPROVED",
@@ -25,9 +26,10 @@ export const QUEUE_STATUSES: CaseStatus[] = [
   "ISSUED",
 ];
 
-/** Awaiting officer work: the queue's default "Pending" tab. */
+/** Awaiting bank work: the queue's default "Pending" tab. */
 export const PENDING_STATUSES: CaseStatus[] = [
   "ANALYSIS_READY",
+  "RM_REVIEWED",
   "UNDER_REVIEW",
   "INFO_REQUESTED",
 ];
@@ -35,7 +37,25 @@ export const PENDING_STATUSES: CaseStatus[] = [
 /** A decision has been recorded (terminal or issued). */
 export const DECIDED_STATUSES: CaseStatus[] = ["APPROVED", "DECLINED", "ISSUED"];
 
+/**
+ * The officer may start from ANALYSIS_READY directly (the RM stage is a
+ * quality pass, never a bottleneck) or from RM_REVIEWED (the routed package).
+ */
 export function canStartReview(status: CaseStatus): boolean {
+  return status === "ANALYSIS_READY" || status === "RM_REVIEWED";
+}
+
+/**
+ * RM stage (framework step 8). The RM refines the AI-drafted memo while the
+ * case awaits the Risk Officer — before or after routing it, but never once
+ * the officer's review has started.
+ */
+export function canReviseMemo(status: CaseStatus): boolean {
+  return status === "ANALYSIS_READY" || status === "RM_REVIEWED";
+}
+
+/** Routing to the Risk Officer happens exactly once, from ANALYSIS_READY. */
+export function canRmSubmit(status: CaseStatus): boolean {
   return status === "ANALYSIS_READY";
 }
 

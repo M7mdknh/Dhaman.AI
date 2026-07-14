@@ -329,14 +329,19 @@ export function deriveDocumentViews(
     const batchesAhead = Math.floor((waiting - 1) / DOC_CONCURRENCY);
     const estStartMs =
       (jobState === "QUEUED" ? JOB_START_MS : 0) + batchesAhead * DOC_TOTAL_WEIGHT;
+    // A dead job (failed/completed) can leave an untouched document behind —
+    // never show it a ticking "starting in ~Ns" that will not come true.
+    const jobAlive = jobState === "QUEUED" || jobState === "RUNNING";
     return view(doc, {
       state: "queued",
-      statusLabel: `Queued — position ${waiting}, starting in ~${Math.max(1, Math.round(estStartMs / 1000))}s`,
+      statusLabel: jobAlive
+        ? `Queued — position ${waiting}, starting in ~${Math.max(1, Math.round(estStartMs / 1000))}s`
+        : "Waiting to process — resume processing to continue",
       progressPct: 0,
       timings,
       elapsedMs: null,
       queuePosition: waiting,
-      estStartMs,
+      estStartMs: jobAlive ? estStartMs : null,
     });
   });
 }

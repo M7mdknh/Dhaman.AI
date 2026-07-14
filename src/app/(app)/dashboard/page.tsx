@@ -9,6 +9,7 @@ import {
   Plus,
   SearchCheck,
   Send,
+  Timer,
 } from "lucide-react";
 
 import { CasesPanel } from "@/components/dashboard/cases-panel";
@@ -18,15 +19,18 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
 import { toCaseRow } from "@/lib/case-view";
+import { formatDurationShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCaseStats, listCasesForUser } from "@/services/case-service";
 import {
+  getProcessingSla,
   getQueueStats,
   listReviewQueue,
   type QueueTab,
 } from "@/services/officer-case-service";
 
 import type { Metadata } from "next";
+import type { Role } from "@/lib/auth/token";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -34,25 +38,33 @@ function parseTab(value: string | undefined): QueueTab {
   return value === "all" || value === "decided" ? value : "pending";
 }
 
-/** The bank-side dashboard: the officer's review queue; admins monitor it. */
+const BANK_DASHBOARD_TAGLINE: Partial<Record<Role, string>> = {
+  ADMIN: "Monitor underwriting operations across the bank.",
+  RELATIONSHIP_MANAGER:
+    "Review AI-drafted memos, add relationship context, and route packages to the Risk Officer.",
+  RISK_OFFICER: "Review submitted underwriting cases and record decisions.",
+};
+
+/** The bank-side dashboard: the shared review queue for RMs, officers, and admins. */
 async function OfficerDashboard({
   userId,
   fullName,
-  isAdmin,
+  role,
   searchParams,
 }: {
   userId: string;
   fullName: string;
-  isAdmin: boolean;
+  role: Role;
   searchParams: { tab?: string; q?: string; page?: string };
 }) {
   const tab = parseTab(searchParams.tab);
   const query = searchParams.q?.trim() ?? "";
   const page = Number(searchParams.page) || 1;
 
-  const [stats, queue] = await Promise.all([
+  const [stats, queue, sla] = await Promise.all([
     getQueueStats(userId),
     listReviewQueue(userId, { tab, query, page }),
+    getProcessingSla(userId),
   ]);
   if (!stats || !queue) redirect("/login");
 
@@ -63,17 +75,25 @@ async function OfficerDashboard({
           Welcome, {fullName.split(" ")[0]}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {isAdmin
-            ? "Monitor underwriting operations across the bank."
-            : "Review submitted underwriting cases and record decisions."}
+          {BANK_DASHBOARD_TAGLINE[role] ?? BANK_DASHBOARD_TAGLINE.RISK_OFFICER}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Pending Review" value={stats.pending} icon={Inbox} />
         <StatCard label="In Review" value={stats.underReview} icon={SearchCheck} />
         <StatCard label="Decided" value={stats.decided} icon={Gavel} />
         <StatCard label="Guarantees Issued" value={stats.issued} icon={FileCheck2} />
+        <StatCard
+          label="Avg. Time to Assessment"
+          value={sla && sla.count > 0 ? formatDurationShort(sla.averageSeconds) : "—"}
+          icon={Timer}
+          hint={
+            sla && sla.count > 0
+              ? `across ${sla.count} case${sla.count === 1 ? "" : "s"}`
+              : "no completed assessments yet"
+          }
+        />
       </div>
 
       <QueueTable result={queue} tab={tab} query={query} />
@@ -94,7 +114,7 @@ export default async function DashboardPage({
       <OfficerDashboard
         userId={session.userId}
         fullName={session.fullName}
-        isAdmin={session.role === "ADMIN"}
+        role={session.role}
         searchParams={await searchParams}
       />
     );

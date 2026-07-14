@@ -12,6 +12,7 @@ const DOT_CLASSES: Record<CaseStatus, string> = {
   PROCESSING_FAILED: "bg-red-500",
   PARSING: "bg-blue-500",
   ANALYSIS_READY: "bg-indigo-500",
+  RM_REVIEWED: "bg-violet-500",
   UNDER_REVIEW: "bg-amber-500",
   INFO_REQUESTED: "bg-amber-500",
   APPROVED: "bg-emerald-500",

@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { applyActionErrors, fieldErrors } from "@/components/cases/wizard/form-errors";
 import { FormField } from "@/components/forms/form-field";
@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   BENEFICIARY_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
+  GUARANTEE_TYPE_FOCUS,
   GUARANTEE_TYPE_OPTIONS,
   SECTOR_OPTIONS,
 } from "@/lib/case-constants";
@@ -64,6 +65,7 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
     defaultValues: defaults ?? EMPTY_DEFAULTS,
   });
   const { register, control, handleSubmit, setError, formState } = form;
+  const guaranteeType = useWatch({ control, name: "guaranteeType" });
 
   const submit = handleSubmit(async (values) => {
     const result = await onSave(values);
@@ -162,12 +164,19 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
             {...register("guaranteeAmount")}
             errors={fieldErrors(formState.errors.guaranteeAmount)}
           />
-          {selectField(
-            "guaranteeType",
-            "Guarantee Type",
-            GUARANTEE_TYPE_OPTIONS,
-            "Select a guarantee type",
-          )}
+          <div>
+            {selectField(
+              "guaranteeType",
+              "Guarantee Type",
+              GUARANTEE_TYPE_OPTIONS,
+              "Select a guarantee type",
+            )}
+            {guaranteeType && (
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                Analysis focus: {GUARANTEE_TYPE_FOCUS[guaranteeType]}
+              </p>
+            )}
+          </div>
           <FormField
             label="Guarantee Percentage (%)"
             inputMode="decimal"

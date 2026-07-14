@@ -250,9 +250,11 @@ export async function processCaseDocuments(
 
   // The chain's last link already rebuilt with every completed document — its
   // rows ARE the final statements (a failure of the final rebuild still throws,
-  // exactly as the old single rebuild did). On a failed pipeline the partial
-  // rows stay: the dashboard keeps showing the progress that WAS made.
-  const statements = failures.length === 0 ? await rebuildChain : [];
+  // exactly as the old single rebuild did). The rows from COMPLETED documents
+  // are returned even when a sibling failed: one bad file never discards the
+  // verified work of the others — the caller decides whether that is enough
+  // for a (partial) assessment.
+  const statements = await rebuildChain;
   const years = statements.map((s) => s.fiscalYear).sort((a, b) => b - a);
 
   const perf = timer.report();

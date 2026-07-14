@@ -62,7 +62,7 @@ export const contractDetailsSchema = z
     currency: z.enum(CURRENCY_OPTIONS, "Select a currency"),
     guaranteeAmount: moneyString("Requested guarantee amount"),
     guaranteeType: z.enum(
-      ["BID_BOND", "PERFORMANCE", "ADVANCE_PAYMENT", "RETENTION"],
+      ["BID_BOND", "PERFORMANCE", "ADVANCE_PAYMENT", "RETENTION", "LETTER_OF_CREDIT"],
       "Select a guarantee type",
     ),
     guaranteePercentage: z

@@ -170,13 +170,31 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     const pipeline = await processCaseDocuments(caseId, /* system run */ null, advanceTo, mode);
     timer.absorb(pipeline.perf);
     deferred.push(...pipeline.deferred);
-    if (!pipeline.ok) {
+    // One failed document never fails the case: as long as at least one
+    // statement was verified, underwriting continues on what exists (a
+    // PARTIAL assessment — the failed documents keep their own FAILED status
+    // + per-document retry). Only a case with NOTHING usable fails.
+    if (pipeline.statements.length === 0) {
       await statusPromise; // ensure PROCESSING landed before PROCESSING_FAILED
       const reason =
         pipeline.failures.map((f) => `${f.fileName}: ${f.message}`).join(" ") ||
         "No usable financial figures could be extracted from the uploaded statements.";
       await failJob(caseId, "EXTRACTING_DATA", reason);
       return;
+    }
+    const partial = pipeline.failures.length > 0;
+    if (partial) {
+      deferred.push(
+        recordAudit({
+          action: "case.partial_extraction",
+          caseId,
+          detail: {
+            mode,
+            completedYears: pipeline.years,
+            failures: pipeline.failures.map((f) => ({ fileName: f.fileName, message: f.message })),
+          },
+        }),
+      );
     }
 
     // ---- STAGE 1 (Fast Financial Intelligence): the deterministic engine.
@@ -269,6 +287,7 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
         mode,
         years: pipeline.years,
         warnings: pipeline.warnings.length,
+        partial,
         stage1Ms,
         totalMs: perf.wallMs,
         memoGenerated,
@@ -328,7 +347,13 @@ export async function retryProcessing(userId: string, caseId: string): Promise<A
 
   const underwritingCase = await prisma.underwritingCase.findFirst({
     where: { id: caseId, companyId },
-    include: { processing: true },
+    include: {
+      processing: true,
+      documents: {
+        where: { docType: "FINANCIAL_STATEMENT", processingStatus: "FAILED" },
+        select: { id: true },
+      },
+    },
   });
   if (!underwritingCase || !underwritingCase.processing) {
     return { ok: false, error: "Case not found." };
@@ -336,7 +361,11 @@ export async function retryProcessing(userId: string, caseId: string): Promise<A
 
   const job = underwritingCase.processing;
   const stale = job.state === "RUNNING" && Date.now() - job.updatedAt.getTime() > STALE_RUNNING_MS;
-  if (job.state !== "FAILED" && !stale) {
+  // A COMPLETED job with a FAILED document is a PARTIAL assessment — the
+  // per-document retry re-queues the run, which resumes from checkpoints
+  // (completed documents and the memo are never redone).
+  const partialRetry = job.state === "COMPLETED" && underwritingCase.documents.length > 0;
+  if (job.state !== "FAILED" && !stale && !partialRetry) {
     return { ok: false, error: "Processing is not in a state that can be retried." };
   }
 

@@ -21,7 +21,7 @@ import { RECOMMENDATION_BY_BAND } from "@/lib/finance/thresholds";
 import { prisma } from "@/lib/prisma";
 import { decisionResponseSchema, type DecisionResponse } from "@/lib/validation/decision";
 import { recordAudit } from "@/services/audit-service";
-import { getOfficerUser } from "@/services/officer-case-service";
+import { getBankUser } from "@/services/officer-case-service";
 import {
   PROMPT_VERSION,
   SYSTEM_PROMPT,
@@ -124,8 +124,8 @@ function userFacingError(error: unknown): string {
 }
 
 /**
- * Officer-triggered generation (or cache reuse) of the underwriting memo.
- * Officer-only since Sprint 5 — the memo is a bank-internal work product
+ * Bank-triggered generation (or cache reuse) of the underwriting memo.
+ * Bank-staff-only since Sprint 5 — the memo is a bank-internal work product
  * (see docs/UNDERWRITING_WORKSPACE.md); contractors never trigger or read it.
  * Delegates to the guard-free core once the role gate passes.
  */
@@ -133,7 +133,7 @@ export async function generateDecisionIntelligence(
   userId: string,
   caseId: string,
 ): Promise<DecisionResult> {
-  const officer = await getOfficerUser(userId);
+  const officer = await getBankUser(userId);
   if (!officer) {
     return { ok: false, error: "Only bank staff can generate decision intelligence." };
   }

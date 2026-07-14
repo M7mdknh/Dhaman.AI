@@ -5,6 +5,8 @@ import {
   canDecide,
   canIssueGuarantee,
   canResumeReview,
+  canReviseMemo,
+  canRmSubmit,
   canStartReview,
   decisionTargetStatus,
   derivePriority,
@@ -19,6 +21,7 @@ const ALL_STATUSES: CaseStatus[] = [
   "PROCESSING_FAILED",
   "PARSING",
   "ANALYSIS_READY",
+  "RM_REVIEWED",
   "UNDER_REVIEW",
   "INFO_REQUESTED",
   "APPROVED",
@@ -34,9 +37,25 @@ const ALL_DECISIONS: OfficerDecisionType[] = [
 ];
 
 describe("review transitions", () => {
-  it("review starts ONLY from ANALYSIS_READY", () => {
+  it("review starts ONLY from ANALYSIS_READY or RM_REVIEWED — the RM stage never blocks", () => {
     for (const status of ALL_STATUSES) {
-      expect(canStartReview(status)).toBe(status === "ANALYSIS_READY");
+      expect(canStartReview(status)).toBe(
+        status === "ANALYSIS_READY" || status === "RM_REVIEWED",
+      );
+    }
+  });
+
+  it("the RM routes to the Risk Officer exactly once, from ANALYSIS_READY only", () => {
+    for (const status of ALL_STATUSES) {
+      expect(canRmSubmit(status)).toBe(status === "ANALYSIS_READY");
+    }
+  });
+
+  it("memo refinements are legal until the officer's review starts, never after", () => {
+    for (const status of ALL_STATUSES) {
+      expect(canReviseMemo(status)).toBe(
+        status === "ANALYSIS_READY" || status === "RM_REVIEWED",
+      );
     }
   });
 

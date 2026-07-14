@@ -14,6 +14,7 @@ import { generateDecisionIntelligence } from "@/services/decision/decision-intel
 import { issueGuarantee } from "@/services/guarantee-service";
 import { addCaseNote } from "@/services/note-service";
 import { recordDecision, resumeReview, startReview } from "@/services/review-service";
+import { saveMemoRevision, submitToRiskOfficer } from "@/services/rm-review-service";
 
 export interface ReviewActionState {
   ok: boolean;
@@ -68,6 +69,36 @@ export async function decideAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid decision." };
   }
   const result = await recordDecision(session.userId, caseId, parsed.data);
+  if (!result.ok) return result;
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+const memoRevisionSchema = z.object({
+  summary: z.string().trim().min(1, "The executive summary cannot be empty.").max(4_000),
+  relationshipContext: z.string().trim().max(4_000).optional(),
+});
+
+/** RM stage: saves a version-tracked refinement of the AI-drafted memo. */
+export async function saveMemoRevisionAction(
+  caseId: string,
+  input: { summary: string; relationshipContext?: string },
+): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const parsed = memoRevisionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid revision." };
+  }
+  const result = await saveMemoRevision(session.userId, caseId, parsed.data);
+  if (!result.ok) return result;
+  revalidateReview(caseId);
+  return { ok: true };
+}
+
+/** RM stage: routes the reviewed package to the Risk Officer. */
+export async function submitToRiskOfficerAction(caseId: string): Promise<ReviewActionState> {
+  const session = await requireSession();
+  const result = await submitToRiskOfficer(session.userId, caseId);
   if (!result.ok) return result;
   revalidateReview(caseId);
   return { ok: true };

@@ -109,10 +109,16 @@ export default async function CaseDetailsPage({
   const snapshot = underwritingCase.processing
     ? toProcessingSnapshot(underwritingCase.processing)
     : null;
+  // A finished job can still carry a FAILED document (partial assessment) —
+  // keep the dashboard visible so the failure and its retry stay reachable.
+  const hasFailedDocument = underwritingCase.documents.some(
+    (d) => d.docType === "FINANCIAL_STATEMENT" && d.processingStatus === "FAILED",
+  );
   const showDashboard =
     !!snapshot &&
     (isProcessingActive(snapshot.state) ||
       snapshot.stalled ||
+      hasFailedDocument ||
       underwritingCase.status === "PROCESSING_FAILED");
   const headlineReport = buildFinancialIntelligence(
     underwritingCase.financialStatements,

@@ -19,6 +19,7 @@ const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
 
 const USERS: { email: string; fullName: string; role: UserRole }[] = [
   { email: "admin@daman.local", fullName: "Nawaf Alharthi", role: "ADMIN" },
+  { email: "rm@daman.local", fullName: "Salman Alghamdi", role: "RELATIONSHIP_MANAGER" },
   { email: "officer@daman.local", fullName: "Omar Alkaltham", role: "RISK_OFFICER" },
   { email: "contractor@daman.local", fullName: "Abdulrahman Yaghmour", role: "CONTRACTOR" },
 ];

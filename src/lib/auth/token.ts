@@ -6,7 +6,7 @@
  */
 import { jwtVerify, SignJWT } from "jose";
 
-export type Role = "CONTRACTOR" | "RISK_OFFICER" | "ADMIN";
+export type Role = "CONTRACTOR" | "RELATIONSHIP_MANAGER" | "RISK_OFFICER" | "ADMIN";
 
 export interface SessionPayload {
   userId: string;

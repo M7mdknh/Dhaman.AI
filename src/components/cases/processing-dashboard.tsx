@@ -330,10 +330,14 @@ export function ProcessingDashboard({
 
   const documents = deriveDocumentViews(snapshot.documents ?? [], snapshot.state, now);
   const documentsDone = documents.filter((d) => d.state === "complete" || d.state === "skipped").length;
+  const failedDocs = documents.filter((d) => d.state === "failed");
   const caseSteps = buildProcessingSteps(snapshot).filter((s) => CASE_STEP_KEYS.has(s.key));
   // Live per-stage durations from the run's event log, ticking with `now`.
   const timings = deriveStageTimings(snapshot, now);
   const failed = snapshot.state === "FAILED";
+  // Job finished, but a document could not be read: the assessment stands on
+  // the statements that WERE verified (partial) — say so, offer the retry.
+  const partial = snapshot.state === "COMPLETED" && failedDocs.length > 0;
   const showRetry = failed || snapshot.stalled;
 
   return (
@@ -342,6 +346,8 @@ export function ProcessingDashboard({
         <CardTitle className="flex items-center gap-2 text-sm">
           {failed ? (
             "We couldn't finish your underwriting package"
+          ) : partial ? (
+            `Underwriting assessment ready — ${failedDocs.length === 1 ? "one statement" : `${failedDocs.length} statements`} could not be read`
           ) : (
             <>
               <Sparkles className="size-4 text-blue-600" aria-hidden />
@@ -423,6 +429,18 @@ export function ProcessingDashboard({
             ))}
           </ol>
         </div>
+
+        {partial && (
+          <Alert>
+            <AlertTriangle className="size-4 text-amber-600" aria-hidden />
+            <AlertTitle>This assessment uses the statements we could verify</AlertTitle>
+            <AlertDescription>
+              The analysis above is based on {documentsDone} of {documents.length} uploaded
+              statements. Retry the unread document below to include it — verified statements
+              are never reprocessed.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {showRetry && (
           <Alert variant="destructive">

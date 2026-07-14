@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-11.**
+> of any session. **Last updated: 2026-07-14.**
 
 ## Product framing
 
@@ -33,6 +33,75 @@ below. All work is committed on `main`.
   All uploaded fiscal years read for full historical trend analysis; complete
   deterministic extraction; the AI memo generated eagerly in the background.
   May take significantly longer.
+
+### Post-MVP — Framework conformance: RM stage + Letter of Credit + SLA metric (2026-07-14)
+
+Aligns the product with the Daman framework document (except the 48h SLA — the
+demo competes on seconds). All verified live (prod build, Playwright, real
+Neon + R2 + pipeline):
+
+- **Relationship Manager role + review stage (framework step 8).** New
+  `RELATIONSHIP_MANAGER` role (`rm@daman.local`, Salman Alghamdi) and case
+  status `RM_REVIEWED`. The RM shares the bank read paths (queue, case detail,
+  notes, memo generation) via `getBankUser`; decisions/issuance stay
+  officer-only. The RM refines the AI memo through **append-only, versioned
+  `MemoRevision` rows** (the AI original is never mutated), adds relationship
+  context, and routes the package (`ANALYSIS_READY → RM_REVIEWED`,
+  `rmReviewerId`/`rmSubmittedAt`, audited). The officer's review page shows an
+  "RM Assessment" panel above the untouched AI memo and an "RM Review"
+  timeline entry. Deliberate rule: `canStartReview` accepts BOTH
+  `ANALYSIS_READY` and `RM_REVIEWED` — the RM stage is a quality pass, never a
+  bottleneck (demo never blocks on a fourth persona).
+- **Letter of Credit** as the fifth guarantee product, plus a per-product
+  `GUARANTEE_TYPE_FOCUS` map (framework §3) shown as a wizard hint and passed
+  to the memo prompt as `contract.analysisFocus` — **prompt v4** (narrative
+  emphasis only; engines stay product-agnostic). Existing demo memos remain
+  valid v3 output; regenerations use v4.
+- **SLA / north-star metric (framework §4.16):** "Avg. Time to Assessment"
+  stat card on the bank dashboard — live average of `queuedAt → completedAt`
+  over COMPLETED processing jobs (showed "4s across 4 cases" in verification).
+- Migration `20260714085013_rm_review_stage_and_letter_of_credit`; base seed
+  now 4 users. 125/125 tests, typecheck + lint + prod build clean; full RM →
+  officer flow and LC wizard/pipeline walked in a real browser with zero
+  console errors (verification cases cleaned up afterwards).
+
+### Post-MVP — Demo-day release candidate: partial assessment + final polish (2026-07-14)
+
+Final pre-demo hardening pass. Reliability fixes, no engine or schema change:
+
+- **One failed document never fails the case (PARTIAL ASSESSMENT).** Previously
+  a single unreadable statement failed the whole case even when siblings had
+  verified figures. Now: as long as ≥1 statement was verified, the pipeline
+  proceeds to Financial Intelligence and ANALYSIS_READY; the job COMPLETES and
+  the failed document keeps its own FAILED state + retry. The dashboard shows
+  an honest amber "assessment uses the statements we could verify" notice with
+  the per-document retry. `retryProcessing` now also accepts a COMPLETED job
+  that has a FAILED document (`partialRetry`) — resume reuses every checkpoint.
+  **Verified live** (`scripts/verify-partial-assessment.mts`, comprehensive
+  mode, real Neon + R2 + OpenAI): good+bad docs → ANALYSIS_READY / COMPLETED /
+  bad doc FAILED individually; retry allowed; resume reused the good document's
+  extraction checkpoint byte-for-byte (identical `completedAt`).
+- **No misleading queue countdown under a dead job**: a QUEUED document under a
+  FAILED/COMPLETED job now reads "Waiting to process — resume processing to
+  continue" instead of a ticking "starting in ~1s" that never comes true.
+- **Lazy-memo silent-failure fix**: when the officer-open auto-refresh window
+  (8×3s) exhausts without a memo, the panel now says so (amber notice pointing
+  at "Generate AI Analysis") instead of pulsing "Preparing AI analysis…"
+  forever.
+- **Prompt v3**: growth/trend changes reach the model as signed percent
+  strings ("+20.0%", "−1.2pp") instead of raw fractions (0.2) — the memo can
+  no longer misquote growth figures. Cache-invalidating bump; tests added.
+- **Ratio-table clipping fixed**: label cells may wrap (`whitespace-normal`),
+  so the FY columns in "Cash Flow & Coverage" / "Working Capital & FCF" are
+  never pushed out of view in the review center column (was clipped at 1440px).
+- **Demo data reset**: base seed + `seed-demo-cases.mts` re-run — junk test
+  cases removed, the three canonical cases rebuilt (Rawabi strong 95/2,
+  Nimah moderate 68/19, Faisal weak 13/92 High) and all three memos generated
+  live on officer open (openai · gpt-4o-mini · prompt v3, consistent company
+  names). OpenAI key + gpt-4.1 vision model verified live with quota.
+- **Verified**: 122/122 tests, typecheck + lint + production build clean; full
+  Playwright walkthrough (contractor/officer/admin, landing, wizard, analysis,
+  review, package) with zero console/page errors.
 
 ### Post-MVP — Per-document processing lifecycles (2026-07-11)
 

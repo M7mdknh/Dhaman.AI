@@ -25,7 +25,7 @@ export const QUEUE_PAGE_SIZE = 15;
 
 export type QueueTab = "pending" | "all" | "decided";
 
-/** Role gate for every officer-side entry point. Null = not bank staff. */
+/** Role gate for decision-making entry points. Null = not an officer/admin. */
 export async function getOfficerUser(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -35,11 +35,31 @@ export async function getOfficerUser(userId: string) {
   return user;
 }
 
+/**
+ * Role gate for bank-side READ paths and memo work: Relationship Managers
+ * see the same queue and case detail as officers — but decisions, guarantee
+ * issuance, and review lifecycle stay behind `getOfficerUser`.
+ */
+export async function getBankUser(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, role: true, fullName: true },
+  });
+  if (
+    !user ||
+    (user.role !== "RELATIONSHIP_MANAGER" && user.role !== "RISK_OFFICER" && user.role !== "ADMIN")
+  ) {
+    return null;
+  }
+  return user;
+}
+
 export type ReviewCase = Prisma.UnderwritingCaseGetPayload<{
   include: {
     company: true;
     createdBy: { select: { fullName: true; email: true } };
     assignedOfficer: { select: { id: true; fullName: true } };
+    rmReviewer: { select: { id: true; fullName: true } };
     contractDetails: true;
     documents: {
       include: {
@@ -58,6 +78,7 @@ export type ReviewCase = Prisma.UnderwritingCaseGetPayload<{
     decisionIntelligence: true;
     officerDecisions: { include: { officer: { select: { fullName: true } } } };
     notes: { include: { author: { select: { fullName: true } } } };
+    memoRevisions: { include: { author: { select: { fullName: true } } } };
     guarantee: true;
   };
 }>;
@@ -71,7 +92,7 @@ export async function getCaseForReview(
   officerUserId: string,
   caseId: string,
 ): Promise<ReviewCase | null> {
-  const officer = await getOfficerUser(officerUserId);
+  const officer = await getBankUser(officerUserId);
   if (!officer) return null;
 
   const underwritingCase = await prisma.underwritingCase.findFirst({
@@ -81,6 +102,7 @@ export async function getCaseForReview(
       company: true,
       createdBy: { select: { fullName: true, email: true } },
       assignedOfficer: { select: { id: true, fullName: true } },
+      rmReviewer: { select: { id: true, fullName: true } },
       contractDetails: true,
       documents: {
         orderBy: { fiscalYear: "desc" },
@@ -104,6 +126,10 @@ export async function getCaseForReview(
       },
       notes: {
         orderBy: { createdAt: "desc" },
+        include: { author: { select: { fullName: true } } },
+      },
+      memoRevisions: {
+        orderBy: { version: "desc" },
         include: { author: { select: { fullName: true } } },
       },
       guarantee: true,
@@ -180,7 +206,7 @@ export async function listReviewQueue(
   officerUserId: string,
   options: { tab: QueueTab; query?: string; page?: number },
 ): Promise<QueueResult | null> {
-  const officer = await getOfficerUser(officerUserId);
+  const officer = await getBankUser(officerUserId);
   if (!officer) return null;
 
   const query = options.query?.trim();
@@ -246,8 +272,35 @@ export async function listReviewQueue(
   return { rows, total, page, pageCount };
 }
 
+/**
+ * The platform's north-star metric (framework §4.16): average time from
+ * submission to a completed assessment, measured over every COMPLETED
+ * processing job (queuedAt → completedAt). Deterministic, computed live.
+ */
+export interface ProcessingSla {
+  averageSeconds: number;
+  count: number;
+}
+
+export async function getProcessingSla(officerUserId: string): Promise<ProcessingSla | null> {
+  const user = await getBankUser(officerUserId);
+  if (!user) return null;
+
+  const jobs = await prisma.caseProcessing.findMany({
+    where: { state: "COMPLETED", completedAt: { not: null } },
+    select: { queuedAt: true, completedAt: true },
+  });
+  if (jobs.length === 0) return { averageSeconds: 0, count: 0 };
+
+  const totalMs = jobs.reduce(
+    (sum, job) => sum + (job.completedAt!.getTime() - job.queuedAt.getTime()),
+    0,
+  );
+  return { averageSeconds: totalMs / jobs.length / 1000, count: jobs.length };
+}
+
 export async function getQueueStats(officerUserId: string): Promise<QueueStats | null> {
-  const officer = await getOfficerUser(officerUserId);
+  const officer = await getBankUser(officerUserId);
   if (!officer) return null;
 
   const groups = await prisma.underwritingCase.groupBy({

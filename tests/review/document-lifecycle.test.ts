@@ -123,6 +123,15 @@ describe("deriveDocumentViews", () => {
     expect(views[2].queuePosition).toBe(1);
   });
 
+  it("queued under a dead job: no ticking countdown, an honest resume hint", () => {
+    for (const jobState of ["FAILED", "COMPLETED"] as const) {
+      const [view] = deriveDocumentViews([doc({})], jobState, T0);
+      expect(view.state).toBe("queued");
+      expect(view.statusLabel).toBe("Waiting to process — resume processing to continue");
+      expect(view.estStartMs).toBeNull();
+    }
+  });
+
   it("skipped (express): an explicit, honest state", () => {
     const [view] = deriveDocumentViews([doc({ status: "SKIPPED" })], "RUNNING", T0);
     expect(view.state).toBe("skipped");

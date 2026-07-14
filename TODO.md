@@ -1,301 +1,457 @@
+# TODO.md
+
 # Daman Roadmap
 
-Stack: Next.js 15 · TypeScript · Prisma · PostgreSQL · shadcn/ui
-
-Every sprint ends with a deployable application.
-After every sprint: update this file and PROJECT_STATUS.md.
+## AI-Powered Corporate Underwriting Platform
 
 ---
 
-# Sprint 0 — Foundation ✅ (completed 2026-07-05)
+# Project Status
 
-Scope expanded by agreement to include the authentication foundation and the
-application shell (originally Sprint 1/2 items — marked ⏩ below).
+Current Stage
 
-## Repository & Docs
+🟢 MVP Feature Complete
 
-- [x] Initialize git repository
-- [x] Remove broken empty files in `docs/` (names contained leading spaces)
-- [x] Write `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/PHASES.md`
-- [x] Remove create-next-app boilerplate (page, public assets)
-- [x] Set app metadata (title, description)
-- [x] Move `prisma` and `shadcn` to devDependencies
+Current Focus
 
-## Database Foundation
+Enterprise Polish
 
-- [x] Local PostgreSQL (native service; Docker unavailable on this machine)
-- [x] Prisma schema: `User`, `Company`, `UnderwritingCase`, `ContractDetails`, `FinancialStatement`, `Document`, `AuditLog`
-- [x] All money fields use `Decimal(18,2)`
-- [x] Approved schema refinements: FinancialStatement→Document FK, internal case `seq`, `User.companyId` (Company 1→N Users)
-- [x] Initial migration (`20260705153143_init`)
-- [x] Seed script (admin + officer + contractor, 3 demo companies, contractor linked to company)
-- [x] `.env.example` + zod-validated env loading
+Hackathon Readiness
 
-## Authentication foundation ⏩
+Current Goal
 
-- [x] Register (contractor self-registration; staff provisioned via seed/admin)
-- [x] Login / Logout (bcrypt hashes, signed httpOnly session cookie, 8h TTL)
-- [x] User roles: `CONTRACTOR`, `RISK_OFFICER`, `ADMIN`
-- [x] Route protection middleware (verified JWT; unauthenticated → login)
-- [x] Login + Register pages (enterprise styling, accessible field errors)
-- [x] Audit log entries: login, failed login, logout, register
+Deliver the most convincing AI-powered Corporate Underwriting experience possible.
 
-## App shell & design system ⏩
-
-- [x] Banking design tokens (Inter, neutral palette, emerald accent, light + dark tokens)
-- [x] Sidebar (role-aware nav config) + top bar (user, role badge, sign out)
-- [x] Protected `(app)` layout group; placeholder dashboard (no widgets)
-- [x] `lint` + `typecheck` pass clean
-
-**Verified:** production build; 13/13 browser E2E checks (register, login,
-wrong password, logout, route protection, role badges, duplicate email);
-seeded data + audit trail confirmed in PostgreSQL.
+No new major features should be introduced unless they dramatically improve the demonstration.
 
 ---
 
-# Sprint 1 — Contractor Workspace ✅ (completed 2026-07-06)
+# Guiding Principle
 
-Re-scoped by user directive (2026-07-06): Sprint 1 became the full Contractor
-Workspace, absorbing the former Sprint 2 (Enterprise Dashboard) and Sprint 3
-(Underwriting Case Wizard). Auth hardening moved to the Backlog below.
+The objective is NOT
 
-## Dashboard
+building more features.
 
-- [x] Welcome section + "New Underwriting Case" CTA
-- [x] Statistics cards (drafts, submitted, under review, approved)
-- [x] Cases table (reference, contract, beneficiary, guarantee, status, updated)
-- [x] Instant search + status filter (client-side; see TECH_DEBT #13)
-- [x] Empty states, loading skeletons, toasts
-- [x] SAR currency + date + file-size formatters (`lib/format.ts`)
-- [x] Officer/Admin placeholder (their workspace is a later sprint)
+The objective IS
 
-## Case Lifecycle
+building the best Corporate Underwriting experience.
 
-- [x] Create case (4-step wizard: Company → Contract → Statements → Review)
-- [x] Draft auto-saved on every step transition; resume any time
-- [x] Edit case (while draft), persistent clickable stepper, state kept across steps
-- [x] Delete case (while draft) with confirmation dialog + file cleanup
-- [x] Submit case (`DRAFT → SUBMITTED`, enforced in service; sets `submittedAt`)
-- [x] Submitted cases read-only for contractors (edit route redirects)
+Whenever there is a conflict
 
-## Company Information (Step 1)
+Feature
 
-- [x] Auto-populated from the authenticated company; edits update the profile
-- [x] First-time contractors create their company here (name, CR, sector, city, contact)
+vs
 
-## Contract Details (Step 2)
+Better UX
 
-- [x] Beneficiary + type, title, description, sector, location
-- [x] Contract value + currency, guarantee amount/type/percentage
-- [x] Project start/end dates, payment terms, notes (Decimal money, never float)
-- [x] zod validation: guarantee ≤ contract value, end after start, % in (0,100]
-
-## IFRS Upload (Step 3)
-
-- [x] Per-year PDF upload (2025/2024/2023) with real progress + remove
-- [x] Validation: PDF only (mime + magic bytes), 10 MB cap, one file per year
-- [x] Server-generated storage keys; storage adapter (local disk now, cloud later)
-- [x] Authenticated download route (no public URLs); "Uploaded · Pending Analysis" badges
-
-## Case Details Page
-
-- [x] Status, company info, contract details, documents
-- [x] Growable lifecycle timeline (Created / Draft Saved / Submitted + upcoming stages)
-
-## Audit Logging
-
-- [x] case.created / case.draft_saved / case.draft_updated / case.submitted /
-      case.draft_deleted / document.uploaded / document.removed /
-      company.created / company.profile_updated (stored only — no UI yet)
-
-**Verified:** production build clean; 28/28 browser E2E checks (full wizard flow,
-validation, uploads, submit, read-only, delete, search, ownership isolation);
-server-side upload rejections (fake PDF, bad year, duplicate year, oversize).
+Always choose UX.
 
 ---
 
-# Backlog — Auth hardening (formerly Sprint 1)
+# MVP Scope
 
-- [ ] Login rate limiting / temporary lockout (brute-force protection)
-- [ ] Session revocation strategy (stateless JWT cannot be invalidated server-side today)
-- [ ] Admin user management (provision Risk Officer / Admin accounts in-app)
-- [ ] Password reset flow
-- [ ] Mobile navigation drawer (sidebar is hidden below `md`)
+## Contractor
 
----
-
-# Sprint 2 — IFRS Parsing ✅ (completed 2026-07-06)
-
-> Historical record. The "no OCR / scanned PDFs rejected" scope below was
-> **superseded post-MVP** by hybrid extraction (OCR fallback, then GPT-Vision
-> for scanned/damaged statements) — see "Post-MVP" below and `docs/IFRS_ENGINE.md`.
-
-- [x] Deterministic PDF text extraction (MuPDF WASM; no LLM, no OCR — scanned PDFs rejected with a clear message)
-- [x] Statement detection (financial position, profit or loss, cash flows; auditor report/TOC excluded; 2-page spans)
-- [x] Line-item normalization to canonical figures (statement-scoped regex synonym table; unmapped labels kept in provenance)
-- [x] Multi-year extraction (year column headers + single-year fallback; scale "'000"/millions; parenthesised negatives; decimal strings — no floats)
-- [x] `FinancialStatement` rows (one per fiscal year) + `DocumentExtraction` provenance (raw line items, validation, timings)
-- [x] Parsing pipeline with real status: runs at submission BEFORE leaving DRAFT; failures reject with per-file messages; `SUBMITTED → PARSING → ANALYSIS_READY`; `Document.processingStatus` + sha256
-- [x] Extracted-figures review UI on the case page (per-year table + validation warnings)
-- [x] Unusable-document flagging (password/corrupted/scanned/missing statements)
-- [x] Parser unit tests (20 assertions incl. real-PDF integration) + shared fixtures + demo-case seeding script
-
-**Verified:** unit tests green; full pipeline exercised through the real
-services for all three demo profiles (2 fiscal years each, exact figures,
-ANALYSIS_READY). See `docs/IFRS_ENGINE.md`.
+- [x] Authentication
+- [x] Dashboard
+- [x] Create Underwriting Case
+- [x] Contract Details
+- [x] Financial Statement Upload
+- [x] Processing Dashboard
+- [x] Financial Intelligence
+- [x] Case Timeline
+- [x] Document Status
+- [x] Retry Failed Documents
 
 ---
 
-# Sprint 3 — Financial Intelligence Engine ✅ (completed 2026-07-06)
+## Financial Intelligence
 
-Pure TypeScript, fully unit-tested. The LLM is never involved.
-Full algorithms + formulas: `docs/FINANCIAL_ENGINE.md`.
-
-- [x] Ratio engine: liquidity, leverage, profitability, efficiency, cash flow, coverage (port from V1 `core/ratios.py`)
-- [x] Trend analysis (year-over-year, port from V1 `core/trends.py`)
-- [x] Risk flags (revenue swings, debt increase, margin deterioration, …)
-- [x] Execution capacity score — surfaced as **Underwriting Capacity**, the platform's primary KPI (contract size vs revenue / liquidity / coverage)
-- [x] Risk score + band (transparent weighted rules, port from V1 `core/risk.py`; five bands EXCELLENT→CRITICAL, all thresholds configurable in `lib/finance/thresholds.ts`)
-- [x] Reusable risk gauge component (score, band, supporting metrics)
-- [x] Analysis dashboard: capacity (primary) + risk gauge (secondary), KPI strip (liquidity, leverage, profitability, cash flow, growth), flags, trend charts, ratio tables
-- [x] Full unit test suite for all engine modules (hand-computed expectations)
-- ~~Confidence score~~ — moved to Sprint 4 by user decision 2026-07-06 (confidence belongs to the AI Underwriter)
-- ~~`FinancialAnalysis` table~~ — will NOT be built (user decision 2026-07-06): analysis is deterministic and computed on demand; immutable Analysis Snapshots arrive with the AI/officer sprints
-
-**Deployable:** submitted cases show a deterministic financial analysis.
+- [x] Financial Ratios
+- [x] Financial Health
+- [x] Underwriting Capacity
+- [x] Risk Score
+- [x] Company Rating
+- [x] Trend Analysis
+- [x] Risk Flags
 
 ---
 
-# Sprint 4 — AI Underwriter / Decision Intelligence ✅ (completed 2026-07-06)
+## Decision Intelligence
 
-The AI explains and drafts. It never calculates and never decides.
-Full pipeline + provider architecture: `docs/DECISION_INTELLIGENCE.md`.
-
-- [x] LLM provider abstraction (`lib/ai/`): one-interface `LLMProvider`, typed retryable errors; OpenAIProvider (fetch, JSON mode, timeout) + MockProvider; future providers = one file + factory entry
-- [x] Env-gated, never crashes: no `OPENAI_API_KEY` → MockProvider automatically (deterministic template, clearly labeled); app stays deployable without AI
-- [x] Prompt builder (isolated, versioned): structured JSON input only — company (no personal contacts), contract, ratios by category, growth, trends, flags, capacity, risk — never PDFs, never raw statements
-- [x] DecisionIntelligenceService: cache by input hash (identical inputs → no repeat calls), 3 attempts with backoff, zod-validated strict JSON contract (invalid → rejected), persistence, audit trail
-- [x] Executive summary + underwriting memo (strengths, weaknesses, contract assessment, risk explanation, missing information, next steps)
-- [x] Recommendation derived deterministically from risk band (`RECOMMENDATION_BY_BAND` in thresholds.ts — never by the model); model divergence stored + flagged, policy prevails
-- [x] Confidence explanation surfaced with the memo (moved from Sprint 3 by decision 2026-07-06)
-- [x] Immutable Analysis Snapshot persisted with every memo (`inputSnapshot` — the frozen engine report the memo explains)
-- [x] Case page Decision Intelligence panel + professional Underwriting Package (`/cases/[id]/package`) with Computed / AI-drafted provenance labels
-- [x] Unit tests: prompt builder, response schema, mock provider, retry policy
-
-**Deployable:** every analyzed case carries an AI memo; works with no API key.
+- [x] Executive Summary
+- [x] AI Memo
+- [x] Recommendation Explanation
+- [x] Lazy AI Generation
 
 ---
 
-# Sprint 5 — Underwriting Workspace (Risk Officer) ✅ (completed 2026-07-07)
+## Relationship Manager
 
-Re-scoped by user directive (2026-07-07): Sprint 5 absorbed Letter of
-Guarantee generation from Sprint 6 (entity, PDF, QR, authenticated
-download). Full workflow + audit catalog: `docs/UNDERWRITING_WORKSPACE.md`.
-
-- [x] Officer queue on the dashboard: tabs (pending / all / decided), search, server-side pagination, capacity/risk/priority columns
-- [x] Review workspace `/review/[id]`: header band, timeline (left), memo + full financial intelligence + company/contract + documents (center), sticky decision sidebar (right)
-- [x] Explicit "Start review" action (viewing NEVER changes state; first officer to start = assigned officer)
-- [x] Approve / Approve with Conditions / Reject / Request More Information — mandatory reason, confirmation dialog on every action ("Manual Review" is deliberately not an officer decision: the officer IS the manual review)
-- [x] Decision recorded as data (`OfficerDecision`, append-only: officer, timestamp, reason, conditions, memo id) — not only in audit log
-- [x] Internal notes (`CaseNote`) — bank staff only, never contractor-visible
-- [x] Contractor sees decision status, request-info message, approval conditions, LG download — never internal reasoning; AI memo + Underwriting Package now officer-only (TECH_DEBT #16 resolved)
-- [x] Deterministic queue priority (risk band + exposure, thresholds in `lib/finance/thresholds.ts`)
-- [x] Authorization: officer entry points gate on role, contractor paths stay ownership-scoped; officer document access audited
-- [x] Audit entries for every officer action (case_opened, review_started/resumed, decided, note_added, document_downloaded, guarantee issued/downloaded)
-- [x] `Guarantee` entity (1:1 case, `LG-YYYY-NNNNNN` from internal seq, particulars frozen at issue time) ⏩ from Sprint 6
-- [x] Professional LG PDF (pdf-lib letterhead layout, particulars table, signature block, QR verification stamp) rendered on demand — never stored ⏩
-- [x] Authenticated LG download route (bank staff + owning contractor, audited) ⏩
-- [x] Unit tests: exhaustive transition rules, priority derivation, LG reference minting, PDF rendering
-
-**Deployable:** an officer takes a case from queue to final decision and an
-issued, downloadable Letter of Guarantee.
+- [x] Dashboard (shared review queue)
+- [x] Case Review (read access)
+- [x] Memo Refinement (version-tracked revisions)
+- [x] Relationship Context
+- [x] Submit to Risk Officer
 
 ---
 
-# ~~Sprint 6 — Guarantee Registry & Audit Reporting~~ CANCELLED (2026-07-07)
+## Risk Officer
 
-Cancelled by user decision on Sprint 5 approval: **there is no Sprint 6 —
-the MVP roadmap ends at Sprint 5.** LG generation itself had already shipped
-in Sprint 5; the registry list, guarantee detail page, and exportable
-per-case audit report will not be built. (Audit data itself is fully
-recorded in `AuditLog`; only the reporting UI was cut.)
-
----
-
-# Post-MVP — Underwriting Speed & Experience ✅ (2026-07-08)
-
-Philosophy shift: Daman is an AI-powered underwriting platform, not an OCR
-engine. The product optimizes for a believable underwriting assessment in
-seconds — hackathon-readiness over perfect statement reconstruction. No schema
-migrations in this phase. Full detail in `PROJECT_STATUS.md` +
-`docs/ASYNC_PROCESSING.md` + `docs/IFRS_ENGINE.md`.
-
-## Express & Comprehensive Underwriting
-
-- [x] Two underwriting modes (`UNDERWRITING_MODE`, default `express`); the
-      deterministic engines are identical — only document scope + memo timing change
-- [x] **Express (default):** only the LATEST audited statement is read (its
-      comparative column still trends ≥2 years); previous years optional
-- [x] **Comprehensive:** all uploaded fiscal years read for full history + eager memo
-
-## Two-Stage Background Processing
-
-- [x] Stage 1 (extract → deterministic engine) flips the case to ANALYSIS_READY
-      with a live underwriting headline (Capacity, Rating, Financial Health, Risk
-      Level, Recommendation) — target ≤3s
-- [x] Stage 2 (AI memo) runs in the background and never gates readiness — whole pipeline ≤10s
-- [x] Critical-path collapse: concurrent DB round-trips, deferred off-path writes,
-      connection-pool warming (`instrumentation.ts`); measured Stage 1 ~2.4s on remote Neon + R2
-
-## Lazy AI Memo
-
-- [x] Memo removed from the blocking contractor path
-- [x] Express mode generates it lazily on first Risk Officer open
-      (`ensureDecisionIntelligence`, idempotent, dedupes concurrent opens) or via
-      the explicit "Generate AI Analysis" button
-
-## Hybrid Extraction (document understanding, never calculation)
-
-- [x] Text-layer first (digital, ~1s) → GPT-Vision on statement-page images for
-      scanned/damaged → OCR as last-resort fallback; vision figures flagged for
-      officer verification (`VISION_ENABLED`, `VISION_MAX_PAGES`, `VISION_DPI`, `VISION_TIMEOUT_MS`)
-- [x] Statement-pages-first OCR with a bounded worker pool + extraction caching on retry
-
-## Financial Intelligence Dashboard redesign (UI/UX only — engine untouched)
-
-- [x] Verdict hero leads the page — answers "Can the bank issue this guarantee?"
-      with the bank-policy recommendation as the dominant element (`verdict-hero.tsx`)
-- [x] Three executive KPI cards — Underwriting Capacity (+rating), Financial
-      Health, Risk Level; each score /100 + status (`executive-kpis.tsx`)
-- [x] Financial Drivers — Liquidity/Leverage/Profitability/Cash Flow/Working
-      Capital as status cards (Excellent→Poor + meter + supporting metric);
-      raw weights and bare `0.00` sub-scores removed (`financial-drivers.tsx`)
-- [x] Display-only presentation helpers centralized in `lib/finance/display.ts`;
-      orphaned weight-exposing components (`capacity-card`, `risk-gauge`,
-      `stat-tile`) deleted
+- [x] Dashboard
+- [x] Queue
+- [x] Case Review
+- [x] RM Assessment Panel
+- [x] Financial Intelligence
+- [x] Decision Intelligence
+- [x] Recommendation
+- [x] Decision
 
 ---
 
-# Post-MVP — Demo-Day Polish ✅ (2026-07-11)
+## Administrator
 
-Full-product review before Demo Day — no engine/schema change. Detail in
-`PROJECT_STATUS.md` → "Demo-day polish pass".
+- [x] Monitoring
+- [x] Audit Trail
+- [x] Operational Dashboard
 
-- [x] Container-query layout for the shared Financial Intelligence panel;
-      review workspace re-flowed to two columns (timeline → decision rail)
-- [x] Crash fix: "Continue to Review" immediately after an upload
-- [x] Real extraction-status badges on every document list (shared meta)
-- [x] Accounting-style negatives + whole-SAR table money
-- [x] Memo prompt v2 (2dp ratios in AI quotes)
-- [x] Demo cast (Nawaf Alharthi / Omar Alkaltham · Alinma Bank / Abdulrahman
-      Yaghmour · Rawabi) + three-company demo queue
-- [x] Live E2E verification (wizard→results, officer→memo→package, REJECT path)
+---
 
-# Future (do NOT implement — architecture-ready only)
+# Current Priorities
 
-- [ ] Deep Extraction — production-grade document AI for scanned Arabic
-      statements (layout-aware; replaces the OCR fallback for bank-grade numeric
-      extraction — see `docs/IFRS_ENGINE.md` "Known limitations")
-- [ ] Saudi Open Banking (`ExposureProvider` interface + mock only)
-- [ ] SIMAH (`CreditBureauProvider` interface + mock only)
-- [ ] Core Banking Integration
+## Priority 1
+
+Demo Quality
+
+Everything should feel
+
+- Fast
+- Professional
+- Banking Grade
+
+---
+
+## Priority 2
+
+UI Polish
+
+Checklist
+
+- [ ] Perfect spacing
+- [ ] Perfect alignment
+- [x] No overflowing text (verified at 1440px, all roles, 2026-07-14)
+- [x] No clipped layouts (ratio-table clipping fixed 2026-07-14)
+- [ ] Consistent typography
+- [ ] Responsive layouts
+- [ ] Consistent card heights
+- [ ] Better loading states
+- [ ] Better empty states
+- [ ] Better error states
+- [ ] Better transitions
+- [ ] Better animations
+
+---
+
+## Priority 3
+
+Financial Dashboard
+
+- [ ] Better KPI hierarchy
+- [ ] Larger executive metrics
+- [ ] Cleaner charts
+- [ ] Better recommendation section
+- [ ] Better risk visualization
+- [ ] Better financial driver presentation
+- [ ] Better company rating presentation
+
+---
+
+## Priority 4
+
+Demo Experience
+
+- [ ] Demo data polished
+- [ ] Demo workflow rehearsed
+- [ ] Strong company
+- [ ] Medium company
+- [ ] Weak company
+- [ ] Officer queue tells a story
+- [ ] Landing page polished
+- [ ] No waiting confusion
+- [ ] No unclear wording
+
+---
+
+# Express Underwriting
+
+Status
+
+Default
+
+Purpose
+
+Fast underwriting assessment.
+
+Requirements
+
+- Latest audited financial statement
+
+Produces
+
+- Financial Health
+- Risk Score
+- Company Rating
+- Underwriting Capacity
+- Recommendation
+
+Target
+
+< 5 seconds
+
+---
+
+# Comprehensive Underwriting
+
+Status
+
+Future
+
+Purpose
+
+Complete production underwriting.
+
+Includes
+
+- Multi-year analysis
+- Historical trends
+- Open Banking
+- SIMAH
+- Etimad
+- Full Financial Intelligence
+
+Target
+
+< 20 seconds
+
+---
+
+# Future Integrations
+
+## Open Banking
+
+Status
+
+Planned
+
+Purpose
+
+Real-time
+
+- Cash
+- Balances
+- Transactions
+
+Source
+
+SAMA Open Banking
+
+---
+
+## SIMAH
+
+Status
+
+Planned
+
+Purpose
+
+Credit Exposure
+
+Existing Facilities
+
+Outstanding Debt
+
+Repayment Behaviour
+
+---
+
+## Etimad
+
+Status
+
+Planned
+
+Purpose
+
+Government Contract Verification
+
+---
+
+## Core Banking
+
+Status
+
+Planned
+
+Purpose
+
+Automatic Letter of Guarantee Issuance
+
+---
+
+# Technical Debt
+
+High
+
+- [ ] CSP
+- [ ] Error Monitoring
+- [ ] CI Pipeline
+- [ ] JWT Revocation
+- [ ] Malware Scanning
+
+Medium
+
+- [ ] Better Admin Tools
+- [ ] Better Officer Filters
+- [ ] Better Search
+- [ ] Better Notifications
+
+Low
+
+- [ ] Dark Mode
+- [ ] Accessibility Improvements
+- [ ] Keyboard Shortcuts
+
+---
+
+# Never Build
+
+Do NOT build
+
+- Random AI features
+- Chatbot
+- Generic OCR tools
+- Accounting software
+- ERP functionality
+
+Everything must improve underwriting.
+
+---
+
+# Before Demo
+
+Checklist (verified 2026-07-14)
+
+- [x] Build passes
+- [x] TypeScript passes
+- [x] Lint passes
+- [x] No console errors (Playwright walkthrough, all roles)
+- [x] OpenAI verified (gpt-4o-mini + gpt-4.1 live, quota OK)
+- [x] Neon verified (health endpoint + full pipeline runs)
+- [x] Cloudflare R2 verified (uploads read back through the pipeline)
+- [x] Demo data seeded (fresh reset — junk test cases removed)
+- [x] Demo accounts verified (all three logins walked)
+- [x] Strong case verified (Rawabi — 95 capacity / risk 2 / APPROVE)
+- [x] Medium case verified (Nimah — 68 / 19 / APPROVE WITH CONDITIONS)
+- [x] Weak case verified (Faisal — 13 / 92 / REJECT, High priority)
+- [x] AI memo verified (all three generated live, prompt v3, consistent names —
+      still valid; regenerations now use prompt v4 with the product analysis focus)
+- [x] RM flow verified live (rm@daman.local: refine memo → submit to Risk
+      Officer → officer sees RM Assessment + starts review; 2026-07-14)
+- [x] Letter of Credit verified live (wizard option + focus hint, full
+      pipeline run to ANALYSIS_READY, officer review; 2026-07-14)
+- [ ] Officer decision → LG issuance rehearsal (deliberately NOT run on the
+      seeded cases — deciding them would empty the pending queue before the
+      demo; the flow was E2E-verified in Sprint 5 and is unchanged)
+- [ ] Full on-stage rehearsal by the presenter
+
+---
+
+# Demo Accounts
+
+Administrator
+
+Nawaf Alharthi
+
+Role
+
+System Administrator
+
+---
+
+Contractor
+
+Abdulrahman Yaghmour
+
+Company
+
+Rawabi Contracting Co.
+
+---
+
+Relationship Manager
+
+Salman Alghamdi
+
+Organization
+
+Alinma Bank
+
+---
+
+Risk Officer
+
+Omar Alkaltham
+
+Organization
+
+Alinma Bank
+
+---
+
+# Success Criteria
+
+The project is successful when
+
+A contractor uploads real financial statements.
+
+↓
+
+Within a few seconds
+
+↓
+
+Receives
+
+- Financial Health
+- Company Rating
+- Underwriting Capacity
+- Risk Score
+
+↓
+
+A Risk Officer receives
+
+- Financial Intelligence
+- Decision Intelligence
+- Recommendation
+
+↓
+
+The entire experience feels like enterprise banking software.
+
+---
+
+# North Star
+
+We are NOT building
+
+an OCR platform.
+
+We are NOT building
+
+a chatbot.
+
+We ARE building
+
+the best AI-powered Corporate Underwriting Platform.

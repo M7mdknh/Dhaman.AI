@@ -5,6 +5,7 @@
  * personal contact data. Bump PROMPT_VERSION on ANY change to the system
  * prompt or input shape — it invalidates the response cache.
  */
+import { GUARANTEE_TYPE_FOCUS } from "@/lib/case-constants";
 import { RECOMMENDATION_BY_BAND } from "@/lib/finance/thresholds";
 import { contractDurationMonths } from "@/services/finance/financial-intelligence-service";
 
@@ -16,7 +17,7 @@ import type {
 import type { Recommendation } from "@/lib/validation/decision";
 import type { Company, ContractDetails } from "@/generated/prisma/client";
 
-export const PROMPT_VERSION = "v2";
+export const PROMPT_VERSION = "v4";
 
 export const SYSTEM_PROMPT = `You are a Senior Corporate Credit Underwriter working for Alinma Bank.
 
@@ -31,7 +32,7 @@ Tasks:
 4. Explain the company's financial weaknesses.
 5. Explain the major financial trends.
 6. Explain the significant risk flags.
-7. Evaluate the contract relative to the company's financial capacity.
+7. Evaluate the contract relative to the company's financial capacity. Each guarantee product carries a distinct risk profile — "contract.analysisFocus" states what the assessment of this product should emphasize; weave that emphasis into the contract assessment and risk explanation using only the provided figures.
 8. State the underwriting recommendation. Bank policy derives the recommendation deterministically from the risk band: the "bankPolicy.policyRecommendation" field in the input IS the recommendation. Return exactly that value and explain the rationale behind it. If the data gives you reservations about it, still return the policy value and state your reservations in "riskExplanation" and "missingInformation".
 9. List missing information that would strengthen the assessment.
 
@@ -80,6 +81,9 @@ export interface DecisionInput {
     currency: string;
     guaranteeAmount: string;
     guaranteeType: string;
+    /** Product-specific underwriting emphasis (framework §3) — guidance for
+     * the narrative, never an input to any calculation. */
+    analysisFocus: string;
     guaranteePercentage: string | null;
     projectStartDate: string;
     projectEndDate: string;
@@ -96,15 +100,17 @@ export interface DecisionInput {
     workingCapital: string | null;
     freeCashFlow: string | null;
   }[];
+  /** Growth figures are pre-formatted percent strings ("+12.3%") so the model
+   * quotes them correctly — a raw fraction (0.123) invites misquoting. */
   growth: {
     period: string;
-    revenueGrowth: number | null;
-    assetGrowth: number | null;
-    equityGrowth: number | null;
-    cashGrowth: number | null;
-    netIncomeGrowth: number | null;
+    revenueGrowth: string | null;
+    assetGrowth: string | null;
+    equityGrowth: string | null;
+    cashGrowth: string | null;
+    netIncomeGrowth: string | null;
   }[];
-  trends: { metric: string; direction: string | null; latestChangePct: number | null }[];
+  trends: { metric: string; direction: string | null; latestChange: string | null }[];
   riskFlags: { type: string; severity: string; explanation: string; affectedYears: number[] }[];
   underwritingCapacity: {
     score: number;
@@ -129,6 +135,13 @@ export interface DecisionInput {
  * verbatim, and "2.33" belongs in a credit memo where "2.3333" does not. */
 const memoPrecision = (value: number | null): number | null =>
   value === null ? null : Number(value.toFixed(2));
+
+/** Growth/change fractions become signed percent strings ("+12.3%") — the one
+ * format the model cannot misquote. Same idea for percentage-point moves. */
+const pct = (fraction: number | null): string | null =>
+  fraction === null ? null : `${fraction > 0 ? "+" : ""}${(fraction * 100).toFixed(1)}%`;
+const pp = (fraction: number | null): string | null =>
+  fraction === null ? null : `${fraction > 0 ? "+" : ""}${(fraction * 100).toFixed(1)}pp`;
 
 const pickRatios = (
   ratios: Record<RatioKey, number | null>,
@@ -174,6 +187,7 @@ export function buildDecisionInput(
       currency: contract.currency,
       guaranteeAmount: contract.guaranteeAmount.toFixed(2),
       guaranteeType: contract.guaranteeType,
+      analysisFocus: GUARANTEE_TYPE_FOCUS[contract.guaranteeType],
       guaranteePercentage: contract.guaranteePercentage?.toFixed(2) ?? null,
       projectStartDate: isoDate(contract.projectStartDate),
       projectEndDate: isoDate(contract.projectEndDate),
@@ -199,17 +213,21 @@ export function buildDecisionInput(
     })),
     growth: report.growthPeriods.map((p) => ({
       period: `FY${p.fromYear} → FY${p.toYear}`,
-      revenueGrowth: p.growth.revenueGrowth,
-      assetGrowth: p.growth.assetGrowth,
-      equityGrowth: p.growth.equityGrowth,
-      cashGrowth: p.growth.cashGrowth,
-      netIncomeGrowth: p.growth.netIncomeGrowth,
+      revenueGrowth: pct(p.growth.revenueGrowth),
+      assetGrowth: pct(p.growth.assetGrowth),
+      equityGrowth: pct(p.growth.equityGrowth),
+      cashGrowth: pct(p.growth.cashGrowth),
+      netIncomeGrowth: pct(p.growth.netIncomeGrowth),
     })),
-    trends: report.trends.map((t) => ({
-      metric: t.label,
-      direction: t.direction,
-      latestChangePct: t.yoyChanges.at(-1)?.changePct ?? null,
-    })),
+    trends: report.trends.map((t) => {
+      const change = t.yoyChanges.at(-1)?.changePct ?? null;
+      return {
+        metric: t.label,
+        direction: t.direction,
+        // Margin trends move in percentage POINTS; money trends in percent.
+        latestChange: t.unit === "percent" ? pp(change) : pct(change),
+      };
+    }),
     riskFlags: report.flags.map((f) => ({
       type: f.type,
       severity: f.severity,

@@ -1,10 +1,12 @@
 /**
- * Internal officer notes (Sprint 5). Bank-internal by definition: no
+ * Internal bank notes (Sprint 5). Bank-internal by definition: no
  * contractor-facing service or query ever includes `CaseNote` rows.
+ * Officers and Relationship Managers both write them (the RM's relationship
+ * context is exactly what this channel exists for).
  */
 import { prisma } from "@/lib/prisma";
 import { recordAudit } from "@/services/audit-service";
-import { getOfficerUser } from "@/services/officer-case-service";
+import { getBankUser } from "@/services/officer-case-service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -15,7 +17,7 @@ export async function addCaseNote(
   caseId: string,
   content: string,
 ): Promise<ActionResult> {
-  const officer = await getOfficerUser(officerUserId);
+  const officer = await getBankUser(officerUserId);
   if (!officer) return { ok: false, error: "Only bank staff can add notes." };
 
   const trimmed = content.trim();

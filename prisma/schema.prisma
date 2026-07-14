@@ -19,6 +19,9 @@ datasource db {
 
 enum UserRole {
   CONTRACTOR
+  // Reviews the AI-drafted memo, adds relationship context, and routes the
+  // package to the Risk Officer (framework step 8). Never decides.
+  RELATIONSHIP_MANAGER
   RISK_OFFICER
   ADMIN
 }
@@ -36,6 +39,10 @@ enum CaseStatus {
   PROCESSING_FAILED
   PARSING
   ANALYSIS_READY
+  // The RM reviewed the AI draft and routed the package to the Risk Officer.
+  // The officer can also start directly from ANALYSIS_READY (RM step is a
+  // quality pass, never a bottleneck).
+  RM_REVIEWED
   UNDER_REVIEW
   INFO_REQUESTED
   APPROVED
@@ -67,6 +74,7 @@ enum GuaranteeType {
   PERFORMANCE
   ADVANCE_PAYMENT
   RETENTION
+  LETTER_OF_CREDIT
 }
 
 enum BeneficiaryType {
@@ -111,8 +119,10 @@ model User {
   auditLogs          AuditLog[]
   decisionsRequested DecisionIntelligence[]
   assignedCases      UnderwritingCase[]     @relation("AssignedOfficer")
+  rmReviewedCases    UnderwritingCase[]     @relation("RmReviewer")
   officerDecisions   OfficerDecision[]
   caseNotes          CaseNote[]
+  memoRevisions      MemoRevision[]
   guaranteesIssued   Guarantee[]
 
   @@index([companyId])
@@ -156,12 +166,17 @@ model UnderwritingCase {
   assignedOfficerId String?   @map("assigned_officer_id")
   reviewStartedAt   DateTime? @map("review_started_at")
   decidedAt         DateTime? @map("decided_at")
+  // RM review stage (framework step 8): who routed the package to the Risk
+  // Officer and when. Null while the RM step is pending or was bypassed.
+  rmReviewerId  String?   @map("rm_reviewer_id")
+  rmSubmittedAt DateTime? @map("rm_submitted_at")
   createdAt   DateTime   @default(now()) @map("created_at")
   updatedAt   DateTime   @updatedAt @map("updated_at")
 
   company              Company                @relation(fields: [companyId], references: [id], onDelete: Restrict)
   createdBy            User                   @relation(fields: [createdById], references: [id], onDelete: Restrict)
   assignedOfficer      User?                  @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id], onDelete: SetNull)
+  rmReviewer           User?                  @relation("RmReviewer", fields: [rmReviewerId], references: [id], onDelete: SetNull)
   contractDetails      ContractDetails?
   documents            Document[]
   financialStatements  FinancialStatement[]
@@ -169,6 +184,7 @@ model UnderwritingCase {
   decisionIntelligence DecisionIntelligence[]
   officerDecisions     OfficerDecision[]
   notes                CaseNote[]
+  memoRevisions        MemoRevision[]
   guarantee            Guarantee?
   processing           CaseProcessing?
 
@@ -376,6 +392,7 @@ model DecisionIntelligence {
   case             UnderwritingCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
   requestedBy      User?             @relation(fields: [requestedById], references: [id], onDelete: SetNull)
   officerDecisions OfficerDecision[]
+  memoRevisions    MemoRevision[]
 
   @@index([caseId, createdAt])
   @@index([caseId, inputHash])
@@ -415,6 +432,35 @@ model OfficerDecision {
 
   @@index([caseId, createdAt])
   @@map("officer_decisions")
+}
+
+// RM refinement of the AI-drafted memo (framework step 8: the RM reviews the
+// draft, edits or supplements it with relationship insight, and submits it
+// onward — every change is version-tracked). Append-only: each save adds a
+// numbered version and the newest row is the RM assessment of record. The AI
+// original in DecisionIntelligence is NEVER mutated — provenance stays intact.
+model MemoRevision {
+  id     String @id @default(cuid())
+  caseId String @map("case_id")
+  // Which AI memo this revision refines (SetNull: the revision record
+  // outlives memo housekeeping).
+  decisionIntelligenceId String? @map("decision_intelligence_id")
+  authorId               String? @map("author_id")
+  // 1-based, unique per case — the version trail the framework requires.
+  version Int
+  // RM-refined executive summary (starts from the AI draft).
+  summary String
+  // Relationship context the RM adds — the human insight the AI cannot know.
+  relationshipContext String? @map("relationship_context")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  case                 UnderwritingCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  decisionIntelligence DecisionIntelligence? @relation(fields: [decisionIntelligenceId], references: [id], onDelete: SetNull)
+  author               User?                 @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@unique([caseId, version])
+  @@index([caseId, createdAt])
+  @@map("memo_revisions")
 }
 
 // Internal officer note on a case. NEVER exposed through any

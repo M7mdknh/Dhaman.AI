@@ -4,11 +4,13 @@ import type { LucideIcon } from "lucide-react";
 
 interface StatCardProps {
   label: string;
-  value: number;
+  value: number | string;
   icon: LucideIcon;
+  /** Optional context line under the value (e.g. sample size). */
+  hint?: string;
 }
 
-export function StatCard({ label, value, icon: Icon }: StatCardProps) {
+export function StatCard({ label, value, icon: Icon, hint }: StatCardProps) {
   return (
     <Card>
       <CardContent className="flex items-center gap-3">
@@ -20,6 +22,7 @@ export function StatCard({ label, value, icon: Icon }: StatCardProps) {
           <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">
             {value}
           </p>
+          {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}
         </div>
       </CardContent>
     </Card>

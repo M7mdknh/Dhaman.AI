@@ -20,7 +20,26 @@ export const GUARANTEE_TYPE_OPTIONS: Option<GuaranteeType>[] = [
   { value: "PERFORMANCE", label: "Performance Bond" },
   { value: "ADVANCE_PAYMENT", label: "Advance Payment Guarantee" },
   { value: "RETENTION", label: "Retention Guarantee" },
+  { value: "LETTER_OF_CREDIT", label: "Letter of Credit" },
 ];
+
+/**
+ * What the underwriting analysis emphasizes per product (framework §3).
+ * Narrative guidance only — shown to applicants and passed to the AI memo
+ * prompt so the explanation stresses the right angle. The deterministic
+ * engines are product-agnostic and never read this.
+ */
+export const GUARANTEE_TYPE_FOCUS: Record<GuaranteeType, string> = {
+  BID_BOND: "Basic solvency and seriousness of the bid — the lowest-risk instrument.",
+  PERFORMANCE:
+    "Execution capacity: working-capital adequacy and concentration of existing project obligations.",
+  ADVANCE_PAYMENT:
+    "Cash-flow discipline: whether the advance is deployed into the project rather than absorbed by other obligations.",
+  RETENTION:
+    "Completion quality: project handover history and exposure to warranty or defect-liability claims.",
+  LETTER_OF_CREDIT:
+    "Ability to fund the payment at maturity: liquidity, cash conversion cycle, and trade payables behavior.",
+};
 
 export const BENEFICIARY_TYPE_OPTIONS: Option<BeneficiaryType>[] = [
   { value: "GOVERNMENT", label: "Government" },
@@ -56,6 +75,7 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   PROCESSING_FAILED: "Processing Failed",
   PARSING: "Processing",
   ANALYSIS_READY: "Analysis Ready",
+  RM_REVIEWED: "RM Reviewed",
   UNDER_REVIEW: "Under Review",
   INFO_REQUESTED: "Info Requested",
   APPROVED: "Approved",

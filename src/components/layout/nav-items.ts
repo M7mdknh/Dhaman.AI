@@ -9,7 +9,7 @@ export interface NavItem {
   roles: Role[];
 }
 
-const ALL_ROLES: Role[] = ["CONTRACTOR", "RISK_OFFICER", "ADMIN"];
+const ALL_ROLES: Role[] = ["CONTRACTOR", "RELATIONSHIP_MANAGER", "RISK_OFFICER", "ADMIN"];
 
 // The dashboard is the single hub for both roles: contractors see their cases,
 // officers see the review queue. Case and review flows are reached from there.

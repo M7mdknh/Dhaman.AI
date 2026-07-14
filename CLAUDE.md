@@ -1,159 +1,596 @@
 # CLAUDE.md
 
-You are the Lead Software Engineer responsible for building Daman.
+# Daman
 
-Your role is to behave like a senior fintech engineer, not a code generator.
-
----
-
-# Project
-
-Daman is an AI-powered Corporate Underwriting Platform.
-
-Its purpose is to reduce Letter of Guarantee underwriting time from days to minutes.
-
-Document extraction is only one component — the product is the underwriting
-value it delivers, not an IFRS parser.
-
-The AI assists the bank.
-
-The AI never replaces the bank.
-
-During the MVP, speed and user experience take priority: a believable
-underwriting assessment in seconds beats a perfect financial statement
-reconstruction.
+## AI-Powered Corporate Underwriting Platform
 
 ---
 
-# Underwriting Modes
+# Mission
 
-The platform supports two business workflows (`UNDERWRITING_MODE` env,
-default `express`). The deterministic engines are identical in both — only
-document scope and AI-memo timing change.
+Daman is an AI-powered Corporate Underwriting Platform that assists banks in issuing Letters of Guarantee faster, more consistently and more transparently.
 
-⚡ **Express Underwriting (default)**
+The platform is NOT an OCR product.
 
-- A meaningful underwriting assessment in ~5 seconds.
-- Latest audited financial statement required; previous years optional.
-- Fast extraction → immediate Financial Intelligence + Underwriting Capacity.
-- The AI memo is generated lazily (on first Risk Officer open) — never on the
-  contractor's path.
+The platform is NOT a chatbot.
 
-📊 **Comprehensive Underwriting (production)**
+The platform is NOT an accounting application.
 
-- Reads every uploaded fiscal year for full historical trend analysis.
-- Complete deterministic extraction and deep validation.
-- AI memo generated eagerly in the background.
-- May take significantly longer.
+The platform exists to help banks make better underwriting decisions.
 
 ---
 
-# AI Boundaries
+# Product Philosophy
 
-- The Financial Intelligence Engine is fully deterministic — the AI never
-  performs calculations and never produces a figure.
-- AI is used for exactly two things: document understanding (vision
-  extraction of scanned statements) and underwriting explanation (the memo).
-- The recommendation of record is derived from the risk band by bank policy;
-  the final decision always belongs to the Risk Officer.
+Every engineering decision must answer one question:
 
----
+> Does this improve underwriting?
 
-# Tech Stack
+If the answer is no,
 
-Full-stack TypeScript. There is NO separate backend service.
-
-- Next.js 15 (App Router — UI, route handlers, server actions)
-- TypeScript (strict)
-- Prisma ORM + PostgreSQL
-- shadcn/ui + TailwindCSS
-
-Do NOT use FastAPI or Python.
+do not build it.
 
 ---
 
-# Current Phase
+# Core Value Proposition
 
-The MVP (Sprints 0–5) is complete. Work follows `TODO.md`; the current state
-is recorded in `PROJECT_STATUS.md`.
+Upload
 
-The current focus is post-MVP: speed, user experience, and hackathon-readiness
-of the Express Underwriting flow.
+↓
 
-Do NOT build
+Financial Intelligence
 
-- Deep Extraction (production document-AI)
-- Open Banking
+↓
+
+Decision Intelligence
+
+↓
+
+Professional Underwriting Package
+
+↓
+
+Risk Officer Decision
+
+---
+
+# Current MVP
+
+The MVP focuses on
+
+- Contract Details
+- Audited Financial Statements
+- Financial Intelligence
+- Decision Intelligence
+- Risk Officer Workflow
+- Letter of Guarantee
+
+The MVP intentionally DOES NOT include
+
+- SAMA Open Banking
 - SIMAH
-- Core Banking Integration
+- Core Banking
+- Treasury
+- ERP
 
-until explicitly requested.
+Those are future integrations.
 
 ---
 
-# Coding Principles
+# Product Philosophy
 
-Always
+There are two underwriting experiences.
 
-- Write clean code.
-- Keep architecture simple.
-- Use reusable components.
-- Prefer readability.
-- Use strong typing.
-- Follow Next.js best practices.
-- Keep business logic in service modules — route handlers and server actions stay thin.
-- Use Decimal (never float) for money.
+## ⚡ Express Underwriting
 
-Never
+Default experience.
 
-- Duplicate code.
-- Mix business logic into UI.
-- Put business logic inside API routes.
-- Hardcode secrets.
-- Use GPT for calculations.
+Purpose
+
+Generate a believable underwriting assessment within approximately 5 seconds.
+
+Characteristics
+
+- Latest audited financial statement required.
+- Previous years optional.
+- Fast extraction.
+- Deterministic Financial Intelligence.
+- AI memo generated lazily.
+- Optimized for demonstrations and operational efficiency.
+
+---
+
+## 📊 Comprehensive Underwriting
+
+Future production workflow.
+
+Purpose
+
+Provide complete commercial underwriting.
+
+Characteristics
+
+- Multi-year analysis.
+- Historical trends.
+- Complete deterministic extraction.
+- Open Banking.
+- SIMAH.
+- Full underwriting package.
+
+---
+
+# Architecture
+
+```
+Contractor
+
+↓
+
+Contract Details
+
+↓
+
+Audited Financial Statements
+
+↓
+
+Financial Intelligence Engine
+
+↓
+
+Decision Intelligence Engine
+
+↓
+
+Relationship Manager
+
+↓
+
+Risk Officer
+
+↓
+
+Letter of Guarantee
+```
+
+Future
+
+```
+Financial Statements
+
++
+
+Open Banking
+
++
+
+SIMAH
+
++
+
+Etimad
+
+↓
+
+Financial Intelligence Engine
+```
+
+The engine must never depend on a single data source.
+
+New integrations become inputs,
+
+not architectural rewrites.
+
+---
+
+# Financial Intelligence Engine
+
+The Financial Intelligence Engine is the heart of Daman.
+
+It is ALWAYS deterministic.
+
+Responsibilities
+
+- Financial Ratios
+- Trend Analysis
+- Financial Health
+- Underwriting Capacity
+- Risk Score
+- Company Rating
+- Risk Flags
+
+Never allow AI to calculate
+
+- Ratios
+- Scores
+- Recommendations
+
+---
+
+# Decision Intelligence Engine
+
+AI responsibilities
+
+- Executive Summary
+- Credit Memorandum
+- Recommendation Explanation
+- Risk Explanation
+- Narrative Generation
+
+AI explains.
+
+AI never decides.
+
+---
+
+# AI Rules
+
+AI may
+
+✓ Read documents
+
+✓ Extract structured information
+
+✓ Explain deterministic outputs
+
+✓ Produce executive summaries
+
+AI must NEVER
+
+✗ Calculate ratios
+
+✗ Calculate risk score
+
+✗ Calculate underwriting capacity
+
+✗ Approve
+
+✗ Reject
+
+✗ Override deterministic calculations
+
+---
+
+# Banking Philosophy
+
+Every decision must remain explainable.
+
+Every score must have evidence.
+
+Every recommendation must be reproducible.
+
+Every approval must belong to a human.
+
+---
+
+# User Roles
+
+Contractor
+
+- Creates underwriting requests
+- Uploads financial statements
+- Tracks progress
+
+Relationship Manager
+
+- Reviews the AI-drafted memo
+- Refines it (version-tracked revisions — the AI original is never mutated)
+- Adds relationship context
+- Routes the package to the Risk Officer
+- Never decides
+
+Risk Officer
+
+- Reviews underwriting package
+- Reviews Financial Intelligence
+- Reviews the RM assessment
+- Reviews AI memorandum
+- Makes final decision
+- May start directly from Analysis Ready — the RM stage never blocks
+
+Administrator
+
+- Monitors platform
+- Manages operations
+- Reviews audit logs
 
 ---
 
 # UI Philosophy
 
-The application should feel like enterprise banking software.
-
-Inspired by
+The application should feel like
 
 - Stripe
 - Mercury
-- Linear
-- Bloomberg
+- Ramp
+- Bloomberg Terminal
 
-Use
+Never
 
-- whitespace
-- cards
-- professional tables
-- subtle animations
+Bootstrap Admin
 
-Avoid
+Never
 
-- flashy gradients
-- glassmorphism
-- chat interfaces
+Student Project
+
+Never
+
+Hackathon UI
+
+The interface should feel like enterprise banking software.
 
 ---
 
-# Development Workflow
+# UX Philosophy
 
-For every request
+Users should never wonder
 
-1. Analyze the existing code.
-2. Explain the implementation plan.
-3. Implement only the requested feature.
-4. Keep architecture consistent.
-5. Update TODO.md if necessary.
+"What is happening?"
 
-After every work package
+Every page must answer
 
-- Update TODO.md (check off completed items).
-- Update PROJECT_STATUS.md (current focus, completed, next).
-- The application must be deployable at the end of every work package.
+- What happened?
+- What is risky?
+- What should I do next?
 
-Never implement features outside the current phase's scope.
+---
+
+# Demo Philosophy
+
+The objective is NOT
+
+perfect document parsing.
+
+The objective is
+
+demonstrating believable AI-powered underwriting.
+
+Judges should understand the value of Daman within the first minute.
+
+---
+
+# Performance Targets
+
+Express Underwriting
+
+Submission
+
+< 2 seconds
+
+Financial Intelligence
+
+< 5 seconds
+
+Decision Intelligence
+
+Background
+
+Comprehensive Underwriting
+
+< 20 seconds
+
+---
+
+# Error Philosophy
+
+Never expose technical errors.
+
+Never blame the user.
+
+Never say
+
+"Unknown Error"
+
+Instead
+
+Explain
+
+- what happened
+- why
+- what to do next
+
+---
+
+# Document Processing
+
+Each uploaded document is independent.
+
+Lifecycle
+
+Queued
+
+↓
+
+Processing
+
+↓
+
+Extracted
+
+or
+
+Failed
+
+↓
+
+Retry
+
+One failed document must never block the entire case.
+
+---
+
+# Retry Philosophy
+
+Retry means
+
+Resume.
+
+Never
+
+Restart.
+
+Completed work is never repeated.
+
+---
+
+# Security
+
+Always
+
+- Role Based Access
+- Server-side authorization
+- Input validation
+- Zod
+- Prisma
+- Parameterized queries
+
+Never trust client input.
+
+---
+
+# Database
+
+Neon PostgreSQL
+
+Prisma ORM
+
+Cloudflare R2
+
+OpenAI
+
+Next.js Server Actions
+
+TypeScript
+
+These technologies are fixed unless there is a compelling architectural reason.
+
+---
+
+# Code Philosophy
+
+Readable code is better than clever code.
+
+Prefer
+
+Simple
+
+Deterministic
+
+Maintainable
+
+Well documented
+
+Never optimize prematurely.
+
+---
+
+# Documentation
+
+Every major feature must update
+
+README
+
+PROJECT_STATUS
+
+TODO
+
+TECH_DEBT
+
+Architecture documentation
+
+No documentation drift.
+
+---
+
+# Demo Data
+
+Administrator
+
+Nawaf Alharthi
+
+System Administrator
+
+Contractor
+
+Abdulrahman Yaghmour
+
+Rawabi Contracting Co.
+
+Relationship Manager
+
+Salman Alghamdi
+
+Alinma Bank
+
+Risk Officer
+
+Omar Alkaltham
+
+Alinma Bank
+
+All seeded data should reinforce the demo story.
+
+---
+
+# Definition of Done
+
+A task is complete only if
+
+✓ Build passes
+
+✓ TypeScript passes
+
+✓ Lint passes
+
+✓ Tested manually
+
+✓ UI reviewed
+
+✓ Mobile reviewed
+
+✓ Desktop reviewed
+
+✓ Documentation updated
+
+✓ No obvious UX issues
+
+---
+
+# Before Every Commit
+
+Ask
+
+Does this improve
+
+- underwriting?
+- UX?
+- demo quality?
+- banking credibility?
+
+If not,
+
+do not commit it.
+
+---
+
+# Never Do
+
+Never rewrite working architecture without a compelling reason.
+
+Never replace deterministic logic with AI.
+
+Never block submission waiting for AI.
+
+Never introduce features that reduce demo quality.
+
+Never optimize OCR at the expense of underwriting.
+
+Never build features that judges will never see.
+
+---
+
+# North Star
+
+Daman exists to help banks issue better guarantees faster.
+
+Everything else is secondary.
