@@ -25,14 +25,41 @@ below. All work is committed on `main`.
 ### Underwriting modes (current)
 
 - **⚡ Express (default, `UNDERWRITING_MODE=express`)** — a meaningful
-  assessment in seconds. Only the LATEST audited statement is read (its
-  comparative column still trends ≥2 years); previous years optional. Immediate
-  deterministic Financial Intelligence + Underwriting Capacity headline; the AI
-  memo is generated lazily on first officer open.
+  assessment in seconds. Every uploaded statement is processed (newest first);
+  the FIRST statement to complete flips the case ANALYSIS_READY and the rest
+  enrich the analysis in the background. A scanned document that GPT-Vision
+  cannot read fails fast (no OCR fallback); the AI memo is generated lazily on
+  first officer open.
 - **📊 Comprehensive (`UNDERWRITING_MODE=comprehensive`)** — production-grade.
-  All uploaded fiscal years read for full historical trend analysis; complete
-  deterministic extraction; the AI memo generated eagerly in the background.
-  May take significantly longer.
+  Same first-success orchestration, plus the OCR fallback for unreadable scans
+  and the AI memo generated eagerly in the background. May take significantly
+  longer per document.
+
+### Post-MVP — First-success orchestration: the case is the product (2026-07-14)
+
+Architecture review + redesign of the processing orchestration around corporate
+underwriting (not document processing). Root causes found and fixed:
+
+- **Express no longer slices to the latest document.** Previously
+  `processCaseDocuments` read ONLY the newest statement in express mode and
+  marked the rest SKIPPED — if that single document failed (scanned + vision
+  miss), the case went PROCESSING_FAILED while perfectly usable older
+  statements sat unread. Now every statement is processed in both modes and a
+  case fails only when NO document yields figures. `SKIPPED` is legacy-only
+  (healed automatically on retry).
+- **First-success readiness.** The case flipped ANALYSIS_READY only after ALL
+  documents settled — the slowest/failed document held the case (and the
+  RM/officer queues, which key on status) hostage. Now the incremental rebuild
+  reports each batch of persisted statements to the orchestrator
+  (`onStatements`), and the FIRST non-empty deterministic report flips the case
+  ANALYSIS_READY immediately; remaining documents continue in the background
+  and only enrich.
+- **A finished analysis is never taken away.** A fault after readiness fails
+  the JOB (retryable) but leaves the case ANALYSIS_READY
+  (`failJob({ keepCaseStatus })`); previously any late fault regressed the case
+  to PROCESSING_FAILED.
+- Retry/resume semantics unchanged: per-document checkpoints, sha-keyed reuse,
+  no repeated GPT calls. Docs updated (`docs/ASYNC_PROCESSING.md`).
 
 ### Post-MVP — Framework conformance: RM stage + Letter of Credit + SLA metric (2026-07-14)
 
@@ -340,11 +367,12 @@ the R2 read, and a **~2.5s cold-connect** on the first request. Parsing was ~1.6
   persistence, document-status writes, and every audit are **deferred off the
   path** (collected in `pipeline.deferred`, settled with `Promise.allSettled`
   before the job is marked COMPLETED — nothing is lost).
-- **Two modes (`UNDERWRITING_MODE`, default `express`):** express reads only the
-  LATEST audited statement (its comparative column still trends ≥2 years) and
-  generates the AI memo **lazily** on first officer open; comprehensive reads all
-  years and generates the memo eagerly in the background. Deterministic engines
-  are **untouched** — only document scope + memo timing change.
+- **Two modes (`UNDERWRITING_MODE`, default `express`):** both process every
+  uploaded statement (first success flips the case ANALYSIS_READY — see the
+  2026-07-14 first-success orchestration entry). Express fails an unreadable
+  scan fast and generates the AI memo **lazily** on first officer open;
+  comprehensive adds the OCR fallback and generates the memo eagerly in the
+  background. Deterministic engines are **untouched**.
 - **429 robustness:** vision extraction (on the critical path) gets a dedicated
   `VISION_TIMEOUT_MS` (12s) so a throttled key fails fast to OCR instead of
   stalling Stage 1; the memo is background/best-effort with retries.
@@ -681,8 +709,9 @@ resumes:
 - **Vision-extracted figures are flagged for officer verification**, not
   auto-trusted; scanned Arabic numeric OCR is gated out entirely
   (`UNVERIFIED_OCR_VALUES`).
-- **Express mode trades breadth for speed:** it reads only the latest
-  statement, so deep multi-year history needs Comprehensive mode.
+- **Express mode trades recovery depth for speed:** all statements are
+  processed, but a scanned document GPT-Vision cannot read fails fast in
+  express — the OCR fallback needs Comprehensive mode.
 - **Processing has no scheduled backstop** (Hobby-plan deliberate): a lost
   trigger self-heals on the next poll; a mid-run crash needs a one-click retry
   (TECH_DEBT #23).

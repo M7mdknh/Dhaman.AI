@@ -159,11 +159,13 @@ function describeCause(cause: unknown): string {
 /**
  * Runs extraction for the case's financial statements, concurrently.
  *
- * `mode` controls document SCOPE only (the engines are identical either way):
- *  - "express" (default): only the LATEST audited statement is read. It usually
- *    carries a comparative column, so the engine still sees ≥2 years — but the
- *    critical path never waits on older uploads. Fastest believable assessment.
- *  - "comprehensive": every uploaded statement is read for full history.
+ * EVERY uploaded statement is processed in BOTH modes, newest first — the case
+ * is document-independent: the first statement to complete already feeds the
+ * deterministic engine (via `onStatements`), the rest enrich the analysis in
+ * the background, and a failed sibling never discards anyone else's work.
+ * `mode` changes only the recovery ladder for scanned documents ("express"
+ * skips the slow OCR fallback and fails that one document fast) and, upstream,
+ * when the AI memo is generated.
  *
  * Non-critical writes (per-document extraction rows, document status, the audit)
  * are collected into `deferred` and returned unawaited — the caller flips the
@@ -174,17 +176,15 @@ export async function processCaseDocuments(
   actorId: string | null,
   onStage?: StageReporter,
   mode: "express" | "comprehensive" = env.UNDERWRITING_MODE,
+  onStatements?: (statements: FinancialStatement[]) => void,
 ): Promise<PipelineOutcome> {
-  const all = await prisma.document.findMany({
+  const documents = await prisma.document.findMany({
     where: { caseId, docType: "FINANCIAL_STATEMENT" },
     orderBy: { fiscalYear: "desc" },
     // Load the latest extraction alongside each document so the cache check
     // costs no extra round-trip.
     include: { extraction: true },
   });
-  // Express: read only the newest statement (fiscalYear desc → index 0). It
-  // typically includes a prior-year comparative, so the engine still trends.
-  const documents = mode === "express" && all.length > 0 ? all.slice(0, 1) : all;
 
   // A case-level timer aggregates every document's stage breakdown into one
   // performance report (requirement: measure every stage). `record`/`absorb`
@@ -193,24 +193,12 @@ export async function processCaseDocuments(
   // Deferred (off-critical-path) writes, awaited by the caller before COMPLETED.
   const deferred: Promise<unknown>[] = [];
 
-  // Express skips older uploads BY DESIGN — say so explicitly. Without this
-  // they would sit on "Queued" forever, which reads as a hang to the user.
-  const skipped = all.filter((d) => !documents.includes(d) && d.processingStatus !== "COMPLETED");
-  if (skipped.length > 0) {
-    deferred.push(
-      prisma.document
-        .updateMany({
-          where: { id: { in: skipped.map((d) => d.id) } },
-          data: { processingStatus: "SKIPPED" },
-        })
-        .catch(() => {}),
-    );
-  }
-
   // INCREMENTAL Financial Intelligence: rebuild the case's FinancialStatement
   // rows the moment EACH document completes (serialized — the rows are a
-  // case-level resource), so the dashboard headline appears as soon as the
-  // FIRST statement lands, while the rest keep processing. The batch is
+  // case-level resource), so underwriting starts as soon as the FIRST
+  // statement lands, while the rest keep processing. Each rebuild's rows are
+  // reported to the caller (`onStatements`) so it can flip the case to
+  // ANALYSIS_READY without waiting for the slowest document. The batch is
   // re-sorted newest-first each time so the final state never depends on
   // which document happened to finish first.
   const completedSoFar: CompletedExtraction[] = [];
@@ -220,10 +208,15 @@ export async function processCaseDocuments(
     const batch = [...completedSoFar].sort(
       (a, b) => (b.document.fiscalYear ?? 0) - (a.document.fiscalYear ?? 0),
     );
-    rebuildChain = rebuildChain.then(
-      () => rebuildFinancialStatements(caseId, batch),
-      () => rebuildFinancialStatements(caseId, batch),
-    );
+    rebuildChain = rebuildChain
+      .then(
+        () => rebuildFinancialStatements(caseId, batch),
+        () => rebuildFinancialStatements(caseId, batch),
+      )
+      .then((rows) => {
+        onStatements?.(rows);
+        return rows;
+      });
   };
 
   const results = await mapWithConcurrency(documents, DOCUMENT_CONCURRENCY, async (document) => {

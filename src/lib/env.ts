@@ -74,12 +74,14 @@ const envSchema = z.object({
   // job RUNNING forever — orchestration guard, not an OCR quality knob.
   OCR_FALLBACK_BUDGET_MS: z.coerce.number().int().positive().default(120_000),
 
-  // ---- Underwriting mode. EXPRESS (default) optimizes for the fastest
-  // believable assessment: only the LATEST audited statement is required and
-  // the AI memo is generated lazily (on first officer open), never on the
-  // contractor's critical path. COMPREHENSIVE uses all uploaded years and
-  // generates the memo eagerly in the background. The deterministic engines are
-  // identical in both modes — only document scope and memo timing change.
+  // ---- Underwriting mode. EVERY uploaded statement is processed in BOTH
+  // modes (newest first; the first success flips the case ANALYSIS_READY and
+  // the rest enrich in the background). EXPRESS (default) optimizes for the
+  // fastest believable assessment: a scanned document that vision cannot read
+  // fails fast (no slow OCR fallback) and the AI memo is generated lazily (on
+  // first officer open), never on the contractor's critical path.
+  // COMPREHENSIVE adds the OCR fallback and generates the memo eagerly in the
+  // background. The deterministic engines are identical in both modes.
   UNDERWRITING_MODE: z.enum(["express", "comprehensive"]).default("express"),
 
   // ---- OCR (tesseract.js). The WASM core resolves from node_modules; only

@@ -8,10 +8,17 @@
  *   claim (QUEUED → RUNNING) → Reading → Detecting → Extracting →
  *   Financial Analysis → AI Underwriting → COMPLETED / FAILED
  *
+ * THE CASE IS THE PRODUCT; documents are only inputs. Every document has its
+ * own independent lifecycle, and the FIRST document whose statements persist
+ * flips the case to ANALYSIS_READY immediately — the remaining documents keep
+ * extracting in the background and only ever ENRICH the analysis. A case fails
+ * only when NO document yields usable figures.
+ *
  * The job row (`CaseProcessing`) is the durable, observable, retryable record
  * of that work. A failure never loses the case: the row keeps the reason and
- * the stage that failed, the case is left at PROCESSING_FAILED, and a retry
- * re-runs the SAME uploaded documents — no re-upload required.
+ * the stage that failed, the case is left at PROCESSING_FAILED (unless it was
+ * already ANALYSIS_READY — a finished analysis is never taken away), and a
+ * retry re-runs the SAME uploaded documents — no re-upload required.
  *
  * Execution is driven out-of-band from the request via Next.js `after()` (see
  * the case actions and the poll route). `runCaseProcessing` is idempotent and
@@ -164,12 +171,61 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
   const timer = new StageTimer();
 
   const mode = env.UNDERWRITING_MODE;
+  const runStarted = Date.now();
+
+  // FIRST-SUCCESS READINESS: the moment the FIRST document's statements are
+  // persisted, the deterministic engine already has everything it needs — the
+  // case flips to ANALYSIS_READY right here, while the remaining documents
+  // keep extracting in the background. The case never waits for its slowest
+  // (or failed) document. Resolves to true once the flip has committed.
+  let readyFlip: Promise<boolean> | null = null;
+  const flipAnalysisReady = async (
+    statements: Parameters<typeof buildFinancialIntelligence>[0],
+  ): Promise<boolean> => {
+    const contract = await contractPromise;
+    const report = statements.length > 0 ? buildFinancialIntelligence(statements, contract) : null;
+    if (!report) return false;
+    await statusPromise; // PROCESSING must be committed before ANALYSIS_READY
+    await prisma.underwritingCase.update({
+      where: { id: caseId },
+      data: { status: "ANALYSIS_READY" },
+    });
+    await advanceTo("FINANCIAL_ANALYSIS");
+    deferred.push(
+      recordAudit({
+        action: "case.analysis_ready",
+        caseId,
+        detail: {
+          mode,
+          stage1Ms: Date.now() - runStarted,
+          years: statements.map((s) => s.fiscalYear).sort((a, b) => b - a),
+          band: report.risk.band,
+        },
+      }),
+    );
+    return true;
+  };
+  const onStatements = (statements: Parameters<typeof buildFinancialIntelligence>[0]) => {
+    if (readyFlip) return; // first success wins; later rebuilds only enrich
+    readyFlip = flipAnalysisReady(statements).catch(() => false);
+  };
+
   try {
     // --- Stages 1–3: read → detect → extract (the IFRS pipeline reports each).
     // Its non-critical writes come back in `pipeline.deferred` — settled later.
-    const pipeline = await processCaseDocuments(caseId, /* system run */ null, advanceTo, mode);
+    const pipeline = await processCaseDocuments(
+      caseId,
+      /* system run */ null,
+      advanceTo,
+      mode,
+      onStatements,
+    );
     timer.absorb(pipeline.perf);
     deferred.push(...pipeline.deferred);
+    // The readiness flip (first successful document) may still be in flight —
+    // settle it now so the paths below know whether the case is already live.
+    const flippedEarly = readyFlip ? await readyFlip : false;
+
     // One failed document never fails the case: as long as at least one
     // statement was verified, underwriting continues on what exists (a
     // PARTIAL assessment — the failed documents keep their own FAILED status
@@ -198,44 +254,27 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     }
 
     // ---- STAGE 1 (Fast Financial Intelligence): the deterministic engine.
-    // Runs on the statements the pipeline just returned (no re-read) and the
-    // contract fetched CONCURRENTLY above — the engine itself is ~1ms, so this
-    // stage adds no round-trip to the critical path.
+    // Usually the case is ALREADY ANALYSIS_READY (the first-success flip above
+    // fired mid-extraction). This is the safety net for the path where the
+    // flip could not run or did not stick — the final statements are complete
+    // here, so it must succeed or the case honestly fails.
     await advanceTo("FINANCIAL_ANALYSIS");
-    const report = await timer.time(STAGE.FINANCIAL_ANALYSIS, async () => {
-      const contract = await contractPromise;
-      return contract && pipeline.statements.length > 0
-        ? buildFinancialIntelligence(pipeline.statements, contract)
-        : null;
-    });
-    if (!report) {
-      await statusPromise;
-      await failJob(
-        caseId,
-        "FINANCIAL_ANALYSIS",
-        "The financial analysis engine could not produce a result from the extracted figures.",
+    const stage1Ms = Date.now() - runStarted;
+    if (!flippedEarly) {
+      const flipped = await timer.time(STAGE.FINANCIAL_ANALYSIS, () =>
+        flipAnalysisReady(pipeline.statements),
       );
-      return;
+      if (!flipped) {
+        await statusPromise;
+        await failJob(
+          caseId,
+          "FINANCIAL_ANALYSIS",
+          "The financial analysis engine could not produce a result from the extracted figures.",
+        );
+        return;
+      }
     }
-
-    // STAGE 1 COMPLETE — the case is REVIEWABLE NOW and the underwriting headline
-    // (capacity, rating, health, risk, recommendation) is available. Flip the
-    // case to ANALYSIS_READY immediately so the dashboard shows results while the
-    // job keeps RUNNING for Stage 2. This is the "feels done in <3s" moment.
-    const stage1Ms = timer.report().wallMs;
-    await statusPromise; // PROCESSING must be committed before ANALYSIS_READY
-    await prisma.underwritingCase.update({
-      where: { id: caseId },
-      data: { status: "ANALYSIS_READY" },
-    });
     await advanceTo("AI_UNDERWRITING");
-    deferred.push(
-      recordAudit({
-        action: "case.analysis_ready",
-        caseId,
-        detail: { mode, stage1Ms, years: pipeline.years, band: report.risk.band },
-      }),
-    );
 
     // ---- STAGE 2 (Deep Financial Intelligence): the AI underwriting memo.
     // EXPRESS mode generates it LAZILY (on first officer open — the review page
@@ -305,29 +344,50 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
         error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
       }),
     );
+    // A case that already went ANALYSIS_READY has a valid assessment — a fault
+    // in later background work fails the JOB (retryable) but never takes the
+    // finished analysis away from the user. (Cast: TS cannot see the closure
+    // assignment from inside this catch.)
+    const flip = readyFlip as Promise<boolean> | null;
+    const alreadyReady = flip ? await flip.catch(() => false) : false;
     await failJob(
       caseId,
       stage,
       "An unexpected error interrupted processing. You can retry the analysis.",
+      { keepCaseStatus: alreadyReady },
     );
   } finally {
     clearInterval(heartbeat);
   }
 }
 
-/** Records a terminal failure on both the job and the case (case stays saved). */
-async function failJob(caseId: string, stage: ProcessingStage, reason: string): Promise<void> {
-  await prisma.$transaction([
-    prisma.caseProcessing.update({
-      where: { caseId },
-      data: { state: "FAILED", failedStage: stage, stage, error: reason, completedAt: new Date() },
-    }),
-    prisma.underwritingCase.update({ where: { id: caseId }, data: { status: "PROCESSING_FAILED" } }),
-  ]);
+/** Records a terminal failure on the job and (unless the case already reached
+ * ANALYSIS_READY) on the case — the case row itself always stays saved. */
+async function failJob(
+  caseId: string,
+  stage: ProcessingStage,
+  reason: string,
+  { keepCaseStatus = false }: { keepCaseStatus?: boolean } = {},
+): Promise<void> {
+  const failJobWrite = prisma.caseProcessing.update({
+    where: { caseId },
+    data: { state: "FAILED", failedStage: stage, stage, error: reason, completedAt: new Date() },
+  });
+  if (keepCaseStatus) {
+    await failJobWrite;
+  } else {
+    await prisma.$transaction([
+      failJobWrite,
+      prisma.underwritingCase.update({
+        where: { id: caseId },
+        data: { status: "PROCESSING_FAILED" },
+      }),
+    ]);
+  }
   await recordAudit({
     action: "case.processing_failed",
     caseId,
-    detail: { stage, reason },
+    detail: { stage, reason, keptCaseStatus: keepCaseStatus },
   });
 }
 

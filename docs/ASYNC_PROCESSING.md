@@ -60,11 +60,22 @@ FAILED     → case PROCESSING_FAILED   (Stage-1 failure only; case stays saved)
   readiness: a slow/failed/deferred LLM leaves the case ANALYSIS_READY and the
   contractor never waits for GPT.
 
+**First-success readiness (the case is the product).** Every uploaded statement
+is processed in BOTH modes, newest first, each with its own independent
+lifecycle. The moment the FIRST document's statements persist, the orchestrator
+flips the case to **ANALYSIS_READY** — the remaining documents keep extracting
+in the background and only ever ENRICH the analysis (the incremental
+`FinancialStatement` rebuild re-sorts newest-first, so the final state never
+depends on completion order). A failed document never blocks a sibling, never
+blocks the case, and never blocks Financial Intelligence; the case fails only
+when NO document yields usable figures. A fault after readiness fails the JOB
+(retryable) but never takes ANALYSIS_READY away from the case.
+
 **Underwriting mode** (`UNDERWRITING_MODE`, default `express`) changes two things
-only — the deterministic engines are identical: express reads just the latest
-statement (Stage-1 document scope) and defers the memo to first officer open;
-comprehensive reads every uploaded year and generates the memo eagerly in
-Stage 2.
+only — the deterministic engines are identical: express fails a scanned document
+fast when vision cannot read it (no slow OCR fallback) and defers the memo to
+first officer open; comprehensive adds the OCR fallback and generates the memo
+eagerly in Stage 2.
 
 **Critical-path discipline (why Stage 1 is fast):** the deterministic engine is
 ~1ms; the cost is I/O. So Stage 1 avoids needless DB round-trips — the pipeline

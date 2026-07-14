@@ -280,6 +280,8 @@ export function deriveDocumentViews(
       startedAt !== null ? Math.max(0, (terminalAt ?? now) - startedAt) : null;
 
     if (doc.status === "SKIPPED") {
+      // Legacy rows only: earlier Express runs skipped older uploads. Every
+      // statement is processed now; a retry heals a SKIPPED row automatically.
       return view(doc, {
         state: "skipped",
         statusLabel: "Not needed — Express underwriting uses your latest audited statement",
