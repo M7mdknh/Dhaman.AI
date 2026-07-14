@@ -4,9 +4,9 @@
  * metadata only. Uploading only STORES the file; extraction/parsing happens
  * later in the async processing job, after the case is submitted.
  */
-import { MAX_STATEMENT_FILE_BYTES } from "@/lib/case-constants";
+import { looksLikePdf, MAX_STATEMENT_FILE_BYTES } from "@/lib/case-constants";
 import { prisma } from "@/lib/prisma";
-import { storage } from "@/lib/storage";
+import { storage, StorageError } from "@/lib/storage";
 import { getOwnedCase } from "@/services/case-service";
 import { recordAudit } from "@/services/audit-service";
 
@@ -16,23 +16,31 @@ type Result<T = undefined> =
   | (T extends undefined ? { ok: true } : { ok: true; data: T })
   | { ok: false; error: string };
 
-function isPdf(file: File, bytes: Buffer): boolean {
-  return file.type === "application/pdf" && bytes.subarray(0, 5).toString("latin1") === "%PDF-";
+/** The authoritative content check: the `%PDF-` header. Real-world reports
+ * occasionally carry a few junk bytes before it (bad exporters), and PDF
+ * readers tolerate the header anywhere in the first 1024 bytes — so do we. */
+function hasPdfMagic(bytes: Buffer): boolean {
+  return bytes.subarray(0, 1024).toString("latin1").includes("%PDF-");
 }
 
-export async function addFinancialStatement(
+/**
+ * Shared pre-flight for every statement upload path: ownership, draft state,
+ * size bounds, and the one-statement-per-year rule. Returns the owned case on
+ * success so callers do not re-read it.
+ */
+async function validateStatementSlot(
   userId: string,
   caseId: string,
-  file: File,
   fiscalYear: number,
-): Promise<Result<Document>> {
+  fileSize: number,
+): Promise<Result<NonNullable<Awaited<ReturnType<typeof getOwnedCase>>>>> {
   const owned = await getOwnedCase(userId, caseId);
   if (!owned) return { ok: false, error: "Case not found." };
   if (owned.status !== "DRAFT") {
     return { ok: false, error: "Documents can only be changed while the case is a draft." };
   }
-  if (file.size === 0) return { ok: false, error: "The selected file is empty." };
-  if (file.size > MAX_STATEMENT_FILE_BYTES) {
+  if (fileSize === 0) return { ok: false, error: "The selected file is empty." };
+  if (fileSize > MAX_STATEMENT_FILE_BYTES) {
     return { ok: false, error: "File is too large — the maximum size is 10 MB." };
   }
   if (
@@ -43,34 +51,144 @@ export async function addFinancialStatement(
       error: `A statement for ${fiscalYear} is already uploaded. Remove it first to replace it.`,
     };
   }
+  return { ok: true, data: owned };
+}
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  if (!isPdf(file, bytes)) {
-    return { ok: false, error: "Only PDF files are accepted for audited financial statements." };
-  }
-
-  const storageKey = `cases/${caseId}/${crypto.randomUUID()}.pdf`;
-  await storage.save(storageKey, bytes);
-
+/** Creates the Document row + audit for a statement whose bytes are already
+ * in storage under `storageKey`. */
+async function createStatementRecord(
+  userId: string,
+  caseId: string,
+  storageKey: string,
+  fileName: string,
+  fileSize: number,
+  fiscalYear: number,
+): Promise<Document> {
   const document = await prisma.document.create({
     data: {
       caseId,
       uploadedById: userId,
-      fileName: file.name,
+      fileName,
       storageKey,
       mimeType: "application/pdf",
-      fileSize: file.size,
+      fileSize,
       docType: "FINANCIAL_STATEMENT",
       fiscalYear,
     },
   });
-
   await recordAudit({
     action: "document.uploaded",
     actorId: userId,
     caseId,
-    detail: { documentId: document.id, fileName: file.name, fiscalYear },
+    detail: { documentId: document.id, fileName, fiscalYear },
   });
+  return document;
+}
+
+/** Through-the-server upload (multipart). Used in local development and as
+ * the automatic fallback when the direct-to-storage path is unavailable. */
+export async function addFinancialStatement(
+  userId: string,
+  caseId: string,
+  file: File,
+  fiscalYear: number,
+): Promise<Result<Document>> {
+  const slot = await validateStatementSlot(userId, caseId, fiscalYear, file.size);
+  if (!slot.ok) return slot;
+
+  if (!looksLikePdf(file.name, file.type)) {
+    return { ok: false, error: "Only PDF files are accepted for audited financial statements." };
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfMagic(bytes)) {
+    return {
+      ok: false,
+      error: "This file does not appear to be a valid PDF. Please upload the audited statement as a PDF.",
+    };
+  }
+
+  const storageKey = `cases/${caseId}/${crypto.randomUUID()}.pdf`;
+  await storage.save(storageKey, bytes);
+  const document = await createStatementRecord(
+    userId, caseId, storageKey, file.name, file.size, fiscalYear,
+  );
+  return { ok: true, data: document };
+}
+
+/**
+ * Step 1 of the DIRECT upload path: validate everything validatable before a
+ * byte moves, then mint a short-lived presigned PUT URL. `uploadUrl: null`
+ * means the storage backend cannot presign (local disk) — the client falls
+ * back to the multipart route. The bytes travel browser → storage directly,
+ * which is what lifts uploads above the host's request-body cap (Vercel:
+ * 4.5 MB — the advertised 10 MB limit is impossible through the server there).
+ */
+export async function prepareStatementUpload(
+  userId: string,
+  caseId: string,
+  input: { fileName: string; fileSize: number; fileType: string; fiscalYear: number },
+): Promise<Result<{ uploadUrl: string | null; storageKey: string }>> {
+  const slot = await validateStatementSlot(userId, caseId, input.fiscalYear, input.fileSize);
+  if (!slot.ok) return slot;
+  if (!looksLikePdf(input.fileName, input.fileType)) {
+    return { ok: false, error: "Only PDF files are accepted for audited financial statements." };
+  }
+
+  const storageKey = `cases/${caseId}/${crypto.randomUUID()}.pdf`;
+  const uploadUrl = await storage.presignPut(storageKey, "application/pdf");
+  return { ok: true, data: { uploadUrl, storageKey } };
+}
+
+/**
+ * Step 2 of the DIRECT upload path: after the browser PUT the object, verify
+ * the bytes that actually landed (size bounds + PDF header — the server never
+ * trusts the client's claims) and only then create the Document row. An
+ * object that fails verification is deleted so nothing unaccounted lingers
+ * in the bucket.
+ */
+export async function finalizeStatementUpload(
+  userId: string,
+  caseId: string,
+  input: { storageKey: string; fileName: string; fiscalYear: number },
+): Promise<Result<Document>> {
+  // The key must be one WE minted for THIS case — never a caller-shaped path.
+  const keyPattern = new RegExp(`^cases/${caseId}/[0-9a-f-]{36}\\.pdf$`);
+  if (!keyPattern.test(input.storageKey)) {
+    return { ok: false, error: "Upload reference not recognized. Please try the upload again." };
+  }
+  // Idempotency/hijack guard: a key already registered can never be reused.
+  const existing = await prisma.document.findUnique({ where: { storageKey: input.storageKey } });
+  if (existing) return { ok: false, error: "This upload was already registered." };
+
+  let bytes: Buffer;
+  try {
+    bytes = await storage.read(input.storageKey);
+  } catch (error) {
+    if (error instanceof StorageError) {
+      return {
+        ok: false,
+        error: "The uploaded file did not reach storage. Please try the upload again.",
+      };
+    }
+    throw error;
+  }
+
+  const slot = await validateStatementSlot(userId, caseId, input.fiscalYear, bytes.length);
+  if (!slot.ok) {
+    await storage.remove(input.storageKey).catch(() => {});
+    return slot;
+  }
+  if (!hasPdfMagic(bytes)) {
+    await storage.remove(input.storageKey).catch(() => {});
+    return {
+      ok: false,
+      error: "This file does not appear to be a valid PDF. Please upload the audited statement as a PDF.",
+    };
+  }
+
+  const document = await createStatementRecord(
+    userId, caseId, input.storageKey, input.fileName, bytes.length, input.fiscalYear,
+  );
   return { ok: true, data: document };
 }
 
@@ -102,14 +220,16 @@ export async function removeFinancialStatement(
 }
 
 /**
- * Access-checked read for the authenticated download route: contractors are
- * ownership-scoped; bank staff read any post-submission document and every
- * such access is audited.
+ * Access check (+ audit) for the authenticated download route: contractors
+ * are ownership-scoped; bank staff read any post-submission document and
+ * every such access is audited. Returns the document WITHOUT its content —
+ * the route then serves the bytes via a presigned URL (direct from storage,
+ * immune to the host's response-body cap) or a stream (local disk).
  */
-export async function getDocumentContent(
+export async function getDocumentForDownload(
   userId: string,
   documentId: string,
-): Promise<{ document: Document; content: Buffer } | null> {
+): Promise<Document | null> {
   const document = await prisma.document.findUnique({ where: { id: documentId } });
   if (!document) return null;
 
@@ -136,6 +256,16 @@ export async function getDocumentContent(
     if (!owned) return null;
   }
 
+  return document;
+}
+
+/** Access-checked read (see getDocumentForDownload) including the content. */
+export async function getDocumentContent(
+  userId: string,
+  documentId: string,
+): Promise<{ document: Document; content: Buffer } | null> {
+  const document = await getDocumentForDownload(userId, documentId);
+  if (!document) return null;
   const content = await storage.read(document.storageKey);
   return { document, content };
 }

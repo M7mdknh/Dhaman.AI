@@ -107,5 +107,21 @@ export const statementYearSchema = z.coerce
     message: `Fiscal year must be one of ${STATEMENT_YEARS.join(", ")}`,
   });
 
+/** Body of the presign request (direct-to-storage upload, step 1). Size and
+ * type are re-verified server-side against the actual bytes at finalize. */
+export const presignStatementSchema = z.object({
+  fileName: z.string().min(1).max(255),
+  fileSize: z.number().int().positive(),
+  fileType: z.string().max(100),
+  fiscalYear: statementYearSchema,
+});
+
+/** Body of the finalize request (direct-to-storage upload, step 2). */
+export const finalizeStatementSchema = z.object({
+  storageKey: z.string().min(1).max(200),
+  fileName: z.string().min(1).max(255),
+  fiscalYear: statementYearSchema,
+});
+
 export type CompanyInfoInput = z.infer<typeof companyInfoSchema>;
 export type ContractDetailsInput = z.infer<typeof contractDetailsSchema>;

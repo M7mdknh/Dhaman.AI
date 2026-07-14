@@ -404,9 +404,10 @@ async function processDocument(
         // (the checkpointed retry makes "try again" genuinely cheap).
         throw new PdfReadError(
           "NO_TEXT",
-          `${document.fileName} appears to be a scanned statement and the AI document reader ` +
-            "could not read it just now. Resume processing to try again, or upload the " +
-            "original digital PDF issued by the auditor for instant extraction.",
+          `The financial figures in ${document.fileName} could not be read automatically ` +
+            "(the statement layout or scan quality defeated the document reader). Resume " +
+            "processing to try again, or upload the standalone audited financial statements " +
+            "PDF issued by the auditor for the most reliable extraction.",
         );
       }
     }

@@ -244,6 +244,26 @@ submission:
   scheduled jobs are used.
 - Set `S3_BUCKET` (+ credentials) — the read-only serverless filesystem cannot
   persist uploads; production refuses to boot on local disk otherwise.
+- **Configure a CORS rule on the R2/S3 bucket** — statement uploads and
+  downloads go DIRECTLY between the browser and storage via short-lived
+  presigned URLs, because Vercel Functions cap request/response bodies at
+  4.5 MB (a platform constant) while the app accepts PDFs up to 10 MB.
+  Cloudflare dashboard → R2 → bucket → Settings → CORS policy:
+
+  ```json
+  [
+    {
+      "AllowedOrigins": ["https://<your-app-domain>", "http://localhost:3000"],
+      "AllowedMethods": ["PUT", "GET"],
+      "AllowedHeaders": ["content-type"],
+      "MaxAgeSeconds": 3600
+    }
+  ]
+  ```
+
+  Without the rule the client automatically falls back to uploading through
+  the server, which only works below ~4.4 MB on Vercel — so the rule is
+  required for full-size audited annual reports.
 - Optionally set `TESSERACT_LANG_PATH` to a private traineddata mirror to drop
   the runtime CDN dependency for OCR. See `.env.example` for the full list.
 

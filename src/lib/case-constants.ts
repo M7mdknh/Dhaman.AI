@@ -68,6 +68,18 @@ export const STATEMENT_YEARS = [2025, 2024, 2023] as const;
 
 export const MAX_STATEMENT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per PDF
 
+/**
+ * MIME sniff for the pre-upload gate, shared by the uploader UI and the
+ * server. Mobile pickers (Android in particular) often hand PDFs over with an
+ * EMPTY or generic type, so the declared type alone must never reject a file
+ * — the extension backs it up, and the server verifies the actual PDF bytes
+ * once the content arrives.
+ */
+export function looksLikePdf(fileName: string, fileType: string): boolean {
+  if (fileType === "application/pdf") return true;
+  return (fileType === "" || fileType === "application/octet-stream") && /\.pdf$/i.test(fileName);
+}
+
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   DRAFT: "Draft",
   SUBMITTED: "Submitted",

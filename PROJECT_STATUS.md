@@ -35,6 +35,40 @@ below. All work is committed on `main`.
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
 
+### Post-MVP — Reliable full-size statement uploads (2026-07-14)
+
+Root-caused why real audited annual reports "sometimes fail immediately" while
+small PDFs upload fine: **Vercel Functions cap request bodies at 4.5 MB**
+(413 `FUNCTION_PAYLOAD_TOO_LARGE`, a platform constant, not configurable) —
+most real annual reports are 5–10 MB, and the 413's non-JSON body collapsed
+into the client's generic "Upload failed. Please try again."
+
+- **Direct-to-storage uploads**: `POST …/documents/presign` validates the slot
+  and mints a 10-minute presigned R2 PUT URL; the browser PUTs the bytes
+  straight to storage with live progress; a JSON finalize call re-reads the
+  object server-side (size bounds + `%PDF-` header — client claims are never
+  trusted), then registers the Document. Failed verification deletes the
+  object. Requires a bucket CORS rule (README/Deploying); without it the
+  client falls back automatically to the multipart route.
+- **Downloads** are served via 60-second presigned GETs after the existing
+  access check + audit (Vercel also caps RESPONSE bodies at 4.5 MB).
+- **Honest errors everywhere**: non-JSON platform errors map to status-specific
+  messages (413/timeout/network/5xx); presign/finalize fetches time out rather
+  than hanging at 0 %; a failed upload keeps the chosen file and offers
+  in-place "Try again" — no wizard restart.
+- **Mobile MIME fix**: Android pickers hand PDFs over with an empty/generic
+  type — shared `looksLikePdf` (lib/case-constants) accepts extension-backed
+  PDFs; the server byte check stays authoritative (now tolerant of the header
+  anywhere in the first 1024 bytes, matching real-world exporters).
+- **Structured `[upload]` logs**: one line per request with per-stage
+  durations (auth/parse/verify/save) for production diagnosis.
+- **Verified** with real Saudi listed-company PDFs (STC 2024 annual report +
+  consolidated financial statements; slices at 5.7/8.2/9.55 MB): 10/10 browser
+  scenarios pass on desktop + Pixel 7 + iPhone 14 emulation, including a
+  simulated Vercel 413, presign-outage fallback, oversized-file rejection, and
+  a real-R2 end-to-end run (direct PUT of 9.55 MB verified against the live
+  bucket). 130/130 unit tests; build/typecheck/lint clean.
+
 ### Post-MVP — First-success orchestration: the case is the product (2026-07-14)
 
 Architecture review + redesign of the processing orchestration around corporate
