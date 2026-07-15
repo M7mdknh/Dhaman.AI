@@ -149,3 +149,37 @@ export const PRIORITY = {
 
 /** Ratio display rounding (decimal places). */
 export const RATIO_PRECISION = 4;
+
+/**
+ * Financial Integrity Validator — the gate between extraction and the
+ * engine. These bounds separate "this company is in trouble" (valid data the
+ * engine must assess) from "these numbers cannot be what the auditor printed"
+ * (mis-parsed data the engine must never see). Deliberately generous: wrongly
+ * rejecting a real applicant is worse than passing an odd-looking one, and
+ * every bound here is a statement about ARITHMETIC, never about health.
+ */
+export const INTEGRITY = {
+  /**
+   * |assets − (liabilities + equity)| as a share of total assets. Audited
+   * statements balance exactly; this only absorbs rounding and presentation
+   * (e.g. figures printed in thousands).
+   */
+  balanceTolerance: 0.01,
+  /**
+   * Consecutive-year change in total assets beyond this multiple means one
+   * year was read at the wrong scale (units vs thousands) — no real balance
+   * sheet moves 100x in a year.
+   */
+  scaleJumpFactor: 100,
+  /**
+   * |net income| beyond this multiple of revenue implies a mis-mapped label
+   * rather than a real result. Generous: investment income and one-off
+   * write-downs genuinely dwarf revenue in real statements.
+   */
+  netIncomeToRevenueMax: 10,
+  /**
+   * A current ratio beyond this is not a liquidity position — it means
+   * current liabilities were mis-read (typically a near-zero denominator).
+   */
+  currentRatioMax: 1_000,
+} as const;

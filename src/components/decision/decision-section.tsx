@@ -6,6 +6,7 @@ import {
   FileText,
   Info,
   ListChecks,
+  ShieldAlert,
   Sparkles,
 } from "lucide-react";
 
@@ -64,6 +65,7 @@ export function DecisionSection({
   decision,
   eligible,
   autoGenerating = false,
+  validationBlocked = false,
 }: {
   caseId: string;
   decision: DecisionIntelligence | null;
@@ -71,6 +73,12 @@ export function DecisionSection({
   eligible: boolean;
   /** The memo is being prepared in the background (officer just opened the case). */
   autoGenerating?: boolean;
+  /**
+   * The statements parsed but failed integrity validation. There is nothing
+   * trustworthy to explain, so no memo is drafted and none can be requested —
+   * an AI narrative over figures the bank does not trust is worse than silence.
+   */
+  validationBlocked?: boolean;
 }) {
   return (
     <Card>
@@ -87,21 +95,38 @@ export function DecisionSection({
       <CardContent>
         {!decision ? (
           <div className="flex flex-col items-center py-8 text-center">
-            <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-              <Sparkles className={cn("size-5", autoGenerating && "animate-pulse")} aria-hidden />
+            <span
+              className={cn(
+                "flex size-11 items-center justify-center rounded-xl",
+                validationBlocked
+                  ? "bg-red-600/10 text-red-700 dark:text-red-400"
+                  : "bg-accent text-accent-foreground",
+              )}
+            >
+              {validationBlocked ? (
+                <ShieldAlert className="size-5" aria-hidden />
+              ) : (
+                <Sparkles className={cn("size-5", autoGenerating && "animate-pulse")} aria-hidden />
+              )}
             </span>
             <h3 className="mt-4 text-sm font-semibold text-foreground">
-              {autoGenerating ? "Preparing AI analysis…" : "No underwriting analysis yet"}
+              {validationBlocked
+                ? "No underwriting recommendation"
+                : autoGenerating
+                  ? "Preparing AI analysis…"
+                  : "No underwriting analysis yet"}
             </h3>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              {autoGenerating
-                ? "The AI-drafted memo is being generated in the background now that you have opened the case. It will appear here automatically in a few seconds."
-                : eligible
-                  ? "Generate an AI-drafted memo that explains the computed financial intelligence. Nothing is calculated by the AI."
-                  : "The memo becomes available once the case is submitted and its statements are parsed."}
+              {validationBlocked
+                ? "The financial statements did not pass integrity validation, so no memo has been drafted. There is nothing the bank trusts enough to explain — see the Validation Report below."
+                : autoGenerating
+                  ? "The AI-drafted memo is being generated in the background now that you have opened the case. It will appear here automatically in a few seconds."
+                  : eligible
+                    ? "Generate an AI-drafted memo that explains the computed financial intelligence. Nothing is calculated by the AI."
+                    : "The memo becomes available once the case is submitted and its statements are parsed."}
             </p>
             {autoGenerating && <DecisionAutoRefresh />}
-            {eligible && (
+            {eligible && !validationBlocked && (
               <div className="mt-4">
                 <GenerateDecisionButton caseId={caseId} />
               </div>

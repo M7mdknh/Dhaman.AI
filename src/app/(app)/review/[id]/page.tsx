@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { ArrowLeft, Download, FileCheck2, Hourglass } from "lucide-react";
 
 import { FinancialIntelligencePanel } from "@/components/analysis/financial-intelligence-panel";
+import { AssessmentUnavailable, ValidationReport } from "@/components/analysis/validation-report";
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
 import { StatusBadge } from "@/components/cases/status-badge";
 import { CompanySummary, ContractSummary } from "@/components/cases/summary-sections";
@@ -32,11 +33,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
 import { guaranteeTypeLabel } from "@/lib/case-constants";
 import { toCompanyInput, toContractInput } from "@/lib/case-view";
+import { buildValidationReport } from "@/lib/finance/confidence";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { derivePriority } from "@/lib/review";
 import { cn } from "@/lib/utils";
 import { getCaseForReview, type ReviewCase } from "@/services/officer-case-service";
 import { ensureDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
+import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import {
   buildFinancialIntelligence,
   toIdentityInputs,
@@ -134,13 +137,23 @@ export default async function ReviewCasePage({
     contract,
     toIdentityInputs(reviewCase.company.name, reviewCase.documents),
   );
+  // The same pure check the engine gates on — read here to TELL the officer how
+  // far the assessment can be trusted. Never re-judges it.
+  const integrity = validateFinancialIntegrity(reviewCase.financialStatements);
+  const validation = buildValidationReport(integrity);
+  // Statements exist but nothing survived validation: the recommendation was
+  // never produced, so the workflow must not pretend one is coming.
+  const validationBlocked = reviewCase.financialStatements.length > 0 && report === null;
   const priority = derivePriority(
     report?.risk.band ?? null,
     contract?.guaranteeAmount ?? null,
   );
   const memo = reviewCase.decisionIntelligence[0] ?? null;
   const status = reviewCase.status;
-  const analysisReady = reviewCase.financialStatements.length > 0;
+  // "Ready" means there is a trustworthy assessment to explain — not merely
+  // that rows exist. Statements that failed validation produce no memo, so
+  // asking for one would only spin.
+  const analysisReady = report !== null;
   const isRm = session.role === "RELATIONSHIP_MANAGER";
   // Newest-first (ordered by version desc in the service).
   const latestRevision = reviewCase.memoRevisions[0] ?? null;
@@ -251,6 +264,7 @@ export default async function ReviewCasePage({
             decision={memo}
             eligible={analysisReady}
             autoGenerating={autoGenerating}
+            validationBlocked={validationBlocked}
           />
 
           <section aria-label="Financial intelligence">
@@ -258,7 +272,15 @@ export default async function ReviewCasePage({
               Financial Intelligence
             </h2>
             {report ? (
-              <FinancialIntelligencePanel report={report} />
+              <FinancialIntelligencePanel report={report} integrity={integrity} />
+            ) : validationBlocked ? (
+              // Statements were read but not trusted. The verdict slot states
+              // that plainly rather than sitting empty — a missing verdict must
+              // never read as a neutral one.
+              <div className="space-y-6">
+                <AssessmentUnavailable />
+                <ValidationReport report={validation} />
+              </div>
             ) : (
               <Card>
                 <CardContent className="py-12 text-center text-sm text-muted-foreground">

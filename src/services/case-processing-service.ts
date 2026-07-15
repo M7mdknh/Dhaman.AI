@@ -38,6 +38,10 @@ import {
 import { recordAudit } from "@/services/audit-service";
 import { runDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { processCaseDocuments } from "@/services/extraction-service";
+import {
+  blockingSummary,
+  validateFinancialIntegrity,
+} from "@/services/finance/financial-integrity-validator";
 import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
 import type { Prisma } from "@/generated/prisma/client";
@@ -251,6 +255,44 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
           },
         }),
       );
+    }
+
+    // ---- FINANCIAL INTEGRITY GATE: extraction is done, the engine has not
+    // run yet. The engine re-checks this itself (it has other callers), but the
+    // verdict is recorded HERE — this is the only place that knows the run, and
+    // an officer asking "why did this case stop?" needs the arithmetic reason
+    // in the audit trail, not just an empty analysis page.
+    const integrity = validateFinancialIntegrity(pipeline.statements);
+    if (integrity.findings.length > 0) {
+      const audited = recordAudit({
+        action: "case.integrity_checked",
+        caseId,
+        detail: {
+          ok: integrity.ok,
+          usableYears: integrity.usableYears,
+          rejectedYears: integrity.rejectedYears,
+          findings: integrity.findings.map((f) => ({
+            code: f.code,
+            severity: f.severity,
+            fiscalYear: f.fiscalYear,
+            message: f.message,
+          })),
+        },
+      });
+      // When the case survives, this is off-critical-path like every other
+      // audit. When it does NOT, this row is the whole explanation of why —
+      // the deferred queue is only settled on the success path below, so it
+      // must be durable before the early return abandons it.
+      if (integrity.ok) deferred.push(audited);
+      else await audited;
+    }
+    // Figures that cannot be what the auditor printed must never become a
+    // score or a recommendation. Extraction "succeeded" here, so the failure
+    // reason has to explain the arithmetic — never a bare "no data".
+    if (!integrity.ok) {
+      await statusPromise;
+      await failJob(caseId, "FINANCIAL_ANALYSIS", blockingSummary(integrity));
+      return;
     }
 
     // ---- STAGE 1 (Fast Financial Intelligence): the deterministic engine.

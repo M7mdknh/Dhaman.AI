@@ -3,10 +3,13 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, BarChart3 } from "lucide-react";
 
 import { FinancialIntelligencePanel } from "@/components/analysis/financial-intelligence-panel";
+import { AssessmentUnavailable, ValidationReport } from "@/components/analysis/validation-report";
 import { StatusBadge } from "@/components/cases/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
+import { buildValidationReport } from "@/lib/finance/confidence";
 import { getOwnedCase } from "@/services/case-service";
+import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import {
   buildFinancialIntelligence,
   toIdentityInputs,
@@ -33,6 +36,8 @@ export default async function FinancialAnalysisPage({
     underwritingCase.contractDetails,
     toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
   );
+  const integrity = validateFinancialIntegrity(underwritingCase.financialStatements);
+  const validationBlocked = underwritingCase.financialStatements.length > 0 && report === null;
 
   return (
     <div className="space-y-6">
@@ -56,7 +61,14 @@ export default async function FinancialAnalysisPage({
         </p>
       </div>
 
-      {report === null ? (
+      {report ? (
+        <FinancialIntelligencePanel report={report} integrity={integrity} />
+      ) : validationBlocked ? (
+        <div className="space-y-6">
+          <AssessmentUnavailable />
+          <ValidationReport report={buildValidationReport(integrity)} />
+        </div>
+      ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <span className="flex size-11 items-center justify-center rounded-xl bg-accent text-accent-foreground">
@@ -69,8 +81,6 @@ export default async function FinancialAnalysisPage({
             </p>
           </CardContent>
         </Card>
-      ) : (
-        <FinancialIntelligencePanel report={report} />
       )}
     </div>
   );

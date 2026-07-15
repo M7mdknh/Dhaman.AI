@@ -8,6 +8,10 @@
  * needs an immutable input for the memo.
  */
 import { assessExecutionCapacity } from "@/services/finance/execution-capacity-service";
+import {
+  usableStatements,
+  validateFinancialIntegrity,
+} from "@/services/finance/financial-integrity-validator";
 import { computeGrowth, computeRatios } from "@/services/finance/financial-ratio-service";
 import { detectCompanyMismatchFlags, detectRiskFlags } from "@/services/finance/risk-flag-service";
 import { assessRisk } from "@/services/finance/risk-score-service";
@@ -92,6 +96,14 @@ export function contractDurationMonths(contract: ContractDetails): number | null
 /**
  * Builds the full report. Returns null when no parsed statements exist —
  * the analysis page shows its "no data" state instead.
+ *
+ * INTEGRITY GATE: every fiscal year is validated here before a single ratio
+ * is computed, and years that cannot be what the auditor printed are dropped.
+ * The gate lives at the engine's own door on purpose — this function has many
+ * callers (the pipeline, the review desk, the analysis page, the memo
+ * builder), and a check placed in any one of them would leave the others
+ * computing on impossible figures. Returning null when nothing survives keeps
+ * the existing contract: every caller already handles the no-data case.
  */
 export function buildFinancialIntelligence(
   statements: FinancialStatement[],
@@ -100,7 +112,11 @@ export function buildFinancialIntelligence(
 ): FinancialIntelligenceReport | null {
   if (statements.length === 0) return null;
 
-  const years = statements
+  const integrity = validateFinancialIntegrity(statements);
+  const validated = usableStatements(statements, integrity);
+  if (validated.length === 0) return null;
+
+  const years = validated
     .map(toYearFinancials)
     .sort((a, b) => a.fiscalYear - b.fiscalYear);
   const latest = years.at(-1)!;
@@ -132,7 +148,7 @@ export function buildFinancialIntelligence(
   return {
     years: years.map((y) => y.fiscalYear),
     latestYear: latest.fiscalYear,
-    currency: statements[0].currency,
+    currency: validated[0].currency,
     disclosures: { orderOfLiquidity: balanceSheetParsed && !currentSplitPrinted },
     ratiosByYear: computeRatios(years),
     growthPeriods: computeGrowth(years),

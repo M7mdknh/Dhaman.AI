@@ -35,6 +35,177 @@ below. All work is committed on `main`.
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
 
+### Post-MVP — Banking-grade number presentation (2026-07-15)
+
+Presentation only — no engine, model, or validator logic touched.
+
+- **Money inputs group as you type.** `MoneyField` + `lib/money-input.ts`: the
+  applicant sees `6,000,000` with a `SAR` stamp inside the field; the form still
+  holds `6000000`, so zod (`/^\d{1,16}(\.\d{1,2})?$/`) and Prisma.Decimal are
+  unchanged — verified by driving a real browser and reading the stored row back
+  (`120000000`), including that the "guarantee cannot exceed contract value"
+  rule still fires. The caret is measured in significant characters (digits and
+  the point) rather than raw offsets, so it never bounces to the end when a
+  separator appears — proven by typing mid-number and asserting the caret index.
+- **The validator's findings now read like banking, not debugging.** They quoted
+  raw Decimals: `assets (50000000.00) do not equal liabilities + equity
+  (35000000.00)`. Now: `total assets of SAR 50,000,000 do not equal liabilities
+  plus equity of SAR 35,000,000 — a gap of SAR 15,000,000`. Amounts are no longer
+  wrapped in parentheses either, which collided with accounting negatives:
+  `Revenue reads (SAR 2,500,000), which cannot be negative` is now unambiguous.
+  Currency is honoured (`USD 50,000,000`). Message wording only — every severity
+  and every decision to raise a finding is untouched, and all tests still pass.
+- **`formatPercentValue` added** for a percentage that IS already a percentage
+  (`"10.00"` → `10%`). Distinct from `formatPercent`, which scales a fraction —
+  routing a stored 10 through that one would report `1000.0%`. Contract summaries
+  now use it and render money `tabular-nums`.
+- **Helper text on every money field** ("The amount the bank would guarantee.
+  Cannot exceed the contract value.").
+- 15 new tests (`tests/ui/money-input.test.ts`), including the non-breaking space
+  `Intl` puts between the currency code and the amount (deliberate: "SAR" must
+  never wrap away from its number).
+
+### Post-MVP — Assessment Confidence + Validation Report (2026-07-15)
+
+The Financial Integrity Validator was correct but invisible: an officer could
+read a normal-looking assessment with no idea a year had been withheld. Every
+assessment now states how far it can be trusted. Presentation and workflow
+only — the validator, the engine and the underwriting model are untouched.
+
+- **Assessment Confidence** (🟢 High / 🟡 Medium / 🔴 Low) sits directly beneath
+  the recommendation it qualifies, on the review desk, the contractor's
+  Financial Intelligence page, and the printed Underwriting Package header (a
+  package is filed and re-read later — the caveat must travel with it).
+- **Validation Report** whenever a warning or blocking finding exists: Summary /
+  Confidence / Statements Affected (Reviewed vs **Excluded**) / Assessment Based
+  On / Issues Found / Recommended Action. Plain headings come from a code→copy
+  map; the validator's own message supplies the figures. A test asserts every
+  code the validator can emit has a heading, and an unknown code falls back to a
+  neutral one rather than leaking the identifier.
+- **Low confidence replaces the verdict** with "Assessment could not be
+  completed" and drafts **no memo** — `analysisReady` now means "there is a
+  trustworthy assessment to explain", not merely "rows exist", so the memo no
+  longer auto-fires and spins on a blocked case, and the Generate button is
+  withheld. An AI narrative over figures the bank does not trust is worse than
+  silence.
+- **Two audiences, two vocabularies.** The officer gets the arithmetic; the
+  applicant gets `contractorNotice()` — no figures, no internals, and explicit
+  that it is the document that could not be verified, "not about your company".
+  Previously the contractor was shown the validator's raw balance-sheet
+  arithmetic verbatim.
+- **Historical data reconciled.** `scripts/reconcile-case-states.mts` (read-only
+  by default, `--apply` to act) reprocesses cases whose status promises an
+  assessment the engine will not produce, through the real retry path — it never
+  writes a status itself. Three cases fixed: UC-2026-000068 (ANALYSIS_READY over
+  an empty analysis) and UC-2026-000001/000033 (runs stuck RUNNING for 170h).
+  Decided and issued cases are never touched. Every case is now consistent.
+- 13 new tests (`tests/finance/confidence.test.ts`); all four scenarios (High,
+  Medium-warning, Medium-partial, Low) verified end-to-end in the browser as
+  both officer and contractor. Stage 1 unchanged at ~2.5s.
+
+### Post-MVP — Financial Integrity Validator: the engine only sees validated data (2026-07-15)
+
+A deterministic gate between extraction and the Financial Intelligence Engine
+(`src/services/finance/financial-integrity-validator.ts`, documented in
+`docs/FINANCIAL_ENGINE.md`). It answers one question — *can these numbers be
+what the auditor actually printed?* — and never *is this company creditworthy?*
+
+- **Why it was needed.** A live case (STC Arabic annual report) sat at
+  ANALYSIS_READY having extracted exactly ONE figure — revenue of SAR 75.9bn,
+  with all 21 other figures absent — and the engine reported **risk band LOW,
+  score 17/100** with every ratio `null`. A fabricated assurance handed to a
+  Risk Officer. That case is now correctly blocked.
+- **Severity model.** BLOCKING (the figures cannot all be from one printed
+  statement) / WARNING (suspicious but possibly real — continue with reduced
+  confidence) / INFO. A BLOCKING finding withholds one **fiscal year**, not the
+  case, mirroring the "one bad document never fails the case" rule; only when
+  no year survives does the case stop as `PROCESSING_FAILED` at
+  `FINANCIAL_ANALYSIS`, with the arithmetic reason and next step in the message.
+- **Checks.** Missing CORE figures; impossible negatives; `A ≠ L + E` beyond a
+  configurable tolerance (naming the "Total equity and liabilities grand total
+  read as a component" signature when equity == assets); subtotal > total;
+  currency/scale inconsistency; duplicate/gapped fiscal years; implausible
+  ratios and net-income-vs-revenue.
+- **Distress is data, not error.** Negative equity, net losses and negative
+  operating cash flow all pass — they describe the applicant a bank most needs
+  assessed. `WEAK_PROFILE` passing is a permanent test.
+- **The gate lives at the engine's door** (`buildFinancialIntelligence`), which
+  has 7 callers across services and pages; a check in any one of them would
+  leave the others computing on impossible figures. It returns `null` when
+  nothing survives — the existing no-data contract every caller already handles.
+  The pipeline also runs it explicitly to record the verdict in the audit log
+  (`case.integrity_checked`).
+- All bounds live in `thresholds.ts` under `INTEGRITY`, deliberately generous:
+  wrongly rejecting a real applicant is worse than passing an odd-looking one.
+- 22 new tests (`tests/finance/integrity-validator.test.ts`). Verified against
+  every live case: 6/7 keep their assessment, the STC case is blocked. Stage 1
+  unchanged at ~2.4s (target ≤3s).
+
+### Post-MVP — Label vocabulary: caption variation across real auditors (2026-07-15)
+
+The normalizer mapped only the "happy" wordings the fixtures printed. Measured
+against an 85-caption battery drawn from real Saudi/IFRS filings: **73% → 99%**.
+
+- **Loss wording was entirely absent** — `Loss for the year`, `Net loss`,
+  `(Loss) / profit for the year` and `Profit / (loss) for the year` (the most
+  common IFRS bottom-line caption, used by profitable companies too) all mapped
+  to null. `netIncome` is a CORE figure, so the applicants a bank most needs to
+  assess were exactly the ones whose bottom line silently vanished.
+- **A cascade false positive.** With `Revenues` (plural) unmapped, the first
+  *sales*-ish caption won instead — on a real loss-making statement the engine
+  received **revenue = −2,500,000**, the "Sales and marketing expenses" line,
+  and the validator of the day reported no errors.
+- **Grand totals claimed as subtotals.** `Total equity and liabilities` →
+  `totalEquity`. Under equity-before-liabilities presentation (IFRS-legal),
+  debt-to-equity computed **1.67 against a true 0.67**.
+- Guards against overcorrection: a bare outcome word needs a bottom-line
+  qualifier (`Income tax expense`, `Loss on disposal`, `Profit before zakat`
+  stay rejected); `Sales and marketing expenses` excluded from revenue; combined
+  identity captions declined in English and Arabic (new `arNot` disqualifier,
+  since Arabic matching is unanchored substring containment).
+- `Loans and borrowings` deliberately left unmapped: it appears under both
+  current and non-current sections, and without section context mapping it is a
+  guess. Absent beats wrong.
+- 15 new tests (`tests/ifrs/label-vocabulary.test.ts`).
+
+### Post-MVP — RM memo hydration (2026-07-15)
+
+The RM's executive-summary textarea initialised with `useState(defaultSummary)`
+and never received the lazily-generated AI draft: the background refresh
+re-rendered the server component with the draft, but React preserves client
+state, so the box stayed empty until a manual reload. The first RM to open any
+fresh case saw a blank field while the full memo rendered beside it — and a
+saved revision kept only their addendum, discarding the AI draft. Now hydrated
+via a pristine-guarded effect that never clobbers the RM's own words.
+
+### Post-MVP — Final end-to-end verification pass (2026-07-15)
+
+Full lifecycle driven through a real browser (Playwright, prod build) across
+all four roles and both viewports: Contractor wizard → upload → Express
+processing → Financial Intelligence → Decision Intelligence → RM review →
+Risk Officer decision → Letter of Guarantee issuance. Typecheck, lint, build,
+and all 205 unit tests pass; zero console/page errors across the full walk,
+including the company-identity lock and the `COMPANY_NAME_MISMATCH` flag
+shipped earlier today.
+
+- **Fixed: `ProcessingDashboard` failed React hydration (#418) while a case
+  was actively processing.** `now` seeded via `useState(() => Date.now())`,
+  which runs once during SSR and again independently during client hydration
+  — two Date.now() calls that never agree desynced the live elapsed-time
+  readout for any still-running stage, forcing React to discard and
+  regenerate the whole tree on every page load caught mid-processing (a real
+  path: a contractor refreshing during the ~5s Express window). Fixed by
+  seeding `now` from `initial.updatedAt` (already serialized identically to
+  server and client) and correcting to real wall time on mount instead of
+  calling `Date.now()` in the render that gets hydrated. Verified with 12
+  rapid reloads against a live-processing case: zero hydration errors.
+- Confirmed as expected/non-actionable: the R2 bucket CORS console error on
+  local direct-to-storage uploads (documented one-time dashboard prerequisite,
+  [[daman-upload-architecture]] — the app falls back to the through-server
+  path automatically) and blank `.scroll-reveal` regions in full-page
+  screenshots (TECH_DEBT #27 — Chromium `animation-timeline: view()` doesn't
+  run during headless full-page capture; real scrolling renders correctly).
+
 ### Post-MVP — Real-statement extraction + disclosure-aware analysis (2026-07-15)
 
 Root-caused and fixed "the analysis shows No data even though the figure is

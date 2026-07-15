@@ -33,6 +33,7 @@ import {
   type ProcessingStep,
   type StageTiming,
 } from "@/lib/processing";
+import { contractorNotice } from "@/lib/finance/confidence";
 import { cn } from "@/lib/utils";
 
 import type { UnderwritingHeadline } from "@/lib/finance/headline";
@@ -263,7 +264,12 @@ export function ProcessingDashboard({
   const router = useRouter();
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
   const [retrying, setRetrying] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
+  // Seeded from the server-rendered snapshot, never from a fresh Date.now()
+  // here: this initializer runs once during SSR and again during client
+  // hydration, and two independent Date.now() calls never agree, which
+  // desyncs any still-running stage's elapsed time and fails hydration. The
+  // ticking effect below corrects to real wall time within a second of mount.
+  const [now, setNow] = useState(() => new Date(initial.updatedAt).getTime());
   const completedRef = useRef(false);
 
   const fetchStatus = useCallback(async () => {
@@ -295,9 +301,12 @@ export function ProcessingDashboard({
     return () => clearInterval(id);
   }, [live, pollMs, fetchStatus]);
 
-  // A 1s ticker keeps elapsed timers moving smoothly between polls.
+  // A 1s ticker keeps elapsed timers moving smoothly between polls. Corrects
+  // the server-seeded `now` to real wall time immediately on mount, then
+  // every second after.
   useEffect(() => {
     if (!live) return;
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [live]);
@@ -339,6 +348,13 @@ export function ProcessingDashboard({
   // the statements that WERE verified (partial) — say so, offer the retry.
   const partial = snapshot.state === "COMPLETED" && failedDocs.length > 0;
   const showRetry = failed || snapshot.stalled;
+  // The figures parsed but could not be trusted. `snapshot.error` is the
+  // validator's reason — precise balance-sheet arithmetic written for a Risk
+  // Officer. The applicant is not being audited by this screen: they get the
+  // document-focused notice instead, and never a suggestion that their
+  // company's finances are the problem.
+  const validationFailed = failed && snapshot.failedStage === "FINANCIAL_ANALYSIS";
+  const notice = contractorNotice();
 
   return (
     <Card>
@@ -445,13 +461,21 @@ export function ProcessingDashboard({
         {showRetry && (
           <Alert variant="destructive">
             <AlertTriangle className="size-4" aria-hidden />
-            <AlertTitle>{failed ? "Processing didn't finish" : "This is taking longer than expected"}</AlertTitle>
+            <AlertTitle>
+              {validationFailed
+                ? notice.title
+                : failed
+                  ? "Processing didn't finish"
+                  : "This is taking longer than expected"}
+            </AlertTitle>
             <AlertDescription>
-              {failed
-                ? (snapshot.error ?? "An error interrupted processing.")
-                : "We'll keep trying, or you can resume now."}{" "}
-              Your case, documents, and completed steps are saved — resuming never repeats
-              finished work and never re-uploads anything.
+              {validationFailed
+                ? notice.body
+                : `${
+                    failed
+                      ? (snapshot.error ?? "An error interrupted processing.")
+                      : "We'll keep trying, or you can resume now."
+                  } Your case, documents, and completed steps are saved — resuming never repeats finished work and never re-uploads anything.`}
             </AlertDescription>
           </Alert>
         )}

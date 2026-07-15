@@ -10,6 +10,7 @@ import {
   focusFirstInvalidField,
 } from "@/components/cases/wizard/form-errors";
 import { FormField } from "@/components/forms/form-field";
+import { MoneyField } from "@/components/forms/money-field";
 import { SelectField } from "@/components/forms/select-field";
 import { TextareaField } from "@/components/forms/textarea-field";
 import { Button } from "@/components/ui/button";
@@ -63,11 +64,21 @@ interface ContractStepProps {
   onSave: (values: ContractDetailsInput) => Promise<CaseActionState>;
 }
 
-/** Fields rendered as Controller-driven selects — their DOM ids carry the
- * `contract-` prefix (ids must stay unique across the CSS-hidden steps). */
-const SELECT_FIELDS = new Set(["beneficiaryType", "sector", "currency", "guaranteeType"]);
+/** Fields rendered through a Controller (selects + money inputs) — their DOM
+ * ids carry the `contract-` prefix (ids must stay unique across the CSS-hidden
+ * steps). Error focusing maps the RHF field name back through here, so a field
+ * added below MUST be listed or its error can never be focused. */
+const PREFIXED_FIELDS = new Set([
+  "beneficiaryType",
+  "sector",
+  "currency",
+  "guaranteeType",
+  "contractValue",
+  "guaranteeAmount",
+  "guaranteePercentage",
+]);
 const contractFieldId = (field: string) =>
-  SELECT_FIELDS.has(field) ? `contract-${field}` : field;
+  PREFIXED_FIELDS.has(field) ? `contract-${field}` : field;
 
 export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
   const form = useForm<ContractDetailsInput>({
@@ -79,6 +90,9 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
   });
   const { register, control, handleSubmit, setError, formState } = form;
   const guaranteeType = useWatch({ control, name: "guaranteeType" });
+  // The money fields are stamped with whatever currency the applicant picked,
+  // so the amount is never ambiguous while it is being entered.
+  const currency = useWatch({ control, name: "currency" });
 
   const submit = handleSubmit(
     async (values) => {
@@ -86,6 +100,32 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
       if (!result.ok) applyActionErrors(setError, result);
     },
     (errors) => focusFirstInvalidField(errors, contractFieldId),
+  );
+
+  /** A currency-stamped amount: grouped on screen, raw decimal in the form. */
+  const moneyField = (
+    name: "contractValue" | "guaranteeAmount",
+    label: string,
+    placeholder: string,
+    hint: string,
+  ) => (
+    <Controller
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => (
+        <MoneyField
+          label={label}
+          name={`contract-${name}`}
+          value={field.value ?? ""}
+          onChange={field.onChange}
+          onBlur={field.onBlur}
+          currency={currency || undefined}
+          placeholder={placeholder}
+          errors={fieldState.error?.message ? [fieldState.error.message] : undefined}
+          hint={hint}
+        />
+      )}
+    />
   );
 
   const selectField = (
@@ -165,21 +205,19 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
 
           <div className="sm:col-span-2"><Separator /></div>
           <SectionLabel>Guarantee</SectionLabel>
-          <FormField
-            label="Contract Value"
-            inputMode="decimal"
-            placeholder="0.00"
-            {...register("contractValue")}
-            errors={fieldErrors(formState.errors.contractValue)}
-          />
+          {moneyField(
+            "contractValue",
+            "Contract Value",
+            "0.00",
+            "The full value of the awarded contract, before any guarantee.",
+          )}
           {selectField("currency", "Currency", CURRENCY_OPTIONS, "Currency")}
-          <FormField
-            label="Requested Guarantee Amount"
-            inputMode="decimal"
-            placeholder="0.00"
-            {...register("guaranteeAmount")}
-            errors={fieldErrors(formState.errors.guaranteeAmount)}
-          />
+          {moneyField(
+            "guaranteeAmount",
+            "Requested Guarantee Amount",
+            "0.00",
+            "The amount the bank would guarantee. Cannot exceed the contract value.",
+          )}
           <div>
             {selectField(
               "guaranteeType",
@@ -193,12 +231,22 @@ export function ContractStep({ defaults, onBack, onSave }: ContractStepProps) {
               </p>
             )}
           </div>
-          <FormField
-            label="Guarantee Percentage (%)"
-            inputMode="decimal"
-            placeholder="Optional — e.g. 10"
-            {...register("guaranteePercentage")}
-            errors={fieldErrors(formState.errors.guaranteePercentage)}
+          <Controller
+            control={control}
+            name="guaranteePercentage"
+            render={({ field, fieldState }) => (
+              <MoneyField
+                label="Guarantee Percentage"
+                name="contract-guaranteePercentage"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                suffix="%"
+                placeholder="10"
+                errors={fieldState.error?.message ? [fieldState.error.message] : undefined}
+                hint="Optional — the guarantee as a share of the contract value."
+              />
+            )}
           />
 
           <div className="sm:col-span-2"><Separator /></div>

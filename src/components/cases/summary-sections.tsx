@@ -11,7 +11,7 @@ import {
   DOCUMENT_STATUS_META,
   guaranteeTypeLabel,
 } from "@/lib/case-constants";
-import { formatDate, formatFileSize, formatMoney } from "@/lib/format";
+import { formatDate, formatFileSize, formatMoney, formatPercentValue } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { DocumentView } from "@/lib/case-view";
@@ -21,17 +21,28 @@ function DetailItem({
   label,
   value,
   wide = false,
+  numeric = false,
 }: {
   label: string;
   value?: string | null;
   wide?: boolean;
+  /** Money/percentages: fixed-width digits so amounts read as figures and
+   *  line up against each other rather than drifting with the glyph widths. */
+  numeric?: boolean;
 }) {
   return (
     <div className={cn("min-w-0", wide && "@md:col-span-2")}>
       <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
-      <dd className="mt-1 break-words text-sm text-foreground">{value || "—"}</dd>
+      <dd
+        className={cn(
+          "mt-1 break-words text-sm text-foreground",
+          numeric && "font-medium tabular-nums",
+        )}
+      >
+        {value || "—"}
+      </dd>
     </div>
   );
 }
@@ -71,15 +82,18 @@ export function ContractSummary({ contract }: { contract: ContractDetailsInput }
       <DetailItem
         label="Contract Value"
         value={formatMoney(contract.contractValue, contract.currency)}
+        numeric
       />
       <DetailItem
         label="Requested Guarantee"
         value={formatMoney(contract.guaranteeAmount, contract.currency)}
+        numeric
       />
       <DetailItem label="Guarantee Type" value={guaranteeTypeLabel(contract.guaranteeType)} />
       <DetailItem
         label="Guarantee Percentage"
-        value={contract.guaranteePercentage ? `${contract.guaranteePercentage}%` : null}
+        value={formatPercentValue(contract.guaranteePercentage)}
+        numeric
       />
       <DetailItem label="Project Start" value={formatDate(contract.projectStartDate)} />
       <DetailItem label="Project End" value={formatDate(contract.projectEndDate)} />

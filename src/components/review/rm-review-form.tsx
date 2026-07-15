@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Send } from "lucide-react";
 import { toast } from "sonner";
@@ -48,6 +48,18 @@ export function RmReviewForm({
   const [context, setContext] = useState(defaultContext);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
+
+  // The AI draft is generated lazily: opening this desk starts it, and it
+  // lands seconds later via a background refresh that re-renders the server
+  // component with a new `defaultSummary`. Client state survives that
+  // re-render, so without this the draft would never reach the textarea and
+  // the RM would stare at an empty box until they hit reload. Adopt a
+  // late-arriving draft ONLY while the RM has not written anything —
+  // their words always win.
+  const dirty = useRef(false);
+  useEffect(() => {
+    if (!dirty.current && defaultSummary && !summary) setSummary(defaultSummary);
+  }, [defaultSummary, summary]);
 
   async function handleSave() {
     setPending(true);
@@ -100,7 +112,10 @@ export function RmReviewForm({
         <Textarea
           id="rm-summary"
           value={summary}
-          onChange={(e) => setSummary(e.target.value)}
+          onChange={(e) => {
+            dirty.current = true;
+            setSummary(e.target.value);
+          }}
           rows={6}
           maxLength={4000}
           placeholder="The AI-drafted summary appears here once generated — refine it, or write your own."

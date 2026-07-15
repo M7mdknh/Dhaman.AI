@@ -16,10 +16,13 @@ import {
 import { PrintButton } from "@/components/decision/print-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfidenceBadge } from "@/components/analysis/confidence-badge";
 import { getSession } from "@/lib/auth/session";
 import { toCompanyInput, toContractInput } from "@/lib/case-view";
+import { buildValidationReport, needsValidationReport } from "@/lib/finance/confidence";
 import { formatDateTime, formatMoney, formatPercent, formatRatio } from "@/lib/format";
 import { getCaseForReview } from "@/services/officer-case-service";
+import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import {
   buildFinancialIntelligence,
   toIdentityInputs,
@@ -96,6 +99,8 @@ export default async function UnderwritingPackagePage({
     toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
   );
   if (!report) redirect(`/cases/${id}`);
+  const integrity = validateFinancialIntegrity(underwritingCase.financialStatements);
+  const validation = buildValidationReport(integrity);
 
   const latestRatios = report.ratiosByYear.at(-1)!;
   const revenueGrowth = report.growthPeriods.at(-1)?.growth.revenueGrowth ?? null;
@@ -169,12 +174,15 @@ export default async function UnderwritingPackagePage({
               {underwritingCase.contractDetails.contractTitle}
             </p>
           </div>
-          <div className="text-right text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">{underwritingCase.reference}</p>
-            <p>Generated {formatDateTime(decision.createdAt)}</p>
-            <p>
-              {decision.provider} · {decision.model} · prompt {decision.promptVersion}
-            </p>
+          <div className="flex flex-col items-end gap-2 text-right text-xs text-muted-foreground">
+            <ConfidenceBadge confidence={validation.confidence} />
+            <div>
+              <p className="font-medium text-foreground">{underwritingCase.reference}</p>
+              <p>Generated {formatDateTime(decision.createdAt)}</p>
+              <p>
+                {decision.provider} · {decision.model} · prompt {decision.promptVersion}
+              </p>
+            </div>
           </div>
         </div>
         <p className="mt-4 border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
@@ -183,6 +191,14 @@ export default async function UnderwritingPackagePage({
           calculates and never decides. The final decision rests with the Risk
           Officer.
         </p>
+        {/* This package is printed, filed, and re-read months later to justify
+            a decision. Any caveat on the figures must travel WITH it. */}
+        {needsValidationReport(integrity) && (
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">Assessment confidence:</span>{" "}
+            {validation.summary}
+          </p>
+        )}
       </div>
 
       <ReportSection title="Executive Summary" provenance="ai">

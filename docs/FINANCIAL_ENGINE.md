@@ -12,6 +12,7 @@ src/lib/finance/
   decimal.ts      null-safe Decimal arithmetic (null degrades a metric, never the report)
   thresholds.ts   EVERY tunable constant — weights, clamps, flag triggers, band boundaries
 src/services/finance/
+  financial-integrity-validator.ts  the gate — rejects impossible figures BEFORE any engine runs
   financial-ratio-service.ts        ratios + YoY growth
   trend-analysis-service.ts         multi-year metric series + direction
   risk-flag-service.ts              rule-based red/amber findings with evidence
@@ -49,6 +50,179 @@ sprint introduces frozen **Analysis Snapshots** (persisted at memo-generation
 - **No business rules outside `thresholds.ts`.** Adjusting bank policy
   (weights, clamps, band boundaries, flag triggers) means editing that one
   file only.
+- **The engine only ever sees validated statements.** Every figure passes the
+  Financial Integrity Validator before a ratio is computed (see below).
+
+## Financial Integrity Validator
+
+`financial-integrity-validator.ts` — the gate between extraction and the
+engine. Pure, deterministic, no I/O. It answers exactly one question:
+
+> Can these numbers be what the auditor actually printed?
+
+It does **not** ask whether the company is creditworthy. Negative equity, a
+net loss, negative operating cash flow and collapsing revenue are all *valid*
+data describing a distressed applicant — the applicant a bank most needs
+assessed. Judging them belongs to the risk engine; blocking them here would
+hide the very cases underwriting exists to catch. The validator therefore
+rejects only what is **impossible**, never what is merely **bad**.
+
+### Why the gate lives at the engine's door
+
+`buildFinancialIntelligence()` has many callers (the processing pipeline, the
+review desk, the analysis page, the package page, the memo builder, the
+officer queue). A check placed in any one of them would leave the others
+computing on impossible figures, so the validator runs inside the orchestrator
+itself and drops years that fail. It returns `null` when nothing survives —
+the existing no-data contract every caller already handles.
+
+The pipeline (`case-processing-service.ts`) *also* runs it explicitly after
+extraction. Not redundancy: that is the only place that knows about the run,
+so it records the verdict in the audit log (`case.integrity_checked`) and
+fails the case with the arithmetic reason. An officer asking "why did this
+case stop?" gets the numbers, not an empty page.
+
+### Severity
+
+| Severity     | Meaning                                    | Effect                                   |
+| ------------ | ------------------------------------------ | ---------------------------------------- |
+| **BLOCKING** | The figures cannot all be from one printed statement | That **fiscal year** is withheld from the engine |
+| **WARNING**  | Suspicious but possibly real               | Assessment continues, recorded for the reader |
+| **INFO**     | Context the reader should know             | Assessment continues                     |
+
+A BLOCKING finding rejects one **year**, not the case — the same "one bad part
+never fails the whole case" rule the document pipeline follows. A case with one
+unusable year and one good year is still underwritten on the good year. Only
+when *no* year survives does the engine receive nothing and the case stop as
+`PROCESSING_FAILED` at `FINANCIAL_ANALYSIS`.
+
+### Checks
+
+**Blocking**
+
+- `NO_STATEMENTS` — nothing was extracted.
+- `MISSING_CORE_FIGURES` — a year lacking Revenue, Net Income, Total Assets,
+  Total Liabilities, Total Equity or Operating Cash Flow cannot be assessed.
+- `IMPOSSIBLE_NEGATIVE` — revenue, cash, receivables, inventory, current/total
+  assets, current/total liabilities or debt printed negative. (Equity, net
+  income, gross/operating profit and the cash flows are legitimately negative
+  and are *not* checked. COGS, finance costs and capex are printed with either
+  sign by different auditors — the engine takes their magnitude — so their sign
+  carries no information.)
+- `BALANCE_SHEET_DOES_NOT_BALANCE` — `|assets − (liabilities + equity)|` beyond
+  `INTEGRITY.balanceTolerance` of total assets. Audited statements balance; a
+  break means a figure came off the wrong row. When equity exactly equals total
+  assets, the message names the usual cause: the "Total equity and liabilities"
+  grand total read as a component.
+- `SUBTOTAL_EXCEEDS_TOTAL` — current assets > total assets, current liabilities
+  > total liabilities, or cash > current assets.
+- `CURRENCY_INCONSISTENT` — years in different currencies cannot be trended.
+- `DUPLICATE_FISCAL_YEAR` — one period, two contradictory truths. (The DB's
+  `unique(caseId, fiscalYear)` already forbids this; checked anyway because the
+  validator also runs on in-memory rows.)
+
+**Warning**
+
+- `SCALE_INCONSISTENT` — total assets move more than `INTEGRITY.scaleJumpFactor`
+  between consecutive years: one year was read in different units.
+- `NET_INCOME_IMPLAUSIBLE_VS_REVENUE` — |net income| beyond
+  `INTEGRITY.netIncomeToRevenueMax` × revenue.
+- `RATIO_IMPLAUSIBLE` — a current ratio beyond `INTEGRITY.currentRatioMax` is a
+  mis-read denominator, not a liquidity position.
+
+**Info**
+
+- `SINGLE_YEAR_ONLY` — point-in-time view, no trend analysis.
+- `FISCAL_YEAR_GAP` — trends span non-consecutive years.
+- `PARTIAL_YEARS_WITHHELD` — which years were excluded and why.
+
+All bounds live in `thresholds.ts` under `INTEGRITY` and are deliberately
+generous: wrongly rejecting a real applicant is worse than passing an
+odd-looking one.
+
+### Assessment Confidence (presentation)
+
+`lib/finance/confidence.ts` — display only, and deliberately outside the
+validator. It computes nothing and re-checks nothing; it reads the
+`IntegrityReport` the validator already produced and answers the question a
+Risk Officer would otherwise have to ask: *can I trust this assessment?*
+
+| Level | When | Effect on the workspace |
+| --- | --- | --- |
+| 🟢 **High Confidence** | Everything validated | Recommendation shown; no report raised |
+| 🟡 **Medium Confidence** | A check warned, or a year was withheld | Recommendation shown + Validation Report |
+| 🔴 **Low Confidence** | Nothing survived validation | Verdict replaced by "Assessment could not be completed"; **no memo is drafted and none can be requested** |
+
+INFO findings (single year, year gap) are context, not doubt — they never
+lower confidence, though they are still listed.
+
+The **Validation Report** (`components/analysis/validation-report.tsx`) reads
+like a memo section — Summary / Confidence / Statements Affected / Issues
+Found / Recommended Action — because that is how an officer will later have to
+justify the decision. Each finding's plain heading comes from a code→copy map;
+the validator's own message supplies the specifics (which figures, which
+amounts). An unmapped code falls back to a neutral heading rather than leaking
+the code, and a test asserts every code the validator can emit has a heading.
+
+**Two audiences, two vocabularies.** A Risk Officer is a financial
+professional: "assets do not equal liabilities + equity" is their language and
+the numbers belong in front of them. An applicant is not being audited by this
+screen — `contractorNotice()` is the only validation copy they see, it names no
+figure, and it says plainly that the DOCUMENT could not be verified, never that
+their company is suspect.
+
+Where confidence appears: the officer review desk, the contractor's Financial
+Intelligence page, and the printed **Underwriting Package** header (a package
+is filed and re-read months later — a caveat on the figures has to travel with
+it).
+
+### Number presentation
+
+Every figure on screen goes through `lib/format.ts`. A bare `6000000` must
+never reach a user.
+
+| Helper | Output | Use |
+| --- | --- | --- |
+| `formatMoney` | `SAR 6,000,000.00` | Detail views, statement figures |
+| `formatMoneyWhole` | `SAR 6,000,000` | Tables, queues, findings — cents are noise |
+| `formatCompactMoney` | `SAR 120M` | Chart axes |
+| `formatRatio` | `2.33` | Ratios (2 dp, `—` when incomputable) |
+| `formatPercent` | `11.7%` | A computed **fraction** (0.1167) |
+| `formatPercentValue` | `10%` | A stored **percentage** (`"10"`, `"10.00"`) |
+
+The last two are separate on purpose: passing a stored `10` to `formatPercent`
+would report it as `1000.0%`, so the names make the mistake visible. Negatives
+use accounting parentheses — `(SAR 8,000,000)`, never `-SAR 8,000,000` — via
+`currencySign: "accounting"`, and `Intl` joins the code to the amount with a
+non-breaking space so "SAR" can never wrap away from its number. Money is
+rendered `tabular-nums` so digits align column-to-column.
+
+**Money inputs** (`components/forms/money-field.tsx` + `lib/money-input.ts`)
+group digits as the user types while the form keeps the raw decimal string:
+
+```
+what the user sees   "6,000,000"      + a SAR stamp inside the field
+what the form holds  "6000000"        → zod + Prisma.Decimal, unchanged
+```
+
+Grouping shifts characters, which is what bounces a naive cursor to the end of
+the field on every keystroke. The caret is therefore measured in *significant
+characters* (digits and the point — separators are ignored), which regrouping
+cannot move, and restored once in a layout effect before paint. Sanitizing
+deliberately does NOT truncate extra decimals: the decimal-places rule is
+validation's job, and swallowing "1.234" would hide the error instead of
+showing it.
+
+### Keeping historical cases honest
+
+A stricter validator can start rejecting data an older pipeline accepted,
+leaving a case with an ANALYSIS_READY badge over an empty analysis.
+`scripts/reconcile-case-states.mts` finds any case whose status promises an
+assessment the engine will not produce (and any run stuck RUNNING after a
+crash) and reprocesses it through the real `retryProcessing` +
+`runCaseProcessing` path — it never writes a status itself, so the outcome and
+audit trail are whatever the pipeline decides. Read-only by default; `--apply`
+to act. Decided and issued cases are never touched.
 
 ## Canonical figures & derivations
 
@@ -208,3 +382,10 @@ breakdowns — the breakdown IS the explanation.
 capacity, and risk engines, sharing `tests/fixtures/company-profiles.ts`
 (the same deterministic profiles behind the sample PDFs and demo seeding).
 Run with `npm test`.
+
+`tests/finance/integrity-validator.test.ts` covers the gate from both
+directions, because its two failure modes pull against each other: letting
+impossible figures through (a fabricated assessment) and rejecting a
+distressed-but-real applicant (hiding the case underwriting exists to catch).
+The `WEAK_PROFILE` fixture — a real net loss and negative operating cash flow
+— must always pass.

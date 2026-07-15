@@ -95,6 +95,25 @@ export function formatPercent(value: number | null): string {
   return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
+const percentValueFormatter = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
+
+/**
+ * A percentage that is ALREADY a percentage — what the applicant typed, or a
+ * stored Decimal: "10" → "10%", "10.00" → "10%", "12.5" → "12.5%".
+ *
+ * Distinct from `formatPercent`, which scales a computed FRACTION (0.1167 →
+ * "11.7%"). Passing a stored percentage to that one would report 10% as
+ * "1000.0%" — hence the separate, explicitly named helper.
+ */
+export function formatPercentValue(
+  value: string | number | { toString(): string } | null | undefined,
+): string | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value.toString());
+  if (!Number.isFinite(parsed)) return null;
+  return `${percentValueFormatter.format(parsed)}%`;
+}
+
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;

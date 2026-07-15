@@ -72,43 +72,82 @@ interface MappingRule {
   pattern: RegExp;
   /** Arabic keyword groups (matched against the diacritic-normalized label). */
   ar?: string[][];
+  /**
+   * Arabic disqualifiers: if any token appears, the rule declines the label.
+   * Arabic matching is unanchored substring containment, so a combined caption
+   * ("إجمالي المطلوبات وحقوق الملكية" — total liabilities AND equity) otherwise
+   * satisfies the liabilities group and steals the balance-sheet grand total.
+   */
+  arNot?: string[];
 }
 
 const PL: StatementType[] = ["PROFIT_OR_LOSS"];
 const BS: StatementType[] = ["FINANCIAL_POSITION"];
 const CF: StatementType[] = ["CASH_FLOWS"];
 
+/**
+ * One bottom-line outcome word. IFRS prints the same figure as "profit",
+ * "income", "loss" or "earnings", and the parentheses in "(loss)" are
+ * typography — not a different number.
+ */
+const PL_WORD = String.raw`\(?\s*(?:profit|income|loss|earnings)\s*\)?`;
+
+/**
+ * An outcome word or a slash form covering both outcomes: "Profit / (loss)",
+ * "Net (loss) / profit". Supporting loss wording is not optional — a bank most
+ * needs to catch the applicants whose bottom line IS a loss, and dropping the
+ * figure there would silently hand the engine an incomplete year.
+ */
+const PL_COMBO = `${PL_WORD}(?:\\s*/\\s*${PL_WORD})?`;
+
+/**
+ * A bare outcome word is far too broad to stand alone ("Income tax expense",
+ * "Loss on disposal of equipment" are NOT the bottom line), so an unprefixed
+ * caption must carry a qualifier that only the bottom line uses.
+ */
+const PL_QUALIFIER = String.raw`(?:for the (?:year|period)|after (?:zakat|tax)|attributable to)`;
+
 /** Specific rules precede generic: "total current assets" before "total assets". */
 const RULES: MappingRule[] = [
   // ---- Statement of Profit or Loss
-  { key: "cogs", statements: PL, pattern: /^cost of (revenue|sales|goods sold|contract)/, ar: [["تكلفه", "الايرادات"], ["تكلفه", "المبيعات"]] },
-  { key: "grossProfit", statements: PL, pattern: /^gross (profit|margin)\b/, ar: [["اجمالي", "الربح"], ["مجمل", "الربح"]] },
-  { key: "operatingIncome", statements: PL, pattern: /^(operating (profit|income)|profit from operations|results from operating activities)/, ar: [["الربح", "التشغيلي"], ["الربح", "العمليات"]] },
+  { key: "cogs", statements: PL, pattern: /^(cost of (revenues?|sales|goods sold|contract)|direct costs?\b)/, ar: [["تكلفه", "الايرادات"], ["تكلفه", "المبيعات"]] },
+  { key: "grossProfit", statements: PL, pattern: new RegExp(`^gross\\s+(?:${PL_COMBO}|margin)\\b`), ar: [["اجمالي", "الربح"], ["مجمل", "الربح"], ["مجمل", "الخساره"]] },
+  { key: "operatingIncome", statements: PL, pattern: new RegExp(`^(?:operating\\s+${PL_COMBO}|${PL_COMBO}\\s+from operations|results from operating activities)`), ar: [["الربح", "التشغيلي"], ["الربح", "العمليات"], ["الخساره", "التشغيليه"]] },
   { key: "ebitda", statements: PL, pattern: /^ebitda\b/ },
   { key: "interestExpense", statements: PL, pattern: /^(finance (costs?|expenses?)|funding costs?|interest expense|borrowing costs?)/, ar: [["تكاليف", "التمويل"], ["تكاليف", "تمويل"]] },
-  { key: "netIncome", statements: PL, pattern: /^(net (profit|income)|profit (for the (year|period))|profit attributable to|profit after (zakat|tax))/, ar: [["صافي", "الربح"], ["صافي", "الدخل"], ["ربح", "السنه"], ["ربح", "الفتره"]] },
-  { key: "revenue", statements: PL, pattern: /^(total )?(revenue|sales|turnover|contract revenue)\b/, ar: [["الايرادات"], ["ايرادات"], ["اجمالي", "الايرادات"]] },
+  // "Net <outcome>" is self-qualifying; a bare outcome word needs a qualifier
+  // so "Income tax expense" / "Loss on disposal" can never pose as the bottom line.
+  { key: "netIncome", statements: PL, pattern: new RegExp(`^(?:net\\s+${PL_COMBO}|${PL_COMBO}\\s+${PL_QUALIFIER})`), ar: [["صافي", "الربح"], ["صافي", "الدخل"], ["صافي", "الخساره"], ["ربح", "السنه"], ["ربح", "الفتره"], ["خساره", "السنه"], ["خساره", "الفتره"]] },
+  // "sales" alone is a revenue caption, but "Sales and marketing expenses" is a cost.
+  { key: "revenue", statements: PL, pattern: /^(?:total\s+|net\s+|operating\s+)?(?:revenues?|turnover|contract revenues?|sales(?!\s+and\s+(?:marketing|distribution))(?!\s+expenses?))\b/, ar: [["الايرادات"], ["ايرادات"], ["اجمالي", "الايرادات"], ["المبيعات"]] },
 
   // ---- Statement of Financial Position - assets
-  { key: "cash", statements: BS, pattern: /^(cash and (cash )?equivalents?|cash and bank balances|bank balances and cash|cash at banks?)/, ar: [["النقد", "حكمه"], ["النقد", "يعادل"], ["النقديه", "النقديه"], ["نقد", "بنك"]] },
-  { key: "receivables", statements: BS, pattern: /^(trade (and other )?receivables|accounts? receivables?|contract receivables|consumer receivables|financing receivables)/, ar: [["ذمم", "مدينه"], ["المدينون"]] },
+  { key: "cash", statements: BS, pattern: /^(cash and (cash )?equivalents?|cash and bank balances|bank balances and cash|cash at banks?|cash and short.?term deposits?|cash (on|in) hand and at banks?)/, ar: [["النقد", "حكمه"], ["النقد", "يعادل"], ["النقديه", "النقديه"], ["نقد", "بنك"]] },
+  { key: "receivables", statements: BS, pattern: /^(trade (and other )?receivables|accounts? receivables?|contract receivables|consumer receivables|financing receivables|trade debtors?)/, ar: [["ذمم", "مدينه"], ["المدينون"]] },
   { key: "inventory", statements: BS, pattern: /^(inventor(y|ies)|stock\b)/, ar: [["المخزون"], ["البضاعه"]] },
   { key: "currentAssets", statements: BS, pattern: /^total current assets/, ar: [["اجمالي", "الموجودات", "المتداوله"], ["مجموع", "الموجودات", "المتداوله"], ["اجمالي", "الاصول", "المتداوله"]] },
   { key: "totalAssets", statements: BS, pattern: /^total assets/, ar: [["اجمالي", "الموجودات"], ["مجموع", "الموجودات"], ["اجمالي", "الاصول"], ["مجموع", "الاصول"]] },
 
   // ---- Statement of Financial Position - liabilities & equity
   { key: "currentLiabilities", statements: BS, pattern: /^total current liabilit/, ar: [["اجمالي", "المطلوبات", "المتداوله"], ["مجموع", "المطلوبات", "المتداوله"], ["اجمالي", "الخصوم", "المتداوله"]] },
-  { key: "totalLiabilities", statements: BS, pattern: /^total liabilit/, ar: [["اجمالي", "المطلوبات"], ["مجموع", "المطلوبات"], ["اجمالي", "الخصوم"], ["مجموع", "الخصوم"]] },
+  // "Total liabilities and equity" is the balance-sheet GRAND TOTAL (it equals
+  // total assets), not liabilities — claiming it would inflate every leverage
+  // ratio. Decline any caption naming both sides of the identity.
+  { key: "totalLiabilities", statements: BS, pattern: /^total liabilit(?!.*\bequity)/, ar: [["اجمالي", "المطلوبات"], ["مجموع", "المطلوبات"], ["اجمالي", "الخصوم"], ["مجموع", "الخصوم"]], arNot: ["حقوق"] },
   { key: "shortTermDebt", statements: BS, pattern: /^(short.?term (borrowings|debt|loans)|current portion of (long.?term|term) (debt|loans|borrowings)|bank overdrafts?)/, ar: [["قروض", "قصيره"], ["الجزء", "المتداول", "قروض"]] },
   { key: "longTermDebt", statements: BS, pattern: /^(long.?term (borrowings|debt|loans)|term loans?\b|non.?current borrowings)/, ar: [["قروض", "طويله"], ["قروض", "اجل"]] },
   { key: "totalDebt", statements: BS, pattern: /^total (debt|borrowings)/, ar: [["اجمالي", "القروض"], ["اجمالي", "الديون"]] },
-  { key: "totalEquity", statements: BS, pattern: /^total ((share|stock)holders?['’]?s? )?equity/, ar: [["اجمالي", "حقوق", "الملكيه"], ["مجموع", "حقوق", "الملكيه"], ["اجمالي", "حقوق", "المساهمين"], ["مجموع", "حقوق", "المساهمين"]] },
+  // Mirror of the guard above: "Total equity and liabilities" is the grand total.
+  { key: "totalEquity", statements: BS, pattern: /^total ((share|stock)holders?['’]?s? )?equity(?!.*\bliabilit)/, ar: [["اجمالي", "حقوق", "الملكيه"], ["مجموع", "حقوق", "الملكيه"], ["اجمالي", "حقوق", "المساهمين"], ["مجموع", "حقوق", "المساهمين"]], arNot: ["المطلوبات", "الخصوم"] },
   { key: "annualDebtService", statements: BS, pattern: /^annual debt service/ },
 
   // ---- Statement of Cash Flows
-  { key: "operatingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) operating activit/, ar: [["صافي", "النقد", "التشغيليه"], ["النقد", "الانشطه", "التشغيليه"]] },
-  { key: "investingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) investing activit/, ar: [["صافي", "النقد", "الاستثماريه"], ["النقد", "الانشطه", "الاستثماريه"]] },
-  { key: "financingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) financing activit/, ar: [["صافي", "النقد", "التمويليه"], ["النقد", "الانشطه", "التمويليه"]] },
+  // "net" is optional and "provided by" is as common as "generated from" —
+  // a bare "Cash flows from operating activities" section heading carries no
+  // amounts, so it never becomes a line item and cannot shadow the subtotal.
+  { key: "operatingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) operating activit/, ar: [["صافي", "النقد", "التشغيليه"], ["النقد", "الانشطه", "التشغيليه"]] },
+  { key: "investingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) investing activit/, ar: [["صافي", "النقد", "الاستثماريه"], ["النقد", "الانشطه", "الاستثماريه"]] },
+  { key: "financingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) financing activit/, ar: [["صافي", "النقد", "التمويليه"], ["النقد", "الانشطه", "التمويليه"]] },
   { key: "capex", statements: CF, pattern: /^(purchases? of property(,? plant)? and equipment|additions? to property,? plant|acquisition of property,? plant|capital expenditures?)/, ar: [["شراء", "ممتلكات"], ["اضافات", "ممتلكات"]] },
 ];
 
@@ -123,7 +162,9 @@ export function normalizeLabel(statement: StatementType, label: string): Canonic
   for (const rule of RULES) {
     if (!rule.statements.includes(statement)) continue;
     if (rule.pattern.test(en)) return rule.key;
-    if (rule.ar && matchesArabicGroups(ar, rule.ar)) return rule.key;
+    if (!rule.ar || !matchesArabicGroups(ar, rule.ar)) continue;
+    if (rule.arNot?.some((tok) => ar.includes(normalizeArabic(tok)))) continue;
+    return rule.key;
   }
   return null;
 }
