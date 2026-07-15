@@ -17,6 +17,7 @@ import {
 } from "@/components/review/decision-history";
 import { DocumentsPanel } from "@/components/review/documents-panel";
 import { IssueGuaranteeButton } from "@/components/review/issue-guarantee-button";
+import { InsightChat } from "@/components/insight/insight-chat";
 import { NotesPanel, type NoteView } from "@/components/review/notes-panel";
 import { PriorityBadge } from "@/components/review/priority-badge";
 import {
@@ -45,9 +46,56 @@ import {
   toIdentityInputs,
 } from "@/services/finance/financial-intelligence-service";
 
+import type { FinancialIntelligenceReport } from "@/lib/finance/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Case Review" };
+
+/**
+ * Computes data-driven suggestion bubbles for Insight Chat from the
+ * deterministic engine output. Bubbles reflect what's actually in this
+ * specific case — high flags, missing data, and the risk band — rather
+ * than a generic template.
+ */
+function buildInsightBubbles(report: FinancialIntelligenceReport): string[] {
+  const bubbles: string[] = [];
+  const highFlags = report.flags.filter((f) => f.severity === "HIGH");
+  const hasMissing = report.risk.missingInputs.length > 0;
+  const band = report.risk.band;
+
+  for (const flag of highFlags.slice(0, 2)) {
+    const t = flag.type;
+    if (t.includes("DEBT")) {
+      bubbles.push("What's driving the debt spike?");
+    } else if (t.includes("CASH_FLOW") || t.includes("NEGATIVE_OPERATING") || t.includes("OCF")) {
+      bubbles.push("Why is operating cash flow negative?");
+    } else if (t.includes("REVENUE_SPIKE")) {
+      bubbles.push("Is the revenue spike sustainable?");
+    } else if (t.includes("REVENUE_DECLINE")) {
+      bubbles.push("What is causing the revenue decline?");
+    } else if (t.includes("EQUITY")) {
+      bubbles.push("What does the equity position mean?");
+    } else if (t.includes("COVERAGE") || t.includes("INTEREST")) {
+      bubbles.push("Explain the interest coverage concern");
+    } else {
+      bubbles.push(`Explain the ${t.toLowerCase().replace(/_/g, " ")} flag`);
+    }
+  }
+
+  if (band === "MODERATE" && !bubbles.some((b) => b.includes("condition"))) {
+    bubbles.push("What conditions should I attach?");
+  } else if ((band === "HIGH" || band === "CRITICAL") && !bubbles.some((b) => b.includes("risk"))) {
+    bubbles.push("What are the main risk concerns?");
+  }
+
+  if (hasMissing && bubbles.length < 4) {
+    bubbles.push("What financial data is missing?");
+  }
+
+  bubbles.push("Summarize this case for my decision note");
+
+  return [...new Set(bubbles)].slice(0, 4);
+}
 
 /** Every lifecycle event the bank cares about; future events append as they happen. */
 function buildTimeline(reviewCase: ReviewCase): TimelineEntry[] {
@@ -540,6 +588,13 @@ export default async function ReviewCasePage({
           </Card>
 
           <NotesPanel caseId={id} notes={notes} />
+
+          {report && (
+            <InsightChat
+              caseId={id}
+              initialBubbles={buildInsightBubbles(report)}
+            />
+          )}
         </div>
       </div>
     </div>
