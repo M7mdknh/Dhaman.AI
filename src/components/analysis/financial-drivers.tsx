@@ -12,6 +12,8 @@ interface Driver {
   score: number | null;
   metricLabel: string;
   metricValue: string;
+  /** Replaces the "No data" badge when the statement simply doesn't publish this. */
+  noDataLabel?: string;
 }
 
 /** Sub-score for a driver, preferring capacity, falling back to risk. */
@@ -34,6 +36,11 @@ function buildDrivers(report: FinancialIntelligenceReport): Driver[] {
   const capacity = report.capacity?.components;
   const risk = report.risk.components;
   const latest = report.ratiosByYear.at(-1)!;
+  // Order-of-liquidity statements publish no current/non-current split — the
+  // current-split metrics are "not disclosed", never "missing data".
+  const undisclosed = report.disclosures.orderOfLiquidity
+    ? "Not disclosed"
+    : undefined;
 
   return [
     {
@@ -41,6 +48,7 @@ function buildDrivers(report: FinancialIntelligenceReport): Driver[] {
       score: subScore("liquidity", capacity, risk),
       metricLabel: "Current ratio",
       metricValue: formatRatio(latest.ratios.currentRatio),
+      noDataLabel: undisclosed,
     },
     {
       label: "Leverage",
@@ -59,6 +67,7 @@ function buildDrivers(report: FinancialIntelligenceReport): Driver[] {
       score: subScore("cashFlow", capacity, risk),
       metricLabel: "OCF ratio",
       metricValue: formatRatio(latest.ratios.operatingCashFlowRatio),
+      noDataLabel: undisclosed,
     },
     {
       label: "Working Capital",
@@ -68,12 +77,16 @@ function buildDrivers(report: FinancialIntelligenceReport): Driver[] {
         latest.workingCapital === null
           ? "—"
           : formatMoneyWhole(latest.workingCapital, report.currency),
+      noDataLabel: undisclosed,
     },
   ];
 }
 
 function DriverCard({ driver }: { driver: Driver }) {
-  const condition = driverConditionFor(driver.score);
+  const condition =
+    driver.score === null && driver.noDataLabel
+      ? { label: driver.noDataLabel, tone: "neutral" as const }
+      : driverConditionFor(driver.score);
   const pct = driver.score === null ? 0 : Math.round(driver.score * 100);
 
   return (
@@ -138,6 +151,14 @@ export function FinancialDrivers({ report }: { report: FinancialIntelligenceRepo
           <DriverCard key={driver.label} driver={driver} />
         ))}
       </div>
+      {report.disclosures.orderOfLiquidity && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          This balance sheet is presented in order of liquidity (standard for
+          banks and finance companies), so no current/non-current split is
+          published — liquidity, OCF-ratio, and working-capital metrics are
+          not disclosed by the statements rather than missing.
+        </p>
+      )}
     </section>
   );
 }

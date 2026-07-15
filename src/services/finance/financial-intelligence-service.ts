@@ -121,10 +121,19 @@ export function buildFinancialIntelligence(
     ? detectCompanyMismatchFlags(identity.caseCompanyName, identity.statementIdentities)
     : [];
 
+  // A parsed balance sheet with no current/non-current split anywhere is an
+  // order-of-liquidity presentation (banks / finance companies) — the current
+  // ratios are not published by the statement, which the UI says verbatim.
+  const balanceSheetParsed = years.some((y) => y.totalAssets !== null);
+  const currentSplitPrinted = years.some(
+    (y) => y.currentAssets !== null || y.currentLiabilities !== null,
+  );
+
   return {
     years: years.map((y) => y.fiscalYear),
     latestYear: latest.fiscalYear,
     currency: statements[0].currency,
+    disclosures: { orderOfLiquidity: balanceSheetParsed && !currentSplitPrinted },
     ratiosByYear: computeRatios(years),
     growthPeriods: computeGrowth(years),
     trends: computeTrends(years),

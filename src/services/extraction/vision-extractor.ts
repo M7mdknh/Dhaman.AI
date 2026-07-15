@@ -42,20 +42,21 @@ const SYSTEM_PROMPT =
   "Statement of Cash Flows), which may be in Arabic and/or English. You transcribe figures EXACTLY as " +
   "printed and never invent, estimate, or derive values that are not shown. Return ONLY strict JSON.";
 
-// MINIMUM underwriting set only — no full statement reconstruction. Fewer
-// requested fields = fewer output tokens = lower latency and a smaller
-// failure surface on the Stage-1 critical path. The deterministic engine
-// treats anything absent as "not printed" and renormalizes.
-const CORE_FIELDS =
-  "revenue, netIncome, cash, currentAssets, currentLiabilities, totalAssets, totalLiabilities, " +
-  "totalEquity, operatingCashFlow, totalDebt";
+// The FULL canonical figure set. The model transcribes only what is printed
+// (nulls otherwise), so requesting everything costs a few hundred output
+// tokens but feeds every downstream ratio — gross margin, interest coverage,
+// receivable turnover, free cash flow — instead of only the headline scores.
+// The deterministic engine treats anything absent as "not printed".
+const CORE_FIELDS = CANONICAL_KEYS.join(", ");
 
 const USER_PROMPT =
   `From the attached statement page images, extract ONLY the figures below for EACH fiscal year column shown ` +
   `(usually the reporting year and one comparative).\n` +
   `- Report ABSOLUTE amounts in the reporting currency: if figures are presented in thousands/millions, multiply them out to full units.\n` +
   `- Use NEGATIVE numbers for losses, net cash outflows, and any figure printed in parentheses.\n` +
-  `- If a value is not printed on these pages, use null. Do not compute, derive, or estimate anything.\n\n` +
+  `- If a value is not printed on these pages, use null. Do not compute, derive, or estimate anything.\n` +
+  `- When a cash-flow caption repeats (an intermediate subtotal and a statement total), report the FINAL printed total.\n` +
+  `- Balance sheets presented in order of liquidity print no current/non-current split: leave currentAssets and currentLiabilities null.\n\n` +
   `Fields: ${CORE_FIELDS}\n\n` +
   `Return ONLY strict JSON of exactly this shape — no explanations, no markdown:\n` +
   `{"currency": "SAR" | null, "years": [{"fiscalYear": 2025, "revenue": 120000000, "netIncome": 18000000, "...": null}]}`;
@@ -180,7 +181,8 @@ export async function extractViaVision(
         system: SYSTEM_PROMPT,
         user: USER_PROMPT,
         images,
-        maxOutputTokens: 1_500,
+        // ~23 figures × up to 4 years of numeric JSON — 1,500 clipped mid-object.
+        maxOutputTokens: 3_000,
         temperature: 0,
         // Generous by design: aborting a vision call wastes a BILLED request
         // and drops us into the far slower OCR fallback. See env.ts.

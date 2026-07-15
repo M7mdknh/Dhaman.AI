@@ -79,13 +79,19 @@ function format(display: Display, value: number | null): string {
   return display === "percent" ? formatPercent(value) : formatRatio(value);
 }
 
+const ORDER_OF_LIQUIDITY_NOTE =
+  "Not disclosed — this balance sheet is presented in order of liquidity, without a current/non-current split.";
+
 /** Per-category ratio tables, one column per fiscal year (ascending). */
 export function RatioTables({
   ratiosByYear,
   currency,
+  orderOfLiquidity = false,
 }: {
   ratiosByYear: YearRatios[];
   currency: string;
+  /** True when the balance sheet publishes no current/non-current split. */
+  orderOfLiquidity?: boolean;
 }) {
   const years = ratiosByYear.map((y) => y.fiscalYear);
 
@@ -122,6 +128,9 @@ export function RatioTables({
                 ))}
               </TableBody>
             </Table>
+            {orderOfLiquidity && category.title === "Liquidity" && (
+              <p className="mt-2 text-xs text-muted-foreground">{ORDER_OF_LIQUIDITY_NOTE}</p>
+            )}
           </CardContent>
         </Card>
       ))}
@@ -161,6 +170,9 @@ export function RatioTables({
               </TableRow>
             </TableBody>
           </Table>
+          {orderOfLiquidity && (
+            <p className="mt-2 text-xs text-muted-foreground">{ORDER_OF_LIQUIDITY_NOTE}</p>
+          )}
         </CardContent>
       </Card>
     </div>

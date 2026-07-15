@@ -166,11 +166,23 @@ export interface RiskAssessment {
   missingInputs: string[];
 }
 
+/** What the parsed statements disclose — drives honest "not disclosed" UI. */
+export interface DisclosureNotes {
+  /**
+   * True when a balance sheet was parsed but carries NO current/non-current
+   * split — it is presented in order of liquidity, the standard format for
+   * banks and finance companies. Liquidity, OCF-ratio, and working-capital
+   * metrics are then "not disclosed by this statement", not "missing data".
+   */
+  orderOfLiquidity: boolean;
+}
+
 export interface FinancialIntelligenceReport {
   /** Fiscal years with data, ascending. */
   years: number[];
   latestYear: number;
   currency: string;
+  disclosures: DisclosureNotes;
   ratiosByYear: YearRatios[]; // ascending
   growthPeriods: GrowthPeriod[]; // ascending pairs
   trends: MetricTrend[];

@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  YAxis,
 } from "recharts";
 
 import { formatCompactMoney, formatMoney, formatPercent } from "@/lib/format";
@@ -74,6 +75,17 @@ export function TrendChart({ title, unit, currency, points, latestChange }: Tren
                 tickLine={false}
                 tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               />
+              {/* The scale must always include the zero baseline: with an
+                  implicit domain, an all-negative series (e.g. two loss years)
+                  spans [min, max] instead — the smaller bar collapses to zero
+                  height and sign is no longer encoded by position. */}
+              <YAxis
+                hide
+                domain={[
+                  (dataMin: number) => Math.min(0, dataMin),
+                  (dataMax: number) => Math.max(0, dataMax),
+                ]}
+              />
               {hasNegative && <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1} />}
               <Tooltip
                 cursor={{ fill: "var(--muted)", opacity: 0.5 }}
@@ -94,20 +106,22 @@ export function TrendChart({ title, unit, currency, points, latestChange }: Tren
                 maxBarSize={48}
                 animationDuration={600}
                 animationEasing="ease-out"
-                // Sign-aware label placement: above positive bars, below the
-                // bottom edge of negative bars (never over the axis ticks).
+                // Every label sits just ABOVE the bar's top end — for negative
+                // bars that is the zero baseline. Labels below or inside a bar
+                // clip against the fixed plot height / narrow bar width; above
+                // the top end there is always reserved margin and full width.
                 label={(props) => {
                   const { x, y, width, height, value, index } = props as {
                     x: number; y: number; width: number; height: number;
                     value: number | null; index: number;
                   };
                   if (typeof value !== "number") return <g key={index} />;
-                  const below = value < 0;
+                  const top = Math.min(y, y + height);
                   return (
                     <text
                       key={index}
                       x={x + width / 2}
-                      y={below ? y + height + 12 : y - 6}
+                      y={top - 6}
                       textAnchor="middle"
                       fontSize={11}
                       fill="var(--muted-foreground)"

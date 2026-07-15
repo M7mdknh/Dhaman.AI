@@ -14,6 +14,7 @@ function report(overrides: {
     years: [2024, 2025],
     latestYear: 2025,
     currency: "SAR",
+    disclosures: { orderOfLiquidity: false },
     ratiosByYear: [],
     growthPeriods: [],
     trends: [],

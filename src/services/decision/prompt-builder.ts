@@ -63,6 +63,10 @@ export interface DecisionInput {
     currency: string;
     fiscalYears: number[];
     latestFiscalYear: number;
+    /** Presentation caveats from the deterministic engine (e.g. an
+     * order-of-liquidity balance sheet publishes no current ratios) so the
+     * memo explains the statement format instead of reporting "missing data". */
+    statementPresentationNotes: string[];
   };
   company: {
     name: string;
@@ -168,6 +172,14 @@ export function buildDecisionInput(
       currency: report.currency,
       fiscalYears: report.years,
       latestFiscalYear: report.latestYear,
+      statementPresentationNotes: report.disclosures.orderOfLiquidity
+        ? [
+            "The balance sheet is presented in order of liquidity (standard for banks and finance companies): " +
+              "no current/non-current split is published, so current ratio, quick ratio, OCF ratio, and working " +
+              "capital are not disclosed by this statement format. Describe them as not applicable to this " +
+              "presentation — do not list them as missing records or request them from the applicant.",
+          ]
+        : [],
     },
     // Registration data only — personal contact fields are deliberately excluded.
     company: {

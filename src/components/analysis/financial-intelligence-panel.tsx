@@ -19,6 +19,20 @@ const CHARTED_TRENDS = [
 ];
 
 /**
+ * The six charted metrics. Working capital is undefined for statements with
+ * no current/non-current split (order-of-liquidity presentations) — an empty
+ * chart teaches the reader nothing, so Total Equity (always on the balance
+ * sheet) takes its slot instead of a blank card.
+ */
+function chartedTrendKeys(report: FinancialIntelligenceReport): string[] {
+  const workingCapital = report.trends.find((t) => t.key === "workingCapital");
+  const hasWorkingCapital = workingCapital?.series.some((p) => p.value !== null) ?? false;
+  return CHARTED_TRENDS.map((key) =>
+    key === "workingCapital" && !hasWorkingCapital ? "totalEquity" : key,
+  );
+}
+
+/**
  * The full deterministic Financial Intelligence dashboard body. Reads
  * top-down like an underwriting memo: the verdict (can we issue?), the three
  * executive KPIs, the five financial drivers, then the supporting evidence —
@@ -62,7 +76,7 @@ export function FinancialIntelligencePanel({
           </p>
         )}
         <div className="grid gap-4 @lg:grid-cols-2 @4xl:grid-cols-3">
-          {CHARTED_TRENDS.map((key) => {
+          {chartedTrendKeys(report).map((key) => {
             const trend = report.trends.find((t) => t.key === key);
             if (!trend) return null;
             return (
@@ -84,7 +98,11 @@ export function FinancialIntelligencePanel({
 
       <section aria-label="Financial ratios" className="scroll-reveal space-y-6">
         <h2 className="text-sm font-semibold text-foreground">Financial Ratios</h2>
-        <RatioTables ratiosByYear={report.ratiosByYear} currency={report.currency} />
+        <RatioTables
+          ratiosByYear={report.ratiosByYear}
+          currency={report.currency}
+          orderOfLiquidity={report.disclosures.orderOfLiquidity}
+        />
         <GrowthTable periods={report.growthPeriods} />
       </section>
     </div>

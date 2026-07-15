@@ -35,6 +35,52 @@ below. All work is committed on `main`.
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
 
+### Post-MVP — Real-statement extraction + disclosure-aware analysis (2026-07-15)
+
+Root-caused and fixed "the analysis shows No data even though the figure is
+printed in the statement" using a real audited big-four FY2025 report (Tamara
+Finance, PwC):
+
+- **Vertical (cell-per-line) PDF layouts now extract deterministically.** Many
+  real audited PDFs emit every table cell as its own text line (label / note /
+  one amount per year), which the per-line parser could not pair — the text
+  pass found 0 figures and production silently fell back to GPT-Vision, which
+  only requested 10 headline fields. The line extractor now reflows vertical
+  rows (`reflowVerticalRows`), reads fiscal years from cell-per-line headers
+  (`headerRegionYears`), keeps printed nil cells ("-") aligned to their year
+  column, and drops compound note references ("13, 15"). Verified on the real
+  PDF: **14 exact figures per fiscal year from the trusted text layer**, case
+  ANALYSIS_READY in ~4.5s, no AI involved.
+- **Vocabulary:** "Total revenue", "Funding cost" (→ interest expense),
+  "Consumer/financing receivables", "Purchase of property and equipment"
+  (no "plant"), singular "investing activity", possessive "Total
+  shareholder's equity". On statements of cash flows a repeated caption now
+  resolves to the LAST printed subtotal (the statement total), fixing OCF on
+  statements that print an intermediate "Net cash used in operating
+  activities" before EOSB/finance/tax payments.
+- **Vision fallback upgraded** from 10 headline fields to the full canonical
+  set (gross profit, interest expense, receivables, capex, all three cash-flow
+  totals…), with prompt guidance for repeated cash-flow subtotals and
+  order-of-liquidity balance sheets.
+- **Disclosure-aware analysis (`report.disclosures.orderOfLiquidity`).** A
+  balance sheet presented in order of liquidity (banks/finance companies)
+  publishes no current/non-current split — liquidity, OCF-ratio, and
+  working-capital metrics are **not disclosed**, not missing. The drivers
+  cards badge "Not disclosed" with an explanatory footnote, the Liquidity and
+  Working Capital ratio tables carry the same caption, and the AI memo prompt
+  is told not to request a current ratio from the applicant.
+- **Trend chart fixes:** the y-domain now always includes the zero baseline
+  (an all-negative series — e.g. two loss-making OCF years — previously
+  collapsed the smaller bar to zero height); value labels always sit above the
+  bar's top end (they used to clip inside/below negative bars); when working
+  capital is undisclosed, the Total Equity trend takes its chart slot instead
+  of an empty card.
+- Regression tests added for vertical layouts (fiscal-year header, nil-cell
+  alignment, last-subtotal-wins); full suite 140/140, lint and build clean.
+- **Note for the demo:** completed extractions are cached per document —
+  existing cases keep their old (vision-era) figures. Upload the statement to
+  a NEW case to see the full deterministic extraction.
+
 ### Post-MVP — Demo Day UI/UX polish (2026-07-15)
 
 Final pre-demo polish pass — no feature, workflow, or engine changes.

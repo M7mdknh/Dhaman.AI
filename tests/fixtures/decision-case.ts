@@ -72,6 +72,7 @@ export function strongReport(): FinancialIntelligenceReport {
     years: years.map((y) => y.fiscalYear),
     latestYear: latest.fiscalYear,
     currency: "SAR",
+    disclosures: { orderOfLiquidity: false },
     ratiosByYear: computeRatios(years),
     growthPeriods: computeGrowth(years),
     trends: computeTrends(years),

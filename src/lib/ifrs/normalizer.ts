@@ -85,13 +85,13 @@ const RULES: MappingRule[] = [
   { key: "grossProfit", statements: PL, pattern: /^gross (profit|margin)\b/, ar: [["اجمالي", "الربح"], ["مجمل", "الربح"]] },
   { key: "operatingIncome", statements: PL, pattern: /^(operating (profit|income)|profit from operations|results from operating activities)/, ar: [["الربح", "التشغيلي"], ["الربح", "العمليات"]] },
   { key: "ebitda", statements: PL, pattern: /^ebitda\b/ },
-  { key: "interestExpense", statements: PL, pattern: /^(finance (costs?|expenses?)|interest expense|borrowing costs?)/, ar: [["تكاليف", "التمويل"], ["تكاليف", "تمويل"]] },
+  { key: "interestExpense", statements: PL, pattern: /^(finance (costs?|expenses?)|funding costs?|interest expense|borrowing costs?)/, ar: [["تكاليف", "التمويل"], ["تكاليف", "تمويل"]] },
   { key: "netIncome", statements: PL, pattern: /^(net (profit|income)|profit (for the (year|period))|profit attributable to|profit after (zakat|tax))/, ar: [["صافي", "الربح"], ["صافي", "الدخل"], ["ربح", "السنه"], ["ربح", "الفتره"]] },
-  { key: "revenue", statements: PL, pattern: /^(revenue|sales|turnover|contract revenue)\b/, ar: [["الايرادات"], ["ايرادات"]] },
+  { key: "revenue", statements: PL, pattern: /^(total )?(revenue|sales|turnover|contract revenue)\b/, ar: [["الايرادات"], ["ايرادات"], ["اجمالي", "الايرادات"]] },
 
   // ---- Statement of Financial Position - assets
   { key: "cash", statements: BS, pattern: /^(cash and (cash )?equivalents?|cash and bank balances|bank balances and cash|cash at banks?)/, ar: [["النقد", "حكمه"], ["النقد", "يعادل"], ["النقديه", "النقديه"], ["نقد", "بنك"]] },
-  { key: "receivables", statements: BS, pattern: /^(trade (and other )?receivables|accounts? receivables?|contract receivables)/, ar: [["ذمم", "مدينه"], ["المدينون"]] },
+  { key: "receivables", statements: BS, pattern: /^(trade (and other )?receivables|accounts? receivables?|contract receivables|consumer receivables|financing receivables)/, ar: [["ذمم", "مدينه"], ["المدينون"]] },
   { key: "inventory", statements: BS, pattern: /^(inventor(y|ies)|stock\b)/, ar: [["المخزون"], ["البضاعه"]] },
   { key: "currentAssets", statements: BS, pattern: /^total current assets/, ar: [["اجمالي", "الموجودات", "المتداوله"], ["مجموع", "الموجودات", "المتداوله"], ["اجمالي", "الاصول", "المتداوله"]] },
   { key: "totalAssets", statements: BS, pattern: /^total assets/, ar: [["اجمالي", "الموجودات"], ["مجموع", "الموجودات"], ["اجمالي", "الاصول"], ["مجموع", "الاصول"]] },
@@ -102,14 +102,14 @@ const RULES: MappingRule[] = [
   { key: "shortTermDebt", statements: BS, pattern: /^(short.?term (borrowings|debt|loans)|current portion of (long.?term|term) (debt|loans|borrowings)|bank overdrafts?)/, ar: [["قروض", "قصيره"], ["الجزء", "المتداول", "قروض"]] },
   { key: "longTermDebt", statements: BS, pattern: /^(long.?term (borrowings|debt|loans)|term loans?\b|non.?current borrowings)/, ar: [["قروض", "طويله"], ["قروض", "اجل"]] },
   { key: "totalDebt", statements: BS, pattern: /^total (debt|borrowings)/, ar: [["اجمالي", "القروض"], ["اجمالي", "الديون"]] },
-  { key: "totalEquity", statements: BS, pattern: /^total (shareholders['’]? )?equity/, ar: [["اجمالي", "حقوق", "الملكيه"], ["مجموع", "حقوق", "الملكيه"], ["اجمالي", "حقوق", "المساهمين"], ["مجموع", "حقوق", "المساهمين"]] },
+  { key: "totalEquity", statements: BS, pattern: /^total ((share|stock)holders?['’]?s? )?equity/, ar: [["اجمالي", "حقوق", "الملكيه"], ["مجموع", "حقوق", "الملكيه"], ["اجمالي", "حقوق", "المساهمين"], ["مجموع", "حقوق", "المساهمين"]] },
   { key: "annualDebtService", statements: BS, pattern: /^annual debt service/ },
 
   // ---- Statement of Cash Flows
-  { key: "operatingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) operating activities/, ar: [["صافي", "النقد", "التشغيليه"], ["النقد", "الانشطه", "التشغيليه"]] },
-  { key: "investingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) investing activities/, ar: [["صافي", "النقد", "الاستثماريه"], ["النقد", "الانشطه", "الاستثماريه"]] },
-  { key: "financingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) financing activities/, ar: [["صافي", "النقد", "التمويليه"], ["النقد", "الانشطه", "التمويليه"]] },
-  { key: "capex", statements: CF, pattern: /^(purchases? of property,? plant and equipment|additions? to property,? plant|acquisition of property,? plant|capital expenditures?)/, ar: [["شراء", "ممتلكات"], ["اضافات", "ممتلكات"]] },
+  { key: "operatingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) operating activit/, ar: [["صافي", "النقد", "التشغيليه"], ["النقد", "الانشطه", "التشغيليه"]] },
+  { key: "investingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) investing activit/, ar: [["صافي", "النقد", "الاستثماريه"], ["النقد", "الانشطه", "الاستثماريه"]] },
+  { key: "financingCashFlow", statements: CF, pattern: /^net cash (flows? )?(generated |used )?(from|in) financing activit/, ar: [["صافي", "النقد", "التمويليه"], ["النقد", "الانشطه", "التمويليه"]] },
+  { key: "capex", statements: CF, pattern: /^(purchases? of property(,? plant)? and equipment|additions? to property,? plant|acquisition of property,? plant|capital expenditures?)/, ar: [["شراء", "ممتلكات"], ["اضافات", "ممتلكات"]] },
 ];
 
 /** The statement(s) each canonical key is sourced from (its "home"). */
@@ -139,13 +139,17 @@ export type FiguresByYear = Map<number, Partial<Record<CanonicalKey, string>>>;
 
 /**
  * Collapses normalized line items into one figure set per fiscal year.
- * Per (key, year): the key's home statement wins, first occurrence within it.
+ * Per (key, year): the key's home statement wins, first occurrence within it —
+ * EXCEPT on the statement of cash flows, where intermediate subtotals repeat
+ * the caption ("Net cash used in operating activities" before and after EOSB /
+ * finance / tax payments) and the statement total is always the LAST one.
  */
 export function figuresByYear(items: ExtractedLineItem[]): FiguresByYear {
   const byYear: FiguresByYear = new Map();
   for (const key of CANONICAL_KEYS) {
     for (const home of KEY_HOME[key]) {
-      const item = items.find((i) => i.normalizedKey === key && i.statement === home);
+      const matches = items.filter((i) => i.normalizedKey === key && i.statement === home);
+      const item = home === "CASH_FLOWS" ? matches.at(-1) : matches[0];
       if (!item) continue;
       for (const value of item.values) {
         const figures = byYear.get(value.fiscalYear) ?? {};
