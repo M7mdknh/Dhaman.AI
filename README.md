@@ -253,7 +253,7 @@ submission:
   ```json
   [
     {
-      "AllowedOrigins": ["https://<your-app-domain>", "http://localhost:3000"],
+      "AllowedOrigins": ["https://<https://dhaman-ai.vercel.app>", "http://localhost:3000"],
       "AllowedMethods": ["PUT", "GET"],
       "AllowedHeaders": ["content-type"],
       "MaxAgeSeconds": 3600

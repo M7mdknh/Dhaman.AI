@@ -12,10 +12,15 @@
  * context into every request — the model explains those numbers, never
  * re-derives them, and never makes a decision.
  */
+import { z } from "zod";
+
 import { getSession } from "@/lib/auth/session";
 import { env } from "@/lib/env";
 import { INSIGHT_SYSTEM_PROMPT } from "@/lib/ai/insight-prompt";
+import { recordAudit } from "@/services/audit-service";
+import { getCompanyHistoryForCase } from "@/services/company-history-service";
 import { getCaseForReview } from "@/services/officer-case-service";
+import { isChatRateLimited } from "@/services/rate-limit-service";
 import { buildDecisionInput } from "@/services/decision/prompt-builder";
 import {
   buildFinancialIntelligence,
@@ -26,16 +31,25 @@ const CHAT_MODEL = "gpt-4o-mini";
 const MAX_TOKENS = 600;
 const TEMPERATURE = 0.3;
 const MAX_HISTORY_MESSAGES = 10; // last 5 user+assistant turns
+// Bound the request so a single call cannot balloon the prompt (and the bill):
+// a question is short; an assistant turn may be a drafted note, so it is roomier.
+const MAX_MESSAGE_CHARS = 2_000;
+const MAX_HISTORY_CONTENT_CHARS = 6_000;
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface ChatBody {
-  message: string;
-  history?: ChatMessage[];
-}
+// The client sends `message` + prior turns. Both are untrusted — validate the
+// shape, the roles, and every length before any of it reaches the model.
+const chatBodySchema = z.object({
+  message: z.string().trim().min(1).max(MAX_MESSAGE_CHARS),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(MAX_HISTORY_CONTENT_CHARS),
+      }),
+    )
+    .max(MAX_HISTORY_MESSAGES)
+    .optional(),
+});
 
 export async function POST(
   req: Request,
@@ -52,16 +66,23 @@ export async function POST(
 
   const { caseId } = await params;
 
-  let body: ChatBody;
+  let raw: unknown;
   try {
-    body = (await req.json()) as ChatBody;
+    raw = await req.json();
   } catch {
     return new Response("Invalid request body", { status: 400 });
   }
 
-  const { message, history = [] } = body;
-  if (!message?.trim()) {
+  const parsed = chatBodySchema.safeParse(raw);
+  if (!parsed.success) {
     return new Response("Message is required", { status: 400 });
+  }
+  const { message, history = [] } = parsed.data;
+
+  // Each message is a billed OpenAI call — throttle per user (generous; guards
+  // against a runaway loop or a stolen session, not normal interactive use).
+  if (await isChatRateLimited(session.userId)) {
+    return new Response("Too many requests. Please wait a moment and try again.", { status: 429 });
   }
 
   const reviewCase = await getCaseForReview(session.userId, caseId);
@@ -78,6 +99,8 @@ export async function POST(
     reviewCase.financialStatements,
     contract,
     toIdentityInputs(reviewCase.company.name, reviewCase.documents),
+    reviewCase.qualitative,
+    reviewCase.company.sector,
   );
   if (!report) {
     return new Response(
@@ -91,15 +114,35 @@ export async function POST(
     reviewCase.company,
     contract,
     report,
+    reviewCase.qualitative,
   );
+
+  // Cross-case awareness: the company's OTHER contracts, guarantees, and
+  // outcomes with the bank — so the chat can answer portfolio questions
+  // ("what else does this company have with us?") from recorded facts.
+  const companyHistory = await getCompanyHistoryForCase(reviewCase.companyId, reviewCase.id);
 
   const systemPrompt =
     INSIGHT_SYSTEM_PROMPT +
     "\n\n## Case Context (deterministic engine output — these figures are authoritative)\n\n" +
-    JSON.stringify(decisionInput, null, 2);
+    JSON.stringify(decisionInput, null, 2) +
+    (companyHistory && companyHistory.totals.totalCases > 0
+      ? "\n\n## Company History with the Bank (this company's OTHER cases — recorded facts, not estimates)\n\n" +
+        JSON.stringify(companyHistory, null, 2)
+      : "\n\n## Company History with the Bank\n\nThis is the company's first submitted case — no prior contracts or guarantees are on record.");
 
   // Trim history to bound context window growth
   const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
+
+  // Record the query BEFORE the call — this is the event the rate limiter
+  // counts, and it doubles as the audit trail of what officers asked about a
+  // case. Message content is deliberately not stored (only its length).
+  await recordAudit({
+    action: "officer.insight_queried",
+    actorId: session.userId,
+    caseId,
+    detail: { messageLength: message.length, historyLength: trimmedHistory.length },
+  });
 
   let openaiRes: Response;
   try {

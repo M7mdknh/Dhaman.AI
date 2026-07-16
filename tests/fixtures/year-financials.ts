@@ -19,7 +19,8 @@ export function toEngineYear(f: YearFigures): YearFinancials {
     grossProfit: D(f.grossProfit),
     operatingIncome: D(f.operatingIncome),
     netIncome: D(f.netIncome),
-    ebitda: null, // not printed in the demo statements — never derived
+    ebitda: null, // never printed (non-IFRS) — the engine derives it from D&A
+    depreciationAmortization: D(f.depreciationAmortization),
     interestExpense: D(f.financeCosts),
     cash: D(f.cash),
     receivables: D(f.receivables),
@@ -43,7 +44,8 @@ export function toEngineYear(f: YearFigures): YearFinancials {
 export const EMPTY_YEAR: YearFinancials = {
   fiscalYear: 2025,
   revenue: null, cogs: null, grossProfit: null, operatingIncome: null,
-  netIncome: null, ebitda: null, interestExpense: null, cash: null,
+  netIncome: null, ebitda: null, depreciationAmortization: null,
+  interestExpense: null, cash: null,
   receivables: null, inventory: null, currentAssets: null, totalAssets: null,
   currentLiabilities: null, totalLiabilities: null, shortTermDebt: null,
   longTermDebt: null, totalDebt: null, totalEquity: null,

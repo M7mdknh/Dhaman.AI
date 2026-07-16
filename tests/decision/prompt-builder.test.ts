@@ -60,7 +60,8 @@ describe("decision prompt builder", () => {
 
     expect(input.riskScore.band).toBe("EXCELLENT");
     expect(input.bankPolicy.policyRecommendation).toBe("APPROVE");
-    expect(input.bankPolicy.riskBand).toBe("EXCELLENT");
+    expect(input.bankPolicy.overallBand).toBe("EXCELLENT");
+    expect(input.bankPolicy.hardCaps).toEqual([]);
   });
 
   it("is deterministic: identical inputs produce byte-identical messages", () => {

@@ -5,8 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { getSession } from "@/lib/auth/session";
-import { companyInfoSchema, contractDetailsSchema } from "@/lib/validation/case";
-import { createDraftCase, deleteDraftCase, saveContractDetails, submitCase } from "@/services/case-service";
+import { caseQualitativeSchema, companyInfoSchema, contractDetailsSchema } from "@/lib/validation/case";
+import { createDraftCase, deleteDraftCase, saveCaseQualitative, saveContractDetails, submitCase } from "@/services/case-service";
 import { retryProcessing, runCaseProcessing } from "@/services/case-processing-service";
 import { upsertCompanyForUser } from "@/services/company-service";
 import { removeFinancialStatement } from "@/services/document-service";
@@ -63,7 +63,25 @@ export async function saveCompanyAction(caseId: string, values: unknown): Promis
   return { ok: true };
 }
 
-/** Step 2: persists contract details on a draft. */
+/** Step 2: persists the KYC questionnaire on a draft. */
+export async function saveQualitativeAction(
+  caseId: string,
+  values: unknown,
+): Promise<CaseActionState> {
+  const session = await requireSession();
+  const parsed = caseQualitativeSchema.safeParse(values);
+  if (!parsed.success) {
+    return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const result = await saveCaseQualitative(session.userId, caseId, parsed.data);
+  if (!result.ok) return { ok: false, error: result.error };
+
+  revalidateCase(caseId);
+  return { ok: true };
+}
+
+/** Step 3: persists contract details on a draft. */
 export async function saveContractAction(caseId: string, values: unknown): Promise<CaseActionState> {
   const session = await requireSession();
   const parsed = contractDetailsSchema.safeParse(values);

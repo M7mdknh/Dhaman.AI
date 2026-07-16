@@ -32,7 +32,7 @@ describe("ratio engine — strong profile FY2025 (hand-computed)", () => {
     expect(ratios.netMargin).toBe(0.1167);
     expect(ratios.returnOnAssets).toBe(0.1167);
     expect(ratios.returnOnEquity).toBe(0.1867); // 14M / 75M
-    expect(ratios.ebitdaMargin).toBeNull(); // EBITDA not printed — never derived
+    expect(ratios.ebitdaMargin).toBe(0.2); // (18M + 6M D&A) / 120M — derived EBITDA
   });
 
   it("efficiency, cash flow, coverage", () => {
@@ -41,8 +41,8 @@ describe("ratio engine — strong profile FY2025 (hand-computed)", () => {
     expect(ratios.receivableTurnover).toBe(4); // 120M / 30M
     expect(ratios.operatingCashFlowRatio).toBe(0.6667); // 20M / 30M
     expect(freeCashFlow).toBe("12000000.00"); // 20M − 8M
-    expect(ratios.dscr).toBeNull(); // needs EBITDA
-    expect(ratios.ebitdaCoverage).toBeNull();
+    expect(ratios.dscr).toBe(3.4286); // 24M EBITDA / (2M interest + 5M short-term debt)
+    expect(ratios.ebitdaCoverage).toBe(12); // 24M / 2M
   });
 });
 

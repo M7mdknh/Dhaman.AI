@@ -19,7 +19,7 @@ import { AUTH_FORM_INITIAL } from "../form-state";
 
 const DEMO_PASSWORD = "Daman!2026";
 const DEMO_ACCOUNTS = [
-  { label: "Risk Officer", email: "officer@daman.local" },
+  { label: "Relationship Manager", email: "rm@daman.local" },
   { label: "Contractor", email: "contractor@daman.local" },
   { label: "Admin", email: "admin@daman.local" },
 ];

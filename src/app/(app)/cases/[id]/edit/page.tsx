@@ -6,7 +6,12 @@ import { CaseWizard } from "@/components/cases/wizard/case-wizard";
 import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/lib/auth/session";
 import { cn } from "@/lib/utils";
-import { toCompanyInput, toContractInput, toDocumentView } from "@/lib/case-view";
+import {
+  toCompanyInput,
+  toContractInput,
+  toDocumentView,
+  toQualitativeInput,
+} from "@/lib/case-view";
 import { getOwnedCase } from "@/services/case-service";
 
 import type { Metadata } from "next";
@@ -29,15 +34,20 @@ export default async function EditCasePage({
   // Business rule: only drafts are editable.
   if (underwritingCase.status !== "DRAFT") redirect(`/cases/${id}`);
 
+  const qualitative = toQualitativeInput(underwritingCase.qualitative);
   const contract = underwritingCase.contractDetails
     ? toContractInput(underwritingCase.contractDetails)
     : null;
+  // Statements AND the contract/award-letter document — the wizard splits
+  // them by docType.
   const documents = underwritingCase.documents
-    .filter((d) => d.docType === "FINANCIAL_STATEMENT")
+    .filter((d) => d.docType === "FINANCIAL_STATEMENT" || d.docType === "CONTRACT")
     .map(toDocumentView);
 
-  const requestedStep = Math.min(Math.max(Number(step) || 1, 1), 4);
-  const initialStep = contract ? requestedStep : Math.min(requestedStep, 2);
+  const requestedStep = Math.min(Math.max(Number(step) || 1, 1), 5);
+  // Each step unlocks only when everything before it is saved.
+  const maxOpenStep = !qualitative ? 2 : !contract ? 3 : 5;
+  const initialStep = Math.min(requestedStep, maxOpenStep);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -60,6 +70,7 @@ export default async function EditCasePage({
         caseId={underwritingCase.id}
         initialStep={initialStep}
         company={toCompanyInput(underwritingCase.company)}
+        qualitative={qualitative}
         contract={contract}
         documents={documents}
       />

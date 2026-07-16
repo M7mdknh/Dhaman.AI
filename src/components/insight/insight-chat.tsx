@@ -6,13 +6,16 @@
  * Streams responses from /api/cases/[caseId]/chat, which injects the
  * deterministic engine output as context. The AI explains the numbers;
  * it never overrides them and never makes a decision.
+ *
+ * Rendered as a floating widget (fixed position, own stacking context) so it
+ * never blocks the page underneath — the officer can keep scrolling,
+ * clicking, and navigating while a response streams in.
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Send, Sparkles } from "lucide-react";
+import { Maximize2, Minimize2, Send, Sparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +29,16 @@ export interface InsightChatProps {
   caseId: string;
   /** Data-derived suggestion bubbles computed by the server from engine output. */
   initialBubbles: string[];
+}
+
+/** Minimum time the thinking indicator stays up before the first token
+ * appears — long enough to read as genuine thought, short enough to never
+ * feel sluggish. Randomized slightly so it never feels mechanical. */
+const MIN_THINKING_MS = 700;
+const MAX_THINKING_MS = 1100;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Returns contextual follow-up suggestions after each response. */
@@ -63,6 +76,8 @@ function getFollowUpBubbles(question: string, initial: string[]): string[] {
 }
 
 export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
+  const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [bubbles, setBubbles] = useState<string[]>(initialBubbles);
   const [input, setInput] = useState("");
@@ -87,6 +102,11 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
       { role: "user", content: question },
       { role: "assistant", content: "", streaming: true },
     ]);
+
+    // A deliberate pause before the request even goes out — the thinking
+    // dots need a beat on screen to read as thought, not a UI flash.
+    const thinkingMs = MIN_THINKING_MS + Math.random() * (MAX_THINKING_MS - MIN_THINKING_MS);
+    await sleep(thinkingMs);
 
     try {
       const res = await fetch(`/api/cases/${caseId}/chat`, {
@@ -141,26 +161,71 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
     }
   };
 
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Sparkles className="size-4 text-primary" aria-hidden />
-          Insight Chat
-          <span className="ml-auto rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary">
-            β
-          </span>
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Ask anything about this case. I explain the engine&apos;s outputs — I never override them.
-        </p>
-      </CardHeader>
+  if (!open) {
+    return (
+      <Button
+        onClick={() => setOpen(true)}
+        size="icon"
+        aria-label="Open Insight Chat"
+        className="fixed bottom-6 right-6 z-40 size-12 rounded-full shadow-lg"
+      >
+        <Sparkles className="size-5" aria-hidden />
+      </Button>
+    );
+  }
 
-      <CardContent className="space-y-3 pt-0">
+  return (
+    <div
+      className={cn(
+        "fixed bottom-6 right-6 z-40 flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl transition-[width,height] duration-200",
+        expanded ? "h-[min(44rem,85vh)] w-[min(32rem,90vw)]" : "h-[30rem] w-96",
+      )}
+    >
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+        <Sparkles className="size-4 text-primary" aria-hidden />
+        <span className="text-sm font-semibold text-foreground">Insight Chat</span>
+        <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-primary">
+          β
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={expanded ? "Collapse Insight Chat" : "Expand Insight Chat"}
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? (
+              <Minimize2 className="size-3.5" aria-hidden />
+            ) : (
+              <Maximize2 className="size-3.5" aria-hidden />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label="Close Insight Chat"
+            onClick={() => setOpen(false)}
+          >
+            <X className="size-3.5" aria-hidden />
+          </Button>
+        </div>
+      </div>
+
+      <p className="shrink-0 border-b border-border bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+        Ask anything about this case. I explain the engine&apos;s outputs — I never override them.
+      </p>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3">
         {/* ---- Messages thread */}
-        {messages.length > 0 && (
-          <div className="max-h-[280px] space-y-2 overflow-y-auto rounded-md border border-border bg-muted/20 p-2.5">
-            {messages.map((msg, i) => (
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-md border border-border bg-muted/20 p-2.5">
+          {messages.length === 0 ? (
+            <p className="p-2 text-[12.5px] text-muted-foreground">
+              No questions yet — try one of the suggestions below, or ask your own.
+            </p>
+          ) : (
+            messages.map((msg, i) => (
               <div
                 key={i}
                 className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
@@ -204,14 +269,18 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
                   </div>
                 )}
               </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        )}
+            ))
+          )}
+          <div ref={bottomRef} />
+        </div>
 
         {/* ---- Suggestion bubbles */}
         {bubbles.length > 0 && (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested questions">
+          <div
+            className="flex shrink-0 flex-wrap gap-1.5"
+            role="group"
+            aria-label="Suggested questions"
+          >
             {bubbles.map((bubble, i) => (
               <button
                 key={i}
@@ -232,7 +301,7 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
         )}
 
         {/* ---- Input */}
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <Input
             ref={inputRef}
             value={input}
@@ -253,7 +322,7 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
             <Send className="size-3.5" aria-hidden />
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

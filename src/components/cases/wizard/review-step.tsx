@@ -7,6 +7,7 @@ import {
   CompanySummary,
   ContractSummary,
   DocumentsSummary,
+  QualitativeSummary,
 } from "@/components/cases/summary-sections";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -30,11 +31,16 @@ import {
 } from "@/components/ui/dialog";
 
 import type { DocumentView } from "@/lib/case-view";
-import type { CompanyInfoInput, ContractDetailsInput } from "@/lib/validation/case";
+import type {
+  CaseQualitativeInput,
+  CompanyInfoInput,
+  ContractDetailsInput,
+} from "@/lib/validation/case";
 import type { CaseActionState } from "@/app/(app)/cases/actions";
 
 interface ReviewStepProps {
   company: CompanyInfoInput;
+  qualitative: CaseQualitativeInput | null;
   contract: ContractDetailsInput | null;
   documents: DocumentView[];
   onEdit: (step: number) => void;
@@ -65,10 +71,18 @@ function SectionCard({
   );
 }
 
-export function ReviewStep({ company, contract, documents, onEdit, onSubmit }: ReviewStepProps) {
+export function ReviewStep({
+  company,
+  qualitative,
+  contract,
+  documents,
+  onEdit,
+  onSubmit,
+}: ReviewStepProps) {
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const canSubmit = contract !== null && documents.length > 0;
+  const statements = documents.filter((d) => d.docType === "FINANCIAL_STATEMENT");
+  const canSubmit = qualitative !== null && contract !== null && statements.length > 0;
 
   async function handleSubmit() {
     setSubmitting(true);
@@ -96,7 +110,17 @@ export function ReviewStep({ company, contract, documents, onEdit, onSubmit }: R
         <CompanySummary company={company} />
       </SectionCard>
 
-      <SectionCard title="Contract Details" onEdit={() => onEdit(2)}>
+      <SectionCard title="Profile & Track Record" onEdit={() => onEdit(2)}>
+        {qualitative ? (
+          <QualitativeSummary qualitative={qualitative} />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            The KYC questionnaire is not completed yet.
+          </p>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Contract Details" onEdit={() => onEdit(3)}>
         {contract ? (
           <ContractSummary contract={contract} />
         ) : (
@@ -104,7 +128,7 @@ export function ReviewStep({ company, contract, documents, onEdit, onSubmit }: R
         )}
       </SectionCard>
 
-      <SectionCard title="Financial Statements" onEdit={() => onEdit(3)}>
+      <SectionCard title="Financial Statements" onEdit={() => onEdit(4)}>
         <DocumentsSummary documents={documents} />
       </SectionCard>
 
@@ -112,15 +136,17 @@ export function ReviewStep({ company, contract, documents, onEdit, onSubmit }: R
         <Alert>
           <AlertTitle>Not ready to submit</AlertTitle>
           <AlertDescription>
-            {contract
-              ? "Upload at least one audited financial statement before submitting."
-              : "Complete the contract details before submitting."}
+            {!qualitative
+              ? "Complete the company profile & track record questionnaire before submitting."
+              : contract
+                ? "Upload at least one financial statement before submitting."
+                : "Complete the contract details before submitting."}
           </AlertDescription>
         </Alert>
       )}
 
       <div className="flex items-center justify-between">
-        <Button type="button" variant="outline" onClick={() => onEdit(3)}>
+        <Button type="button" variant="outline" onClick={() => onEdit(4)}>
           Back
         </Button>
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>

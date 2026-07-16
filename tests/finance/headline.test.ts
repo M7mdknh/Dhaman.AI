@@ -1,15 +1,24 @@
 import { describe, expect, it } from "vitest";
 
 import { deriveHeadline, deriveRating } from "@/lib/finance/headline";
+import { composeOverallGrade } from "@/services/finance/overall-grade-service";
 
 import type { FinancialIntelligenceReport } from "@/lib/finance/types";
 
-/** Minimal report carrying only the fields the headline reads. */
+/** Minimal report carrying only the fields the headline reads. With no
+ * qualitative/contract pillars the composite grade renormalizes to the
+ * financial risk score alone — exactly the legacy behavior under test. */
 function report(overrides: {
   riskScore: number;
   riskBand: FinancialIntelligenceReport["risk"]["band"];
   capacity?: { score: number; band: "STRONG" | "MODERATE" | "LIMITED" } | null;
 }): FinancialIntelligenceReport {
+  const risk = {
+    score: overrides.riskScore,
+    band: overrides.riskBand,
+    components: [],
+    missingInputs: [],
+  };
   return {
     years: [2024, 2025],
     latestYear: 2025,
@@ -19,13 +28,16 @@ function report(overrides: {
     growthPeriods: [],
     trends: [],
     flags: [],
-    risk: { score: overrides.riskScore, band: overrides.riskBand, components: [], missingInputs: [] },
+    risk,
     capacity:
       overrides.capacity === undefined
         ? { score: 72, band: "MODERATE", components: [], missingInputs: [] }
         : overrides.capacity
           ? { ...overrides.capacity, components: [], missingInputs: [] }
           : null,
+    qualitative: null,
+    contractRisk: null,
+    overall: composeOverallGrade(risk, null, null, [], ["AUDITED", "AUDITED"]),
   };
 }
 
@@ -49,7 +61,9 @@ describe("deriveHeadline", () => {
     expect(h.rating).toBe("AA"); // 10 < 16
     expect(h.healthScore).toBe(90); // 100 - 10
     expect(h.riskScore).toBe(10);
-    expect(h.riskBand).toBe("LOW");
+    // The composite grade re-derives the band from the score (10 < 15 ⇒
+    // EXCELLENT) — it never trusts a caller-supplied band.
+    expect(h.riskBand).toBe("EXCELLENT");
     expect(h.recommendation).toBe("APPROVE");
   });
 

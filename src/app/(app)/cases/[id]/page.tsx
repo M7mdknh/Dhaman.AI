@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, BarChart3, PencilLine } from "lucide-react";
+import { ArrowLeft, PencilLine } from "lucide-react";
 
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
 import { DecisionStatusCard } from "@/components/cases/decision-status";
@@ -11,6 +11,7 @@ import {
   CompanySummary,
   ContractSummary,
   DocumentsSummary,
+  QualitativeSummary,
 } from "@/components/cases/summary-sections";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,15 +21,14 @@ import {
   toCompanyInput,
   toContractInput,
   toDocumentView,
+  toQualitativeInput,
   toStatementFigures,
 } from "@/lib/case-view";
-import { deriveHeadline } from "@/lib/finance/headline";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { isProcessingActive } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
 import { toDocumentSnapshots, toProcessingSnapshot } from "@/services/case-processing-service";
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
 
 import type { Metadata } from "next";
 
@@ -120,11 +120,9 @@ export default async function CaseDetailsPage({
       snapshot.stalled ||
       hasFailedDocument ||
       underwritingCase.status === "PROCESSING_FAILED");
-  const headlineReport = buildFinancialIntelligence(
-    underwritingCase.financialStatements,
-    underwritingCase.contractDetails,
-  );
-  const headline = headlineReport ? deriveHeadline(headlineReport) : null;
+  // Deliberately no Financial Intelligence headline (score/rating/risk band)
+  // on the contractor's own page — that analysis is bank-internal until a
+  // decision is made; the contractor only submits and tracks status.
   const contract = underwritingCase.contractDetails
     ? toContractInput(underwritingCase.contractDetails)
     : null;
@@ -158,12 +156,6 @@ export default async function CaseDetailsPage({
             <StatusBadge status={underwritingCase.status} />
           </div>
           <div className="flex items-center gap-2">
-            {extractedStatements.length > 0 && !isDraft && (
-              <Link href={`/cases/${id}/analysis`} className={cn(buttonVariants())}>
-                <BarChart3 className="size-4" aria-hidden />
-                Financial Analysis
-              </Link>
-            )}
             {isDraft && (
               <>
                 <Link
@@ -190,7 +182,7 @@ export default async function CaseDetailsPage({
               caseId={id}
               initial={{
                 ...snapshot,
-                headline,
+                headline: null,
                 documents: toDocumentSnapshots(
                   underwritingCase.documents.filter((d) => d.docType === "FINANCIAL_STATEMENT"),
                 ),
@@ -223,6 +215,19 @@ export default async function CaseDetailsPage({
               </CardContent>
             </Card>
           </div>
+
+          {underwritingCase.qualitative && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Profile & Track Record</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <QualitativeSummary
+                  qualitative={toQualitativeInput(underwritingCase.qualitative)!}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

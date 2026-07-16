@@ -25,13 +25,32 @@ export async function upsertCompanyForUser(
     return { ok: false, error: "Only contractors can manage a company profile." };
   }
 
-  // The CR number is nationally unique — reject if another company owns it.
+  // The CR number is nationally unique — one row per real company. A second
+  // teammate at the same company will naturally enter the same CR number;
+  // rather than hard-rejecting them (there is no other way to add a second
+  // user to a company today), join them to the existing row instead of
+  // creating a duplicate. A genuine conflict — this user already belongs to
+  // a DIFFERENT company than the one that owns this CR number — still fails.
   const crOwner = await prisma.company.findUnique({ where: { crNumber: input.crNumber } });
   if (crOwner && crOwner.id !== user.companyId) {
-    return {
-      ok: false,
-      error: "This Commercial Registration number is already registered to another company.",
-    };
+    if (user.companyId) {
+      return {
+        ok: false,
+        error:
+          "This Commercial Registration number is already registered to a different company " +
+          "than the one on your account. Contact your bank administrator if this is a genuine change.",
+      };
+    }
+    // Join: link this user to the existing company. Its established fields
+    // are never overwritten by a second user's form submission — only the
+    // first registration (or an already-linked user's edit) can change them.
+    await prisma.user.update({ where: { id: userId }, data: { companyId: crOwner.id } });
+    await recordAudit({
+      action: "company.user_joined",
+      actorId: userId,
+      detail: { companyId: crOwner.id },
+    });
+    return { ok: true, company: crOwner };
   }
 
   if (user.companyId) {

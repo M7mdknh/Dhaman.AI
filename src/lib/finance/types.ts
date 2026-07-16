@@ -16,6 +16,7 @@ export interface YearFinancials {
   operatingIncome: Money | null;
   netIncome: Money | null;
   ebitda: Money | null;
+  depreciationAmortization: Money | null;
   interestExpense: Money | null;
   cash: Money | null;
   receivables: Money | null;
@@ -133,7 +134,61 @@ export interface ContractInputs {
   beneficiaryType: "GOVERNMENT" | "PRIVATE";
   /** Whole months between project start and end (null = dates missing). */
   durationMonths: number | null;
+  /** % of contract value the guarantee covers (0–100). */
+  guaranteePercentage: number | null;
+  /** Sector declared for the contract (scope check vs the company sector). */
+  sector: string | null;
+  // ---- Structured contract-risk inputs (null on cases predating the
+  // detailed wizard — each component excludes itself when its input is null).
+  contractorRole: "MAIN_CONTRACTOR" | "SUBCONTRACTOR" | null;
+  backToBackPayment: boolean | null;
+  awardMethod: "PUBLIC_TENDER" | "LIMITED_TENDER" | "DIRECT_AWARD" | null;
+  priorContractsWithBeneficiary: number | null;
+  advancePaymentPct: number | null;
+  billingCycle: "MONTHLY" | "MILESTONE" | "OTHER" | null;
+  retentionPct: number | null;
+  paymentPeriodDays: number | null;
+  requiredBondPct: number | null;
+  onFirstDemand: boolean | null;
+  extendOrPay: boolean | null;
+  ldRatePctPerWeek: number | null;
+  ldCapPct: number | null;
+  mobilizationWeeks: number | null;
+  expectedGrossMarginPct: number | null;
 }
+
+/**
+ * KYC questionnaire answers feeding the qualitative pillar (wizard Step 2).
+ * Mirrors CaseQualitative without a Prisma-client dependency in the engine.
+ */
+export interface QualitativeInputs {
+  crIssueDate: Date;
+  crActivities: string;
+  contractorClassification: string | null;
+  partOfGroup: boolean;
+  gmExperienceYears: number;
+  ownershipChanged: boolean;
+  nitaqatBand: "PLATINUM" | "GREEN" | "YELLOW" | "RED";
+  ongoingLitigation: boolean;
+  projectsCompletedBand: "UNDER_5" | "FROM_5_TO_10" | "FROM_10_TO_25" | "OVER_25";
+  largestProjectValue: Money;
+  hadProjectIssues: boolean;
+  guaranteeCalled: boolean;
+  sameTypeExperience: boolean;
+  runningProjectsCount: number;
+  backlogValue: Money;
+  outstandingGuarantees: Money;
+  equipmentPlan: "OWNED" | "RENT" | "PURCHASE";
+  heavyHiringNeeded: boolean;
+  conductIncidents: boolean;
+  auditorTier: "BIG_FOUR" | "ACCREDITED_LOCAL" | "OTHER_FIRM" | "UNAUDITED";
+  fundingSource: "OWN_CASH" | "THIS_BANK" | "OTHER_BANK" | "SUPPLIER_CREDIT";
+  /** The company profile sector (scope check vs the contract sector). */
+  companySector: string | null;
+}
+
+/** Statement reliability class (mirrors the Prisma enum for engine use). */
+export type StatementReliability = "AUDITED" | "REVIEWED" | "MANAGEMENT";
 
 /** One weighted component of a composite score (capacity or risk). */
 export interface ScoreComponent {
@@ -166,6 +221,65 @@ export interface RiskAssessment {
   missingInputs: string[];
 }
 
+/**
+ * A non-dilutable policy override: certain declared answers must never be
+ * averaged away by good ratios. A cap limits how favorable the
+ * recommendation OF RECORD can be — it never changes any score.
+ */
+export interface HardCap {
+  type: string;
+  /** Most favorable recommendation this cap allows. */
+  ceiling: "APPROVE_WITH_CONDITIONS" | "MANUAL_REVIEW";
+  reason: string;
+}
+
+/** One pillar of the composite grade (same shape as RiskAssessment). */
+export interface PillarAssessment {
+  /** 0–100, HIGHER = RISKIER (matches the financial risk score). */
+  score: number;
+  band: RiskBand;
+  components: ScoreComponent[];
+  missingInputs: string[];
+}
+
+export type RecommendationOfRecord =
+  | "APPROVE"
+  | "APPROVE_WITH_CONDITIONS"
+  | "MANUAL_REVIEW"
+  | "REJECT";
+
+/** How far the financial pillar can be trusted, from statement reliability. */
+export type GradeConfidence = "HIGH" | "MEDIUM" | "LOW";
+
+/**
+ * The composite underwriting grade: financial (ratio engine) + qualitative
+ * (KYC) + contract risk, weighted per PILLARS in thresholds.ts, then hard
+ * caps applied to the recommendation. Pillars whose inputs are absent
+ * (legacy cases) are excluded and the weights renormalized — a case with no
+ * KYC data grades exactly as the financial engine alone did before.
+ */
+export interface OverallGrade {
+  /** 0–100, HIGHER = RISKIER — weighted over available pillars. */
+  score: number;
+  band: RiskBand;
+  pillars: {
+    key: "financial" | "qualitative" | "contractRisk";
+    label: string;
+    weight: number;
+    /** null = pillar unavailable (excluded + renormalized). */
+    score: number | null;
+    band: RiskBand | null;
+  }[];
+  caps: HardCap[];
+  /** Deterministic bank policy AFTER caps — the recommendation of record. */
+  recommendation: RecommendationOfRecord;
+  /** What the band alone would have recommended (shown when a cap bites). */
+  uncappedRecommendation: RecommendationOfRecord;
+  /** Reliability of the statements behind the financial pillar. */
+  confidence: GradeConfidence;
+  confidenceDetail: string;
+}
+
 /** What the parsed statements disclose — drives honest "not disclosed" UI. */
 export interface DisclosureNotes {
   /**
@@ -190,4 +304,10 @@ export interface FinancialIntelligenceReport {
   /** Always computed; contract exposure is excluded without contract details. */
   risk: RiskAssessment;
   capacity: ExecutionCapacity | null; // null without contract details
+  /** Qualitative (KYC) pillar — null on cases predating the questionnaire. */
+  qualitative: PillarAssessment | null;
+  /** Contract-risk pillar — null without the structured contract fields. */
+  contractRisk: PillarAssessment | null;
+  /** The composite grade + recommendation of record (always computed). */
+  overall: OverallGrade;
 }

@@ -14,7 +14,12 @@ import bcrypt from "bcryptjs";
 
 import { prisma } from "@/lib/prisma";
 import { addFinancialStatement } from "@/services/document-service";
-import { createDraftCase, saveContractDetails, submitCase } from "@/services/case-service";
+import {
+  createDraftCase,
+  saveCaseQualitative,
+  saveContractDetails,
+  submitCase,
+} from "@/services/case-service";
 import { runCaseProcessing } from "@/services/case-processing-service";
 
 import { ALL_PROFILES, type CompanyProfile } from "../tests/fixtures/company-profiles";
@@ -25,7 +30,7 @@ import {
   profitOrLossPage,
 } from "../tests/fixtures/statement-text";
 
-import type { ContractDetailsInput } from "@/lib/validation/case";
+import type { CaseQualitativeInput, ContractDetailsInput } from "@/lib/validation/case";
 
 /**
  * Each strength profile belongs to its own seeded company (the generated
@@ -70,8 +75,27 @@ const CONTRACTS: Record<keyof typeof ALL_PROFILES, ContractDetailsInput> = {
     projectStartDate: "2026-09-01",
     projectEndDate: "2028-08-31",
     projectLocation: "Riyadh",
-    expectedPaymentTerms: "Monthly progress certificates, 60 days",
     additionalNotes: "",
+    contractorRole: "MAIN_CONTRACTOR",
+    mainContractorName: "",
+    backToBackPayment: "",
+    awardMethod: "PUBLIC_TENDER",
+    priorContractsWithBeneficiary: "3",
+    advancePaymentPct: "10",
+    billingCycle: "MONTHLY",
+    retentionPct: "5",
+    paymentPeriodDays: "60",
+    paymentNotes: "Monthly progress certificates, 60 days",
+    requiredBondPct: "10",
+    bondValidityDate: "2028-10-31",
+    onFirstDemand: "YES",
+    extendOrPay: "NO",
+    ldRatePctPerWeek: "0.25",
+    ldCapPct: "10",
+    mobilizationWeeks: "8",
+    keySuppliersIdentified: "YES",
+    keySuppliersNote: "Asphalt and aggregates under framework agreements",
+    expectedGrossMarginPct: "15",
   },
   moderate: {
     beneficiary: "Jeddah Urban Development Co.",
@@ -87,8 +111,27 @@ const CONTRACTS: Record<keyof typeof ALL_PROFILES, ContractDetailsInput> = {
     projectStartDate: "2026-09-01",
     projectEndDate: "2028-02-29",
     projectLocation: "Jeddah",
-    expectedPaymentTerms: "",
     additionalNotes: "",
+    contractorRole: "MAIN_CONTRACTOR",
+    mainContractorName: "",
+    backToBackPayment: "",
+    awardMethod: "LIMITED_TENDER",
+    priorContractsWithBeneficiary: "1",
+    advancePaymentPct: "5",
+    billingCycle: "MILESTONE",
+    retentionPct: "10",
+    paymentPeriodDays: "90",
+    paymentNotes: "",
+    requiredBondPct: "10",
+    bondValidityDate: "2028-04-30",
+    onFirstDemand: "YES",
+    extendOrPay: "NO",
+    ldRatePctPerWeek: "0.5",
+    ldCapPct: "10",
+    mobilizationWeeks: "10",
+    keySuppliersIdentified: "NO",
+    keySuppliersNote: "",
+    expectedGrossMarginPct: "12",
   },
   weak: {
     beneficiary: "Eastern Province Industrial Services",
@@ -104,8 +147,138 @@ const CONTRACTS: Record<keyof typeof ALL_PROFILES, ContractDetailsInput> = {
     projectStartDate: "2026-09-01",
     projectEndDate: "2029-08-31",
     projectLocation: "Dammam",
-    expectedPaymentTerms: "",
     additionalNotes: "",
+    // Aggressively won and thinly structured — feeds the weak demo story:
+    // subcontract back-to-back payment, no advance, thin margin, tail-risk
+    // bond terms.
+    contractorRole: "SUBCONTRACTOR",
+    mainContractorName: "Gulf Heavy Industries JV",
+    backToBackPayment: "YES",
+    awardMethod: "PUBLIC_TENDER",
+    priorContractsWithBeneficiary: "0",
+    advancePaymentPct: "0",
+    billingCycle: "MILESTONE",
+    retentionPct: "10",
+    paymentPeriodDays: "120",
+    paymentNotes: "Paid upon main contractor's own receipt of owner certificates.",
+    requiredBondPct: "10",
+    bondValidityDate: "2029-10-31",
+    onFirstDemand: "YES",
+    extendOrPay: "YES",
+    ldRatePctPerWeek: "1",
+    ldCapPct: "15",
+    mobilizationWeeks: "16",
+    keySuppliersIdentified: "NO",
+    keySuppliersNote: "",
+    expectedGrossMarginPct: "8",
+  },
+};
+
+/**
+ * KYC questionnaire per profile — the qualitative pillar of each demo story:
+ * strong = seasoned Momtaz-adjacent contractor with clean conduct;
+ * moderate = growing firm, some strain; weak = young, over-committed,
+ * declared conduct incidents (hard-capped at manual review by policy).
+ */
+const QUALITATIVE: Record<keyof typeof ALL_PROFILES, CaseQualitativeInput> = {
+  strong: {
+    crIssueDate: "2012-05-14",
+    crActivities: "Road construction, bridges, and public infrastructure works",
+    contractorClassification: "GRADE_1",
+    partOfGroup: "NO",
+    groupName: "",
+    gmName: "Khalid Al-Harbi",
+    gmExperienceYears: "18",
+    ownershipChanged: "NO",
+    ownershipChangeNote: "",
+    nitaqatBand: "PLATINUM",
+    ongoingLitigation: "NO",
+    litigationNote: "",
+    projectsCompletedBand: "OVER_25",
+    largestProjectValue: "45000000",
+    hadProjectIssues: "NO",
+    projectIssuesNote: "",
+    guaranteeCalled: "NO",
+    guaranteeCalledNote: "",
+    sameTypeExperience: "YES",
+    sameTypeExperienceNote: "Three MOMRA road packages delivered since 2019",
+    runningProjectsCount: "5",
+    backlogValue: "40000000",
+    outstandingGuarantees: "12000000",
+    equipmentPlan: "OWNED",
+    heavyHiringNeeded: "NO",
+    mainBank: "Alinma Bank",
+    conductIncidents: "NO",
+    conductIncidentsNote: "",
+    auditorTier: "BIG_FOUR",
+    auditorName: "PwC",
+    fundingSource: "OWN_CASH",
+  },
+  moderate: {
+    crIssueDate: "2018-02-20",
+    crActivities: "General contracting, enabling and earth works",
+    contractorClassification: "GRADE_3",
+    partOfGroup: "NO",
+    groupName: "",
+    gmName: "Mona Al-Zahrani",
+    gmExperienceYears: "9",
+    ownershipChanged: "NO",
+    ownershipChangeNote: "",
+    nitaqatBand: "GREEN",
+    ongoingLitigation: "NO",
+    litigationNote: "",
+    projectsCompletedBand: "FROM_10_TO_25",
+    largestProjectValue: "35000000",
+    hadProjectIssues: "NO",
+    projectIssuesNote: "",
+    guaranteeCalled: "NO",
+    guaranteeCalledNote: "",
+    sameTypeExperience: "YES",
+    sameTypeExperienceNote: "",
+    runningProjectsCount: "6",
+    backlogValue: "70000000",
+    outstandingGuarantees: "20000000",
+    equipmentPlan: "RENT",
+    heavyHiringNeeded: "YES",
+    mainBank: "Saudi National Bank (SNB)",
+    conductIncidents: "NO",
+    conductIncidentsNote: "",
+    auditorTier: "ACCREDITED_LOCAL",
+    auditorName: "Al Kharashi & Co.",
+    fundingSource: "THIS_BANK",
+  },
+  weak: {
+    crIssueDate: "2021-11-02",
+    crActivities: "Trading and general contracting",
+    contractorClassification: "NONE",
+    partOfGroup: "NO",
+    groupName: "",
+    gmName: "Faisal Al-Dossary",
+    gmExperienceYears: "4",
+    ownershipChanged: "YES",
+    ownershipChangeNote: "Founding partner bought out in 2025; GM took over operations.",
+    nitaqatBand: "YELLOW",
+    ongoingLitigation: "YES",
+    litigationNote: "Labor-office dispute over delayed wages on a previous site.",
+    projectsCompletedBand: "UNDER_5",
+    largestProjectValue: "20000000",
+    hadProjectIssues: "YES",
+    projectIssuesNote: "A 2024 warehouse fit-out ran five months late with LD deductions.",
+    guaranteeCalled: "NO",
+    guaranteeCalledNote: "",
+    sameTypeExperience: "NO",
+    sameTypeExperienceNote: "",
+    runningProjectsCount: "3",
+    backlogValue: "90000000",
+    outstandingGuarantees: "30000000",
+    equipmentPlan: "PURCHASE",
+    heavyHiringNeeded: "YES",
+    mainBank: "Riyad Bank",
+    conductIncidents: "YES",
+    conductIncidentsNote: "Two cheques returned in 2025 during a client payment dispute; settled.",
+    auditorTier: "OTHER_FIRM",
+    auditorName: "Dammam Audit Office",
+    fundingSource: "SUPPLIER_CREDIT",
   },
 };
 
@@ -161,6 +334,9 @@ async function main() {
     const draft = await createDraftCase(contractor.id);
     if (!draft.ok) throw new Error(`createDraftCase(${key}): ${draft.error}`);
     const { caseId, reference } = draft.data;
+
+    const kyc = await saveCaseQualitative(contractor.id, caseId, QUALITATIVE[key as keyof typeof QUALITATIVE]);
+    if (!kyc.ok) throw new Error(`saveCaseQualitative(${key}): ${kyc.error}`);
 
     const details = await saveContractDetails(contractor.id, caseId, CONTRACTS[key as keyof typeof CONTRACTS]);
     if (!details.ok) throw new Error(`saveContractDetails(${key}): ${details.error}`);

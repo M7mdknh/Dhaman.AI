@@ -642,12 +642,16 @@ async function rebuildFinancialStatements(
 
   const rows = [...sources.entries()].map(([fiscalYear, entry]) => {
     const figures = entry.figures.get(fiscalYear)!;
+    // Reliability class declared at upload; audited stays in sync for
+    // legacy readers of the boolean.
+    const statementType = entry.document.statementType ?? "AUDITED";
     return {
       caseId,
       documentId: entry.document.id,
       fiscalYear,
       currency: entry.currency ?? "SAR",
-      audited: true,
+      audited: statementType === "AUDITED",
+      statementType,
       sourceJson: {
         documentId: entry.document.id,
         fileName: entry.document.fileName,

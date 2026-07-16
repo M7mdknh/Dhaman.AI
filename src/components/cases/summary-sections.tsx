@@ -7,15 +7,46 @@ import { FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
+  AUDITOR_TIER_OPTIONS,
+  AWARD_METHOD_OPTIONS,
   beneficiaryTypeLabel,
+  BILLING_CYCLE_OPTIONS,
+  CONTRACTOR_CLASSIFICATION_OPTIONS,
+  CONTRACTOR_ROLE_OPTIONS,
   DOCUMENT_STATUS_META,
+  EQUIPMENT_PLAN_OPTIONS,
+  FUNDING_SOURCE_OPTIONS,
   guaranteeTypeLabel,
+  NITAQAT_OPTIONS,
+  PROJECTS_COMPLETED_OPTIONS,
+  STATEMENT_TYPE_LABELS,
+  type Option,
 } from "@/lib/case-constants";
 import { formatDate, formatFileSize, formatMoney, formatPercentValue } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { DocumentView } from "@/lib/case-view";
-import type { CompanyInfoInput, ContractDetailsInput } from "@/lib/validation/case";
+import type {
+  CaseQualitativeInput,
+  CompanyInfoInput,
+  ContractDetailsInput,
+} from "@/lib/validation/case";
+
+/** Enum value → its display label ("" and unknowns render as em-dash). */
+function optionLabel(options: readonly Option[], value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
+const yesNoLabel = (value: string | undefined) =>
+  value === "YES" ? "Yes" : value === "NO" ? "No" : undefined;
+
+/** "value — note" when a Yes answer carries its description. */
+function yesWithNote(value: string | undefined, note: string | undefined): string | undefined {
+  const base = yesNoLabel(value);
+  if (!base) return undefined;
+  return value === "YES" && note?.trim() ? `Yes — ${note.trim()}` : base;
+}
 
 function DetailItem({
   label,
@@ -72,6 +103,7 @@ export function CompanySummary({ company }: { company: CompanyInfoInput }) {
 }
 
 export function ContractSummary({ contract }: { contract: ContractDetailsInput }) {
+  const percent = (v: string | undefined) => (v ? formatPercentValue(v) : undefined);
   return (
     <DetailGrid>
       <DetailItem label="Contract Title" value={contract.contractTitle} wide />
@@ -80,26 +112,186 @@ export function ContractSummary({ contract }: { contract: ContractDetailsInput }
       <DetailItem label="Sector" value={contract.sector} />
       <DetailItem label="Project Location" value={contract.projectLocation} />
       <DetailItem
+        label="Contractor Role"
+        value={optionLabel(CONTRACTOR_ROLE_OPTIONS, contract.contractorRole)}
+      />
+      <DetailItem
+        label="Award Method"
+        value={optionLabel(AWARD_METHOD_OPTIONS, contract.awardMethod)}
+      />
+      {contract.contractorRole === "SUBCONTRACTOR" && (
+        <>
+          <DetailItem label="Main Contractor" value={contract.mainContractorName} />
+          <DetailItem
+            label="Back-to-Back Payment"
+            value={yesNoLabel(contract.backToBackPayment)}
+          />
+        </>
+      )}
+      <DetailItem
+        label="Prior Contracts With Beneficiary"
+        value={contract.priorContractsWithBeneficiary?.toString()}
+        numeric
+      />
+      <DetailItem
         label="Contract Value"
         value={formatMoney(contract.contractValue, contract.currency)}
         numeric
       />
       <DetailItem
         label="Requested Guarantee"
-        value={formatMoney(contract.guaranteeAmount, contract.currency)}
+        value={
+          contract.guaranteeAmount
+            ? formatMoney(contract.guaranteeAmount, contract.currency)
+            : undefined
+        }
         numeric
       />
       <DetailItem label="Guarantee Type" value={guaranteeTypeLabel(contract.guaranteeType)} />
       <DetailItem
-        label="Guarantee Percentage"
+        label="Guarantee Ratio"
         value={formatPercentValue(contract.guaranteePercentage)}
         numeric
       />
+      <DetailItem label="Required Bond %" value={percent(contract.requiredBondPct)} numeric />
+      <DetailItem label="Bond Validity Until" value={formatDate(contract.bondValidityDate)} />
+      <DetailItem label="On First Demand" value={yesNoLabel(contract.onFirstDemand)} />
+      <DetailItem label="'Extend or Pay' Clause" value={yesNoLabel(contract.extendOrPay)} />
+      <DetailItem label="Advance Payment" value={percent(contract.advancePaymentPct)} numeric />
+      <DetailItem
+        label="Billing Cycle"
+        value={optionLabel(BILLING_CYCLE_OPTIONS, contract.billingCycle)}
+      />
+      <DetailItem label="Retention" value={percent(contract.retentionPct)} numeric />
+      <DetailItem
+        label="Payment Period"
+        value={contract.paymentPeriodDays ? `${contract.paymentPeriodDays} days` : undefined}
+      />
+      <DetailItem
+        label="Liquidated Damages"
+        value={
+          contract.ldRatePctPerWeek && contract.ldCapPct
+            ? `${contract.ldRatePctPerWeek}% / week, capped at ${contract.ldCapPct}%`
+            : undefined
+        }
+        numeric
+      />
+      <DetailItem
+        label="Mobilization Period"
+        value={contract.mobilizationWeeks ? `${contract.mobilizationWeeks} weeks` : undefined}
+      />
+      <DetailItem
+        label="Expected Gross Margin"
+        value={percent(contract.expectedGrossMarginPct)}
+        numeric
+      />
+      <DetailItem
+        label="Key Suppliers Identified"
+        value={yesWithNote(contract.keySuppliersIdentified, contract.keySuppliersNote)}
+      />
       <DetailItem label="Project Start" value={formatDate(contract.projectStartDate)} />
       <DetailItem label="Project End" value={formatDate(contract.projectEndDate)} />
-      <DetailItem label="Expected Payment Terms" value={contract.expectedPaymentTerms} wide />
+      <DetailItem label="Payment Notes" value={contract.paymentNotes} wide />
       <DetailItem label="Contract Description" value={contract.contractDescription} wide />
       <DetailItem label="Additional Notes" value={contract.additionalNotes} wide />
+    </DetailGrid>
+  );
+}
+
+export function QualitativeSummary({ qualitative }: { qualitative: CaseQualitativeInput }) {
+  return (
+    <DetailGrid>
+      <DetailItem label="CR Issued" value={formatDate(qualitative.crIssueDate)} />
+      <DetailItem
+        label="Classification"
+        value={optionLabel(CONTRACTOR_CLASSIFICATION_OPTIONS, qualitative.contractorClassification)}
+      />
+      <DetailItem label="Registered Activities" value={qualitative.crActivities} wide />
+      <DetailItem label="General Manager" value={qualitative.gmName} />
+      <DetailItem
+        label="GM Experience"
+        value={`${qualitative.gmExperienceYears} years`}
+        numeric
+      />
+      <DetailItem
+        label="Part of a Group"
+        value={yesWithNote(qualitative.partOfGroup, qualitative.groupName)}
+      />
+      <DetailItem
+        label="Ownership Change (2y)"
+        value={yesWithNote(qualitative.ownershipChanged, qualitative.ownershipChangeNote)}
+      />
+      <DetailItem
+        label="Nitaqat Band"
+        value={optionLabel(NITAQAT_OPTIONS, qualitative.nitaqatBand)}
+      />
+      <DetailItem
+        label="Ongoing Litigation"
+        value={yesWithNote(qualitative.ongoingLitigation, qualitative.litigationNote)}
+      />
+      <DetailItem
+        label="Projects Completed"
+        value={optionLabel(PROJECTS_COMPLETED_OPTIONS, qualitative.projectsCompletedBand)}
+      />
+      <DetailItem
+        label="Largest Completed Project"
+        value={formatMoney(qualitative.largestProjectValue, "SAR")}
+        numeric
+      />
+      <DetailItem
+        label="Project Terminations / Penalties"
+        value={yesWithNote(qualitative.hadProjectIssues, qualitative.projectIssuesNote)}
+      />
+      <DetailItem
+        label="Guarantee Ever Called"
+        value={yesWithNote(qualitative.guaranteeCalled, qualitative.guaranteeCalledNote)}
+      />
+      <DetailItem
+        label="Same-Type Experience"
+        value={yesWithNote(qualitative.sameTypeExperience, qualitative.sameTypeExperienceNote)}
+      />
+      <DetailItem
+        label="Running Projects"
+        value={qualitative.runningProjectsCount?.toString()}
+        numeric
+      />
+      <DetailItem
+        label="Remaining Backlog"
+        value={formatMoney(qualitative.backlogValue, "SAR")}
+        numeric
+      />
+      <DetailItem
+        label="Outstanding Guarantees (All Banks)"
+        value={formatMoney(qualitative.outstandingGuarantees, "SAR")}
+        numeric
+      />
+      <DetailItem
+        label="Equipment"
+        value={optionLabel(EQUIPMENT_PLAN_OPTIONS, qualitative.equipmentPlan)}
+      />
+      <DetailItem label="Heavy Hiring Needed" value={yesNoLabel(qualitative.heavyHiringNeeded)} />
+      <DetailItem label="Main Bank" value={qualitative.mainBank} />
+      <DetailItem
+        label="Conduct Incidents"
+        value={yesWithNote(qualitative.conductIncidents, qualitative.conductIncidentsNote)}
+      />
+      <DetailItem
+        label="Auditor"
+        value={
+          qualitative.auditorTier === "UNAUDITED"
+            ? "Not audited"
+            : [
+                optionLabel(AUDITOR_TIER_OPTIONS, qualitative.auditorTier),
+                qualitative.auditorName?.trim(),
+              ]
+                .filter(Boolean)
+                .join(" — ")
+        }
+      />
+      <DetailItem
+        label="Funding Until First Payment"
+        value={optionLabel(FUNDING_SOURCE_OPTIONS, qualitative.fundingSource)}
+      />
     </DetailGrid>
   );
 }
@@ -124,7 +316,14 @@ export function DocumentRow({
           {document.fiscalYear ? `FY ${document.fiscalYear} — ` : ""}
           {document.fileName}
         </p>
-        <p className="text-xs text-muted-foreground">{formatFileSize(document.fileSize)}</p>
+        <p className="text-xs text-muted-foreground">
+          {formatFileSize(document.fileSize)}
+          {document.docType === "CONTRACT"
+            ? " · Contract document"
+            : document.statementType
+              ? ` · ${STATEMENT_TYPE_LABELS[document.statementType]}`
+              : ""}
+        </p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <Badge variant="outline" className={cn("font-medium", status.className)}>

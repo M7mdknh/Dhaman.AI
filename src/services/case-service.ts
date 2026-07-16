@@ -8,13 +8,15 @@ import { storage } from "@/lib/storage";
 import { recordAudit } from "@/services/audit-service";
 import { enqueueProcessing } from "@/services/case-processing-service";
 
-import type { ContractDetailsInput } from "@/lib/validation/case";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
+
+import type { CaseQualitativeInput, ContractDetailsInput } from "@/lib/validation/case";
 
 export type CaseWithRelations = Prisma.UnderwritingCaseGetPayload<{
   include: {
     company: true;
     contractDetails: true;
+    qualitative: true;
     documents: {
       orderBy: { fiscalYear: "desc" };
       include: { extraction: { select: { validation: true; error: true; currency: true; scale: true; detectedStatements: true; companyName: true } } };
@@ -91,6 +93,7 @@ export async function getOwnedCase(
     include: {
       company: true,
       contractDetails: true,
+      qualitative: true,
       documents: {
         orderBy: { fiscalYear: "desc" },
         include: {
@@ -158,7 +161,87 @@ export async function getCaseStats(userId: string): Promise<CaseStats> {
   return stats;
 }
 
-/** Saves wizard Step 2. Only DRAFT cases are editable. */
+/** "YES"/"NO" select values → boolean (validation guarantees the domain). */
+const yes = (v: string | undefined) => v === "YES";
+/** Optional textarea → trimmed value or null. */
+const noteOrNull = (v: string | undefined) => {
+  const trimmed = (v ?? "").trim();
+  return trimmed ? trimmed : null;
+};
+
+/**
+ * Saves wizard Step 2 — the KYC questionnaire (CaseQualitative). Answered
+ * fresh on every case (never pre-filled): each underwriting decision keeps
+ * the exact answers it was made under, and answer drift between a company's
+ * cases is visible to the officer.
+ */
+export async function saveCaseQualitative(
+  userId: string,
+  caseId: string,
+  input: CaseQualitativeInput,
+): Promise<ActionResult> {
+  const existing = await getOwnedCase(userId, caseId);
+  if (!existing) return { ok: false, error: "Case not found." };
+  if (existing.status !== "DRAFT") {
+    return { ok: false, error: "Submitted cases can no longer be edited." };
+  }
+
+  const classification =
+    !input.contractorClassification || input.contractorClassification === "NONE"
+      ? null
+      : input.contractorClassification;
+
+  const data = {
+    crIssueDate: new Date(input.crIssueDate),
+    crActivities: input.crActivities,
+    contractorClassification: classification,
+    partOfGroup: yes(input.partOfGroup),
+    groupName: yes(input.partOfGroup) ? noteOrNull(input.groupName) : null,
+    gmName: input.gmName,
+    gmExperienceYears: Number(input.gmExperienceYears),
+    ownershipChanged: yes(input.ownershipChanged),
+    ownershipChangeNote: yes(input.ownershipChanged) ? noteOrNull(input.ownershipChangeNote) : null,
+    nitaqatBand: input.nitaqatBand,
+    ongoingLitigation: yes(input.ongoingLitigation),
+    litigationNote: yes(input.ongoingLitigation) ? noteOrNull(input.litigationNote) : null,
+    projectsCompletedBand: input.projectsCompletedBand,
+    largestProjectValue: input.largestProjectValue,
+    hadProjectIssues: yes(input.hadProjectIssues),
+    projectIssuesNote: yes(input.hadProjectIssues) ? noteOrNull(input.projectIssuesNote) : null,
+    guaranteeCalled: yes(input.guaranteeCalled),
+    guaranteeCalledNote: yes(input.guaranteeCalled) ? noteOrNull(input.guaranteeCalledNote) : null,
+    sameTypeExperience: yes(input.sameTypeExperience),
+    sameTypeExperienceNote: noteOrNull(input.sameTypeExperienceNote),
+    runningProjectsCount: Number(input.runningProjectsCount),
+    backlogValue: input.backlogValue,
+    outstandingGuarantees: input.outstandingGuarantees,
+    equipmentPlan: input.equipmentPlan,
+    heavyHiringNeeded: yes(input.heavyHiringNeeded),
+    mainBank: input.mainBank,
+    conductIncidents: yes(input.conductIncidents),
+    conductIncidentsNote: yes(input.conductIncidents) ? noteOrNull(input.conductIncidentsNote) : null,
+    auditorTier: input.auditorTier,
+    auditorName: input.auditorTier === "UNAUDITED" ? null : noteOrNull(input.auditorName),
+    fundingSource: input.fundingSource,
+  };
+
+  const isUpdate = existing.qualitative !== null;
+  await prisma.caseQualitative.upsert({
+    where: { caseId },
+    create: { caseId, ...data },
+    update: data,
+  });
+
+  await recordAudit({
+    action: isUpdate ? "case.draft_updated" : "case.draft_saved",
+    actorId: userId,
+    caseId,
+    detail: { section: "kyc_questionnaire" },
+  });
+  return { ok: true };
+}
+
+/** Saves wizard Step 3 (contract details). Only DRAFT cases are editable. */
 export async function saveContractDetails(
   userId: string,
   caseId: string,
@@ -170,24 +253,7 @@ export async function saveContractDetails(
     return { ok: false, error: "Submitted cases can no longer be edited." };
   }
 
-  // Decimal fields receive the validated strings verbatim — no float step.
-  const data = {
-    beneficiary: input.beneficiary,
-    beneficiaryType: input.beneficiaryType,
-    contractTitle: input.contractTitle,
-    contractDescription: input.contractDescription || null,
-    sector: input.sector,
-    projectLocation: input.projectLocation,
-    contractValue: input.contractValue,
-    currency: input.currency,
-    guaranteeAmount: input.guaranteeAmount,
-    guaranteeType: input.guaranteeType,
-    guaranteePercentage: input.guaranteePercentage || null,
-    projectStartDate: new Date(input.projectStartDate),
-    projectEndDate: new Date(input.projectEndDate),
-    expectedPaymentTerms: input.expectedPaymentTerms || null,
-    additionalNotes: input.additionalNotes || null,
-  };
+  const data = contractDetailsData(input);
 
   const isUpdate = existing.contractDetails !== null;
   await prisma.contractDetails.upsert({
@@ -203,6 +269,64 @@ export async function saveContractDetails(
     detail: { section: "contract_details" },
   });
   return { ok: true };
+}
+
+/**
+ * Validated contract input → ContractDetails column values. Shared by the
+ * contractor's draft save and the admin override so the two writes can
+ * never drift apart. Decimal fields receive the validated strings verbatim
+ * — no float step; the guarantee amount is always DERIVED from the ratio
+ * (guaranteeAmount = contractValue * ratio / 100) via precise Decimal math.
+ */
+export function contractDetailsData(input: ContractDetailsInput) {
+  const guaranteeAmount = new Prisma.Decimal(input.contractValue)
+    .times(input.guaranteePercentage)
+    .dividedBy(100)
+    .toFixed(2);
+
+  return {
+    beneficiary: input.beneficiary,
+    beneficiaryType: input.beneficiaryType,
+    contractTitle: input.contractTitle,
+    contractDescription: input.contractDescription || null,
+    sector: input.sector,
+    projectLocation: input.projectLocation,
+    contractValue: input.contractValue,
+    currency: input.currency,
+    guaranteeAmount,
+    guaranteeType: input.guaranteeType,
+    guaranteePercentage: input.guaranteePercentage,
+    projectStartDate: new Date(input.projectStartDate),
+    projectEndDate: new Date(input.projectEndDate),
+    additionalNotes: input.additionalNotes || null,
+    // 2A — contractor role (subcontractor fields cleared for a main contractor)
+    contractorRole: input.contractorRole,
+    mainContractorName:
+      input.contractorRole === "SUBCONTRACTOR" ? input.mainContractorName?.trim() || null : null,
+    backToBackPayment:
+      input.contractorRole === "SUBCONTRACTOR" ? input.backToBackPayment === "YES" : null,
+    awardMethod: input.awardMethod,
+    priorContractsWithBeneficiary: Number(input.priorContractsWithBeneficiary),
+    // 2B — payment mechanics
+    advancePaymentPct: input.advancePaymentPct,
+    billingCycle: input.billingCycle,
+    retentionPct: input.retentionPct,
+    paymentPeriodDays: Number(input.paymentPeriodDays),
+    paymentNotes: input.paymentNotes?.trim() || null,
+    // 2C — bond requirements
+    requiredBondPct: input.requiredBondPct,
+    bondValidityDate: new Date(input.bondValidityDate),
+    onFirstDemand: input.onFirstDemand === "YES",
+    extendOrPay: input.extendOrPay === "YES",
+    // 2D — penalty clauses
+    ldRatePctPerWeek: input.ldRatePctPerWeek,
+    ldCapPct: input.ldCapPct,
+    // 2E — execution plan
+    mobilizationWeeks: Number(input.mobilizationWeeks),
+    keySuppliersIdentified: input.keySuppliersIdentified === "YES",
+    keySuppliersNote: input.keySuppliersNote?.trim() || null,
+    expectedGrossMarginPct: input.expectedGrossMarginPct,
+  };
 }
 
 /**
@@ -223,6 +347,9 @@ export async function submitCase(userId: string, caseId: string): Promise<Action
   if (!existing) return { ok: false, error: "Case not found." };
   if (existing.status !== "DRAFT") {
     return { ok: false, error: "This case has already been submitted." };
+  }
+  if (!existing.qualitative) {
+    return { ok: false, error: "Complete the KYC questionnaire before submitting." };
   }
   if (!existing.contractDetails) {
     return { ok: false, error: "Complete the contract details before submitting." };

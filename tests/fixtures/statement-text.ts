@@ -81,6 +81,9 @@ export function cashFlowsPage(profile: CompanyProfile): string {
   const yearNums = ys.map((y) => y.fiscalYear);
   return [
     ...header(profile.name, "Statement of Cash Flows", yearNums),
+    // The reconciliation add-back auditors always print — the parser reads it
+    // so the engine can derive EBITDA (operating profit + D&A) for coverage.
+    row("Depreciation and amortisation", "6", pick(ys, "depreciationAmortization")),
     totalRow("Net cash from operating activities", pick(ys, "operatingCashFlow")),
     row("Purchase of property, plant and equipment", "7", pick(ys, "capex").map((v) => -v)),
     totalRow("Net cash used in investing activities", pick(ys, "investingCashFlow")),

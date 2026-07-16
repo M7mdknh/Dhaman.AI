@@ -4,23 +4,24 @@ import { Prisma } from "@/generated/prisma/client";
 import { assessExecutionCapacity } from "@/services/finance/execution-capacity-service";
 
 import { STRONG_PROFILE, WEAK_PROFILE } from "../fixtures/company-profiles";
+import { contractInputs } from "../fixtures/contract-inputs";
 import { EMPTY_YEAR, toEngineYear } from "../fixtures/year-financials";
 
 const D = (n: number) => new Prisma.Decimal(n);
 
-const STRONG_CONTRACT = {
+const STRONG_CONTRACT = contractInputs({
   contractValue: D(60_000_000),
   guaranteeAmount: D(6_000_000),
-  beneficiaryType: "GOVERNMENT" as const,
+  beneficiaryType: "GOVERNMENT",
   durationMonths: 24,
-};
+});
 
-const WEAK_CONTRACT = {
+const WEAK_CONTRACT = contractInputs({
   contractValue: D(75_000_000),
   guaranteeAmount: D(7_500_000),
-  beneficiaryType: "PRIVATE" as const,
+  beneficiaryType: "PRIVATE",
   durationMonths: 36,
-};
+});
 
 describe("execution capacity engine (hand-computed)", () => {
   it("scores the strong profile + comfortable government contract at 95/STRONG", () => {

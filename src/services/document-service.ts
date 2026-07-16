@@ -11,6 +11,7 @@ import { getOwnedCase } from "@/services/case-service";
 import { recordAudit } from "@/services/audit-service";
 
 import type { Document } from "@/generated/prisma/client";
+import type { StatementType } from "@/generated/prisma/enums";
 
 type Result<T = undefined> =
   | (T extends undefined ? { ok: true } : { ok: true; data: T })
@@ -63,6 +64,7 @@ async function createStatementRecord(
   fileName: string,
   fileSize: number,
   fiscalYear: number,
+  statementType: StatementType,
 ): Promise<Document> {
   const document = await prisma.document.create({
     data: {
@@ -74,15 +76,90 @@ async function createStatementRecord(
       fileSize,
       docType: "FINANCIAL_STATEMENT",
       fiscalYear,
+      statementType,
     },
   });
   await recordAudit({
     action: "document.uploaded",
     actorId: userId,
     caseId,
-    detail: { documentId: document.id, fileName, fiscalYear },
+    detail: { documentId: document.id, fileName, fiscalYear, statementType },
   });
   return document;
+}
+
+/**
+ * Pre-flight for the signed contract / award letter upload (wizard Step 3).
+ * One contract document per case — replacing means removing the old one
+ * first, exactly like the per-year statement rule.
+ */
+async function validateContractSlot(
+  userId: string,
+  caseId: string,
+  fileSize: number,
+): Promise<Result<NonNullable<Awaited<ReturnType<typeof getOwnedCase>>>>> {
+  const owned = await getOwnedCase(userId, caseId);
+  if (!owned) return { ok: false, error: "Case not found." };
+  if (owned.status !== "DRAFT") {
+    return { ok: false, error: "Documents can only be changed while the case is a draft." };
+  }
+  if (fileSize === 0) return { ok: false, error: "The selected file is empty." };
+  if (fileSize > MAX_STATEMENT_FILE_BYTES) {
+    return { ok: false, error: "File is too large — the maximum size is 10 MB." };
+  }
+  if (owned.documents.some((d) => d.docType === "CONTRACT")) {
+    return {
+      ok: false,
+      error: "A contract document is already uploaded. Remove it first to replace it.",
+    };
+  }
+  return { ok: true, data: owned };
+}
+
+/**
+ * Through-the-server upload of the signed contract / award letter (PDF).
+ * Upload only — no authenticity verification in this phase; the document is
+ * evidence for the reviewing officer.
+ */
+export async function addContractDocument(
+  userId: string,
+  caseId: string,
+  file: File,
+): Promise<Result<Document>> {
+  const slot = await validateContractSlot(userId, caseId, file.size);
+  if (!slot.ok) return slot;
+
+  if (!looksLikePdf(file.name, file.type)) {
+    return { ok: false, error: "Only PDF files are accepted for the contract document." };
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (!hasPdfMagic(bytes)) {
+    return {
+      ok: false,
+      error: "This file does not appear to be a valid PDF. Please upload the contract as a PDF.",
+    };
+  }
+
+  const storageKey = `cases/${caseId}/${crypto.randomUUID()}.pdf`;
+  await storage.save(storageKey, bytes);
+  const document = await prisma.document.create({
+    data: {
+      caseId,
+      uploadedById: userId,
+      fileName: file.name,
+      storageKey,
+      mimeType: "application/pdf",
+      fileSize: file.size,
+      docType: "CONTRACT",
+    },
+  });
+  await recordAudit({
+    action: "document.uploaded",
+    actorId: userId,
+    caseId,
+    detail: { documentId: document.id, fileName: file.name, docType: "CONTRACT" },
+  });
+  return { ok: true, data: document };
 }
 
 /** Through-the-server upload (multipart). Used in local development and as
@@ -92,6 +169,7 @@ export async function addFinancialStatement(
   caseId: string,
   file: File,
   fiscalYear: number,
+  statementType: StatementType = "AUDITED",
 ): Promise<Result<Document>> {
   const slot = await validateStatementSlot(userId, caseId, fiscalYear, file.size);
   if (!slot.ok) return slot;
@@ -110,7 +188,7 @@ export async function addFinancialStatement(
   const storageKey = `cases/${caseId}/${crypto.randomUUID()}.pdf`;
   await storage.save(storageKey, bytes);
   const document = await createStatementRecord(
-    userId, caseId, storageKey, file.name, file.size, fiscalYear,
+    userId, caseId, storageKey, file.name, file.size, fiscalYear, statementType,
   );
   return { ok: true, data: document };
 }
@@ -149,11 +227,17 @@ export async function prepareStatementUpload(
 export async function finalizeStatementUpload(
   userId: string,
   caseId: string,
-  input: { storageKey: string; fileName: string; fiscalYear: number },
+  input: { storageKey: string; fileName: string; fiscalYear: number; statementType: StatementType },
 ): Promise<Result<Document>> {
   // The key must be one WE minted for THIS case — never a caller-shaped path.
-  const keyPattern = new RegExp(`^cases/${caseId}/[0-9a-f-]{36}\\.pdf$`);
-  if (!keyPattern.test(input.storageKey)) {
+  // caseId is matched as a LITERAL string prefix (never compiled into a regex,
+  // so a caseId carrying regex metacharacters cannot throw or alter the match);
+  // only the constant UUID + ".pdf" tail is checked by a fixed pattern.
+  const prefix = `cases/${caseId}/`;
+  const suffix = input.storageKey.startsWith(prefix)
+    ? input.storageKey.slice(prefix.length)
+    : null;
+  if (suffix === null || !/^[0-9a-f-]{36}\.pdf$/.test(suffix)) {
     return { ok: false, error: "Upload reference not recognized. Please try the upload again." };
   }
   // Idempotency/hijack guard: a key already registered can never be reused.
@@ -188,6 +272,7 @@ export async function finalizeStatementUpload(
 
   const document = await createStatementRecord(
     userId, caseId, input.storageKey, input.fileName, bytes.length, input.fiscalYear,
+    input.statementType,
   );
   return { ok: true, data: document };
 }
@@ -239,7 +324,11 @@ export async function getDocumentForDownload(
   });
   if (!user) return null;
 
-  if (user.role === "RISK_OFFICER" || user.role === "ADMIN") {
+  if (
+    user.role === "RELATIONSHIP_MANAGER" ||
+    user.role === "RISK_OFFICER" ||
+    user.role === "ADMIN"
+  ) {
     const reviewable = await prisma.underwritingCase.findFirst({
       where: { id: document.caseId, status: { not: "DRAFT" } },
       select: { id: true },

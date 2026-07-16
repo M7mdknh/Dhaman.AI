@@ -121,6 +121,146 @@ export const RISK = {
 } as const;
 
 /**
+ * Qualitative (KYC) pillar — component weights (sum = 100) and the band →
+ * 0–1 safety sub-scores. Ordering logic (approved 2026-07-16):
+ * computed factors beat declared ones, binary capability proofs weigh
+ * heavy, and killer signals are HARD CAPS (see HARD_CAPS), never points —
+ * a points-only system would let a called guarantee be averaged away.
+ */
+export const QUALITATIVE = {
+  weights: {
+    /** Survival is the strongest single contractor-default predictor. */
+    operatingAge: 15,
+    /** Track depth; diminishing returns above 25 completed projects. */
+    projectsCompleted: 10,
+    /** Execution risk is discipline-specific — binary proof of capability. */
+    sameTypeExperience: 10,
+    /** Who actually runs delivery. */
+    gmExperience: 6,
+    /** A recent change invalidates the track record earned before it. */
+    managementStability: 4,
+    /** RED freezes visas → labor-dependent projects stall (also a cap). */
+    nitaqat: 10,
+    /** Computed: (backlog + this contract) / latest revenue. */
+    capacityHeadroom: 15,
+    /** Rent/purchase stacks capex onto mobilization cash needs. */
+    equipment: 5,
+    /** Mobilization staffing risk. */
+    hiring: 5,
+    /** Clean declared conduct; any incident zeroes it AND hard-caps. */
+    conduct: 10,
+    /** Trust in the numbers every ratio is computed from. */
+    auditor: 10,
+  },
+  /** Operating age (years since CR issuance): ≥10 → 1, linear to 0 at 2
+   * (banks' own 2–3-year minimum sits at the floor). */
+  operatingAge: { floorYears: 2, ceilYears: 10 },
+  projectsCompleted: { OVER_25: 1, FROM_10_TO_25: 0.7, FROM_5_TO_10: 0.4, UNDER_5: 0.1 },
+  /** GM years in this field: ≥10 → 1, linear to 0.15 at 0 (never negative). */
+  gmExperience: { floorYears: 0, ceilYears: 10, floorScore: 0.15 },
+  nitaqat: { PLATINUM: 1, GREEN: 0.7, YELLOW: 0.3, RED: 0 },
+  /** (backlog + contract) / revenue: ≤1.5× → 1, ≥4× → 0. An over-committed
+   * contractor delays everything at once. */
+  capacityHeadroom: { ceil: 1.5, floor: 4.0 },
+  equipment: { OWNED: 1, RENT: 0.6, PURCHASE: 0.2 },
+  bands: { low: 15, moderate: 35, high: 55, critical: 75 },
+} as const;
+
+/**
+ * Contract-risk pillar — component weights (sum = 100) and sub-score
+ * mappings. Higher published score = riskier (matches the risk engine).
+ */
+export const CONTRACT_RISK = {
+  weights: {
+    /** Contract / largest completed project — the classic failure mode. */
+    jumpRisk: 20,
+    /** Back-to-back subcontracting = paid only if someone we did not
+     * underwrite performs. */
+    role: 12,
+    /** Repeat awards prove performance AND the beneficiary's payment
+     * behavior. */
+    beneficiaryHistory: 10,
+    /** Advance coverage of the pre-revenue burn window — the real driver
+     * of mid-project distress. */
+    cashGap: 18,
+    /** Thin margin leaves nothing for delay or cost inflation. */
+    marginBuffer: 12,
+    /** Declared margin must survive contact with audited history. */
+    marginRealism: 8,
+    /** Public tenders are won on price. */
+    awardMethod: 6,
+    /** Extend-or-pay lets the beneficiary hold the bond hostage. */
+    bondTerms: 9,
+    /** LD cap bounds the worst-case call size. */
+    ldExposure: 5,
+  },
+  /** contract / largest completed: ≤1× → 1, ≥3× → 0 (>3× also hard-caps). */
+  jumpRatio: { ceil: 1.0, floor: 3.0 },
+  role: { main: 1, subBackToBack: 0.17, subDirect: 0.58 },
+  /** Prior contracts with this beneficiary: ≥3 → 1, 1–2 → 0.7, none → 0.3. */
+  beneficiaryHistory: { repeat: 3, repeatScore: 1, someScore: 0.7, noneScore: 0.3 },
+  /**
+   * Cash-gap coverage = advance% × durationMonths / (100 × burn months),
+   * i.e. the advance measured against the contract share consumed before
+   * the first payment lands (linear spend assumption). ≥1 → fully covered.
+   */
+  cashGap: {
+    billingCycleMonths: { MONTHLY: 1, MILESTONE: 3, OTHER: 2 },
+    fullCoverage: 1.0,
+    /** Coverage below this raises the CASH_GAP flag (pair with financing). */
+    flagBelow: 0.5,
+  },
+  /** Expected gross margin %: ≥20 → 1, ≤10 → 0 (<10% also flags). */
+  marginBuffer: { floorPct: 10, ceilPct: 20 },
+  /** Declared / historical gross margin: ≤1.25× history → 1, ≥2× → 0. */
+  marginRealism: { ceil: 1.25, floor: 2.0, /** flag above this multiple */ flagAbove: 1.5 },
+  awardMethod: { LIMITED_TENDER: 1, DIRECT_AWARD: 0.83, PUBLIC_TENDER: 0.5 },
+  bondTerms: { conditional: 1, firstDemand: 0.56, firstDemandExtendOrPay: 0.11 },
+  /** LD cap %: ≤10 → 1, ≥25 → 0. No-LD contracts score 1. */
+  ldExposure: { ceilPct: 10, floorPct: 25 },
+  bands: { low: 15, moderate: 35, high: 55, critical: 75 },
+} as const;
+
+/**
+ * Non-dilutable policy overrides. A triggered cap limits how favorable the
+ * recommendation OF RECORD can be — it never changes any score, and it can
+ * never force a REJECT (that stays a human/band outcome).
+ */
+export const HARD_CAPS = {
+  /** Direct evidence the exact risk being priced has materialized before. */
+  guaranteeCalled: { ceiling: "MANUAL_REVIEW" },
+  /** Payment conduct is the product's core risk. */
+  conductIncidents: { ceiling: "MANUAL_REVIEW" },
+  /** Visa freeze can stall any labor-dependent project mid-execution. */
+  nitaqatRed: { ceiling: "MANUAL_REVIEW" },
+  /** Execution capability unproven at this scale, whatever the ratios say. */
+  jumpRisk: { triggerRatio: 3.0, ceiling: "APPROVE_WITH_CONDITIONS" },
+} as const;
+
+/**
+ * Composite grade: pillar weights (sum = 100). Financials carry half —
+ * they are the only VERIFIED input (no SIMAH / open banking in this
+ * phase). Company outweighs contract because the company repays across
+ * every contract. Absent pillars (legacy cases) are excluded and the
+ * remaining weights renormalized.
+ */
+export const PILLARS = {
+  weights: { financial: 50, qualitative: 30, contractRisk: 20 },
+  bands: { low: 15, moderate: 35, high: 55, critical: 75 },
+} as const;
+
+/**
+ * Statement reliability → confidence in the financial pillar. Uncertainty
+ * must never move a score (that would double-count the auditor-tier
+ * component) — it is reported alongside the grade for the officer.
+ */
+export const RELIABILITY_CONFIDENCE = {
+  AUDITED: "HIGH",
+  REVIEWED: "MEDIUM",
+  MANAGEMENT: "LOW",
+} as const;
+
+/**
  * Bank policy: risk band → recommendation OF RECORD. Deterministic and
  * final — the AI must echo and explain this mapping, never choose it
  * (CLAUDE.md: the AI assists the bank, the AI never replaces the bank).

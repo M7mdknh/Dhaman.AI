@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-15.**
+> of any session. **Last updated: 2026-07-16.**
 
 ## Product framing
 
@@ -34,6 +34,108 @@ below. All work is committed on `main`.
   Same first-success orchestration, plus the OCR fallback for unreadable scans
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
+
+### Post-MVP — KYC questionnaire, structured contracts, composite grade, company history (2026-07-16)
+
+The submission flow was deepened per the client's "Platform Edits
+Specification" (curated: every added field feeds a deterministic score, a
+computed flag, or an exposure calculation — free-text-only and
+SIMAH-dependent items were dropped/deferred; **no pre-filling anywhere** by
+explicit decision). 232/232 tests, typecheck + lint + prod build clean.
+
+- **Five-step wizard.** New Step 2 "Profile & Track Record" (KYC): company
+  profile (CR issue date — age is derived, never self-banded — activities,
+  classification, group, GM, ownership change, Nitaqat, litigation), track
+  record (projects band, largest project, terminations, guarantee-ever-called,
+  same-type experience), workload (running projects, backlog, outstanding
+  guarantees across banks, equipment, hiring), conduct (main bank, incidents,
+  auditor tier, funding source). Stored per case in `CaseQualitative` (1:1) —
+  answers are versioned by construction; drift between a company's cases is
+  itself a signal.
+- **Structured contract terms** on `ContractDetails` (all nullable for legacy
+  rows): role/back-to-back, award method, prior beneficiary contracts,
+  advance %, billing cycle, retention %, payment period, required bond % +
+  validity + first-demand + extend-or-pay, LD rate/cap, mobilization weeks,
+  key suppliers, expected gross margin. Free-text payment terms retired
+  (column kept nullable for old cases); optional signed-contract PDF upload
+  (docType `CONTRACT`, upload only — no authenticity verification this
+  phase). Expected first invoice date is *derived*, never asked.
+- **Composite grade** (`overall-grade-service`): 50% financial + 30%
+  qualitative (`qualitative-score-service`) + 20% contract risk
+  (`contract-risk-service`); absent pillars renormalize (legacy cases grade
+  exactly as before). **Hard caps** (guarantee called / conduct incidents /
+  Nitaqat Red → MANUAL_REVIEW at best; >3× jump → conditions at best) bound
+  the recommendation of record, never any score. New deterministic
+  cross-checks/flags: sector mismatch, experience gap, capacity headroom
+  ((backlog + contract)/revenue), guarantee burden vs equity (the
+  within-Daman over-issuance check), cash-gap coverage, thin margin, margin
+  realism vs audited gross margin, bond-% consistency, bond tail risk.
+  All thresholds in `lib/finance/thresholds.ts` (QUALITATIVE, CONTRACT_RISK,
+  PILLARS, HARD_CAPS). Headline/queue/priority/memo policy now read
+  `report.overall`; prompt bumped to **v5** (companyProfile + contract
+  structure + pillars + hardCaps in the input snapshot).
+- **Statement reliability.** Per-upload Audited/Reviewed/Management
+  declaration (`Document.statementType` → `FinancialStatement.statementType`);
+  the WEAKEST statement bounds the grade's confidence label — never a score
+  (that would double-count the auditor-tier component).
+- **Company as parent entity.** `company-history-service` derives (never
+  duplicates) a company's full record from its cases; new bank-side page
+  `/companies/[id]` (stats: active/pending exposure, guarantees; full case
+  table) linked from the review workspace; Insight Chat context now includes
+  the company's other contracts/guarantees/outcomes for portfolio questions.
+
+### Post-MVP — Demo-feedback change set: RM-led workflow, PDF export, coverage fix (2026-07-16)
+
+Thirteen demo-feedback items, implemented and verified end-to-end (24-check
+Playwright walkthrough across contractor → RM → admin, zero console errors;
+205/205 tests, typecheck + lint + prod build clean):
+
+- **RM-led review.** The bank persona is now the Relationship Manager: both
+  seeded bank logins are `RELATIONSHIP_MANAGER` (the Risk Officer has no
+  account — the schema/decision path keeps `RISK_OFFICER` for the future).
+  The RM reviews, records a **suggested decision** (`RmSuggestedDecision`,
+  same vocabulary as officer decisions, captured transactionally with the
+  routing), and "Submit to Risk Officer" moves the case to `RM_REVIEWED` —
+  labeled "Sent to Risk Officer" (no real send; the officer stage is
+  fictional for now). Admin retains the decision/issuance path. Bank-staff
+  READ gates (`getGuaranteePdf`, `getDocumentForDownload`) now include RMs.
+- **Guarantee amount removed as an input.** The wizard takes only the ratio;
+  the amount is always rederived server-side (`contractValue × ratio / 100`)
+  and previewed live. Expected payment terms became required.
+- **IFRS years on request.** The documents step starts with only the latest
+  fiscal year; "+ Add Year N" reveals earlier slots one at a time (6-year cap,
+  computed from the current date).
+- **Financial-company applicants.** Sectors now include Banking & Financial
+  Services, Fintech & Digital Payments (BNPL — e.g. Tamara), and Insurance.
+- **Contractor surface reduced.** The contractor-facing Financial Analysis
+  page is gone (submit + track only); bank analysis stays internal. The
+  REQUEST_INFO decision now revalidates the contractor's case paths and is
+  shown prominently (message + timestamp) on their case page.
+- **Company registration fix.** A second user entering an existing CR number
+  joins that company instead of erroring; identity lock still protects
+  submitted cases.
+- **Coverage/liquidity data fix.** The parser reads the cash-flow
+  "Depreciation and amortisation" add-back; the engine derives EBITDA
+  (operating income + D&A, only when D&A is known) so EBITDA margin, DSCR and
+  EBITDA coverage populate. Current-asset/liability subtotal captions relaxed
+  (`Current assets` accepted as a complete caption). Demo statement fixtures
+  now print the D&A line and the three canonical cases were re-seeded — all
+  cash-flow/coverage/working-capital fields show real values (bands
+  unchanged: 2/EXCELLENT, 19/LOW, 92/CRITICAL).
+- **Admin case management.** Audited admin-only Edit (full contract form,
+  amount rederived) and Delete (refused while an issued guarantee exists;
+  storage cleanup best-effort) dialogs on the review page.
+- **Financial analysis PDF export.** `GET /api/cases/[caseId]/analysis-pdf`
+  (bank-staff only, audited) renders the deterministic report via pdf-lib —
+  Alinma logo letterhead (`public/bank-logo.png`, traced into the serverless
+  bundle via `outputFileTracingIncludes`), verdict row, full ratio tables per
+  fiscal year, risk flags, no-AI footer. "Export PDF" button on the review
+  page's Financial Intelligence section.
+- **Insight Chat as a floating widget.** Fixed-position launcher icon
+  (bottom-right) opening a resizable panel (expand/collapse); the page stays
+  fully scrollable/navigable while a response streams; a brief randomized
+  "thinking" pause (700–1100 ms, bouncing dots) precedes the first token.
+- Migration `20260716105627_express_rm_officer_and_liquidity_fixes`.
 
 ### Post-MVP — Banking-grade number presentation (2026-07-15)
 

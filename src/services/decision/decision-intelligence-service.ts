@@ -17,7 +17,6 @@ import { createHash } from "node:crypto";
 import { getLLMProvider } from "@/lib/ai";
 import { LLMProviderError, type LLMProvider } from "@/lib/ai/provider";
 import { env } from "@/lib/env";
-import { RECOMMENDATION_BY_BAND } from "@/lib/finance/thresholds";
 import { prisma } from "@/lib/prisma";
 import { decisionResponseSchema, type DecisionResponse } from "@/lib/validation/decision";
 import { recordAudit } from "@/services/audit-service";
@@ -192,6 +191,7 @@ export async function runDecisionIntelligence(
     include: {
       company: true,
       contractDetails: true,
+      qualitative: true,
       financialStatements: { orderBy: { fiscalYear: "desc" } },
       documents: {
         select: { fiscalYear: true, extraction: { select: { companyName: true } } },
@@ -207,6 +207,8 @@ export async function runDecisionIntelligence(
     underwritingCase.financialStatements,
     underwritingCase.contractDetails,
     toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
+    underwritingCase.qualitative,
+    underwritingCase.company.sector,
   );
   if (!report) {
     return { ok: false, error: "No parsed financial statements are available for this case." };
@@ -218,6 +220,7 @@ export async function runDecisionIntelligence(
     underwritingCase.company,
     underwritingCase.contractDetails,
     report,
+    underwritingCase.qualitative,
   );
   const userMessage = buildUserMessage(input);
   const inputHash = computeInputHash(userMessage, provider);
@@ -247,9 +250,10 @@ export async function runDecisionIntelligence(
     return { ok: false, error: userFacingError(error) };
   }
 
-  // Recommendation of record = deterministic bank policy. A diverging model
+  // Recommendation of record = deterministic bank policy: the composite
+  // grade's band-mapped recommendation AFTER hard caps. A diverging model
   // value is preserved and flagged — transparency without delegation.
-  const policyRecommendation = RECOMMENDATION_BY_BAND[report.risk.band];
+  const policyRecommendation = report.overall.recommendation;
   const aiDiverged = response.recommendation !== policyRecommendation;
 
   const decision = await prisma.decisionIntelligence.create({

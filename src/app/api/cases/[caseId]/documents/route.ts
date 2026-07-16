@@ -18,14 +18,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getSession } from "@/lib/auth/session";
-import { finalizeStatementSchema, statementYearSchema } from "@/lib/validation/case";
-import { addFinancialStatement, finalizeStatementUpload } from "@/services/document-service";
+import {
+  finalizeStatementSchema,
+  statementTypeSchema,
+  statementYearSchema,
+} from "@/lib/validation/case";
+import {
+  addContractDocument,
+  addFinancialStatement,
+  finalizeStatementUpload,
+} from "@/services/document-service";
 
 import type { Document } from "@/generated/prisma/client";
 
 function documentPayload(d: Document) {
-  const { id, fileName, fileSize, fiscalYear, processingStatus, createdAt } = d;
-  return { id, fileName, fileSize, fiscalYear, processingStatus, createdAt };
+  const { id, fileName, fileSize, fiscalYear, docType, statementType, processingStatus, createdAt } = d;
+  return { id, fileName, fileSize, fiscalYear, docType, statementType, processingStatus, createdAt };
 }
 
 export async function POST(
@@ -104,18 +112,47 @@ export async function POST(
   }
   mark("parse");
   const file = formData.get("file");
-  const year = statementYearSchema.safeParse(formData.get("fiscalYear"));
 
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "No file provided." }, { status: 400 });
   }
+
+  // Contract / award letter upload (wizard Step 3) — no fiscal year.
+  if (formData.get("docType") === "CONTRACT") {
+    let result;
+    try {
+      result = await addContractDocument(session.userId, caseId, file);
+    } catch (error) {
+      console.error("Contract document upload failed", { caseId, error });
+      logOutcome("multipart", { caseId, fileSize: file.size, ok: false, error: "exception" });
+      return NextResponse.json(
+        { error: "Upload could not be saved. Please try again." },
+        { status: 500 },
+      );
+    }
+    mark("validateAndSave");
+    logOutcome("multipart", { caseId, docType: "CONTRACT", fileSize: file.size, ok: result.ok, ...(result.ok ? { documentId: result.data.id } : { error: result.error }) });
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    return NextResponse.json({ document: documentPayload(result.data) }, { status: 201 });
+  }
+
+  const year = statementYearSchema.safeParse(formData.get("fiscalYear"));
   if (!year.success) {
     return NextResponse.json({ error: "Invalid fiscal year." }, { status: 400 });
   }
+  const declaredType = statementTypeSchema.safeParse(formData.get("statementType") ?? "AUDITED");
 
   let result;
   try {
-    result = await addFinancialStatement(session.userId, caseId, file, year.data);
+    result = await addFinancialStatement(
+      session.userId,
+      caseId,
+      file,
+      year.data,
+      declaredType.success ? declaredType.data : "AUDITED",
+    );
   } catch (error) {
     // An unexpected failure (storage backend, database) must not leak as an
     // opaque 500 — the client can only surface a clean JSON error. Log the

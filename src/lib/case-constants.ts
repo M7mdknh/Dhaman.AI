@@ -4,10 +4,19 @@
  * import from client components without pulling in the generated client).
  */
 import type {
+  AuditorTier,
+  AwardMethod,
   BeneficiaryType,
+  BillingCycle,
   CaseStatus,
+  ContractorRole,
   DocumentProcessingStatus,
+  EquipmentPlan,
+  FundingSource,
   GuaranteeType,
+  NitaqatBand,
+  ProjectsCompletedBand,
+  StatementType,
 } from "@/generated/prisma/enums";
 
 export interface Option<T extends string = string> {
@@ -58,13 +67,146 @@ export const SECTOR_OPTIONS = [
   "Education",
   "Information Technology",
   "Manufacturing",
+  // Financial companies (banks, fintech/BNPL — e.g. Tamara) can also be
+  // Daman applicants, not only construction/industrial contractors.
+  "Banking & Financial Services",
+  "Fintech & Digital Payments (BNPL)",
+  "Insurance",
   "Other",
 ] as const;
 
 export const CURRENCY_OPTIONS = ["SAR", "USD", "EUR"] as const;
 
-/** Fiscal years accepted for audited IFRS statement uploads. */
-export const STATEMENT_YEARS = [2025, 2024, 2023] as const;
+// ---------------------------------------------------------------------------
+// KYC questionnaire vocabulary (wizard Step 2 — CaseQualitative).
+// Every banded option maps to a deterministic sub-score in
+// lib/finance/thresholds.ts QUALITATIVE — no band exists without a score.
+// ---------------------------------------------------------------------------
+
+export const YES_NO_OPTIONS = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+] as const satisfies readonly Option[];
+
+export const NITAQAT_OPTIONS: Option<NitaqatBand>[] = [
+  { value: "PLATINUM", label: "Platinum" },
+  { value: "GREEN", label: "Green" },
+  { value: "YELLOW", label: "Yellow" },
+  { value: "RED", label: "Red" },
+];
+
+export const PROJECTS_COMPLETED_OPTIONS: Option<ProjectsCompletedBand>[] = [
+  { value: "UNDER_5", label: "Fewer than 5" },
+  { value: "FROM_5_TO_10", label: "5 – 10" },
+  { value: "FROM_10_TO_25", label: "10 – 25" },
+  { value: "OVER_25", label: "More than 25" },
+];
+
+export const EQUIPMENT_PLAN_OPTIONS: Option<EquipmentPlan>[] = [
+  { value: "OWNED", label: "Owned" },
+  { value: "RENT", label: "Will rent" },
+  { value: "PURCHASE", label: "Will purchase" },
+];
+
+export const AUDITOR_TIER_OPTIONS: Option<AuditorTier>[] = [
+  { value: "BIG_FOUR", label: "Big-4 firm (PwC, EY, KPMG, Deloitte)" },
+  { value: "ACCREDITED_LOCAL", label: "SOCPA-accredited local firm" },
+  { value: "OTHER_FIRM", label: "Other audit firm" },
+  { value: "UNAUDITED", label: "Not audited" },
+];
+
+export const FUNDING_SOURCE_OPTIONS: Option<FundingSource>[] = [
+  { value: "OWN_CASH", label: "Own cash" },
+  { value: "THIS_BANK", label: "Financing from this bank" },
+  { value: "OTHER_BANK", label: "Financing from another bank" },
+  { value: "SUPPLIER_CREDIT", label: "Supplier credit" },
+];
+
+/** Saudi contractor classification (Momtaz is the top grade, then 1–5). */
+export const CONTRACTOR_CLASSIFICATION_OPTIONS: Option[] = [
+  { value: "MOMTAZ", label: "Momtaz (ممتاز)" },
+  { value: "GRADE_1", label: "Grade 1" },
+  { value: "GRADE_2", label: "Grade 2" },
+  { value: "GRADE_3", label: "Grade 3" },
+  { value: "GRADE_4", label: "Grade 4" },
+  { value: "GRADE_5", label: "Grade 5" },
+  { value: "NONE", label: "Not classified" },
+];
+
+/** Main operating banks offered in the KYC conduct section. */
+export const SAUDI_BANK_OPTIONS = [
+  "Alinma Bank",
+  "Al Rajhi Bank",
+  "Saudi National Bank (SNB)",
+  "Riyad Bank",
+  "SAB",
+  "Banque Saudi Fransi",
+  "Arab National Bank",
+  "Bank Albilad",
+  "Bank AlJazira",
+  "The Saudi Investment Bank",
+  "Gulf International Bank",
+  "Other",
+] as const;
+
+// ---------------------------------------------------------------------------
+// Contract structure vocabulary (wizard Step 3 additions).
+// ---------------------------------------------------------------------------
+
+export const CONTRACTOR_ROLE_OPTIONS: Option<ContractorRole>[] = [
+  { value: "MAIN_CONTRACTOR", label: "Main contractor" },
+  { value: "SUBCONTRACTOR", label: "Subcontractor" },
+];
+
+export const AWARD_METHOD_OPTIONS: Option<AwardMethod>[] = [
+  { value: "PUBLIC_TENDER", label: "Public tender" },
+  { value: "LIMITED_TENDER", label: "Limited tender" },
+  { value: "DIRECT_AWARD", label: "Direct award" },
+];
+
+export const BILLING_CYCLE_OPTIONS: Option<BillingCycle>[] = [
+  { value: "MONTHLY", label: "Monthly progress billing" },
+  { value: "MILESTONE", label: "Milestone-based" },
+  { value: "OTHER", label: "Other" },
+];
+
+/** Days from invoice certification to payment. */
+export const PAYMENT_PERIOD_OPTIONS: Option[] = [
+  { value: "30", label: "30 days" },
+  { value: "60", label: "60 days" },
+  { value: "90", label: "90 days" },
+  { value: "120", label: "120+ days" },
+];
+
+export const STATEMENT_TYPE_OPTIONS: Option<StatementType>[] = [
+  { value: "AUDITED", label: "Audited" },
+  { value: "REVIEWED", label: "Reviewed" },
+  { value: "MANAGEMENT", label: "Management accounts" },
+];
+
+export const STATEMENT_TYPE_LABELS: Record<StatementType, string> = {
+  AUDITED: "Audited",
+  REVIEWED: "Reviewed",
+  MANAGEMENT: "Management accounts",
+};
+
+/**
+ * Fiscal years accepted for audited IFRS statement uploads. Computed off the
+ * current date (never hand-maintained) so the accepted range advances every
+ * year with no code change. The wizard shows only the latest year by
+ * default; "+ Add Year" reveals earlier years up to the historical cap.
+ */
+const CURRENT_CALENDAR_YEAR = new Date().getFullYear();
+export const LATEST_STATEMENT_YEAR = CURRENT_CALENDAR_YEAR - 1;
+export const MAX_STATEMENT_HISTORY_YEARS = 6;
+export const EARLIEST_STATEMENT_YEAR =
+  LATEST_STATEMENT_YEAR - MAX_STATEMENT_HISTORY_YEARS + 1;
+
+export function isAcceptedStatementYear(year: number): boolean {
+  return (
+    Number.isInteger(year) && year <= LATEST_STATEMENT_YEAR && year >= EARLIEST_STATEMENT_YEAR
+  );
+}
 
 export const MAX_STATEMENT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB per PDF
 
@@ -87,7 +229,7 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   PROCESSING_FAILED: "Processing Failed",
   PARSING: "Processing",
   ANALYSIS_READY: "Analysis Ready",
-  RM_REVIEWED: "RM Reviewed",
+  RM_REVIEWED: "Sent to Risk Officer",
   UNDER_REVIEW: "Under Review",
   INFO_REQUESTED: "Info Requested",
   APPROVED: "Approved",

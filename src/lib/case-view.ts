@@ -6,14 +6,19 @@
  * exact string shapes the wizard forms and summary components consume
  * (identical to the zod input types, so saved data round-trips).
  */
-import type { CompanyInfoInput, ContractDetailsInput } from "@/lib/validation/case";
 import type {
+  CaseQualitativeInput,
+  CompanyInfoInput,
+  ContractDetailsInput,
+} from "@/lib/validation/case";
+import type {
+  CaseQualitative,
   Company,
   ContractDetails,
   Document,
   FinancialStatement,
 } from "@/generated/prisma/client";
-import type { CaseStatus } from "@/generated/prisma/enums";
+import type { CaseStatus, DocumentType, StatementType } from "@/generated/prisma/enums";
 import type { CaseListItem } from "@/services/case-service";
 
 export interface DocumentView {
@@ -21,6 +26,8 @@ export interface DocumentView {
   fileName: string;
   fileSize: number;
   fiscalYear: number | null;
+  docType: DocumentType;
+  statementType: StatementType | null;
   processingStatus: Document["processingStatus"];
   createdAt: string; // ISO
 }
@@ -62,6 +69,9 @@ export function toCompanyInput(company: Company | null): CompanyInfoInput {
   };
 }
 
+const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
+const yesNoView = (v: boolean | null) => (v === null ? "" : v ? "YES" : "NO") as "YES" | "NO" | "";
+
 export function toContractInput(details: ContractDetails): ContractDetailsInput {
   return {
     beneficiary: details.beneficiary,
@@ -73,12 +83,74 @@ export function toContractInput(details: ContractDetails): ContractDetailsInput 
     currency: details.currency as ContractDetailsInput["currency"],
     guaranteeAmount: details.guaranteeAmount.toString(),
     guaranteeType: details.guaranteeType,
-    guaranteePercentage: details.guaranteePercentage?.toString() ?? "",
-    projectStartDate: details.projectStartDate.toISOString().slice(0, 10),
-    projectEndDate: details.projectEndDate.toISOString().slice(0, 10),
+    guaranteePercentage: details.guaranteePercentage.toString(),
+    projectStartDate: isoDate(details.projectStartDate),
+    projectEndDate: isoDate(details.projectEndDate),
     projectLocation: details.projectLocation,
-    expectedPaymentTerms: details.expectedPaymentTerms ?? "",
     additionalNotes: details.additionalNotes ?? "",
+    // Structured additions — legacy rows (pre-KYC cases) render as blanks,
+    // which the zod schema then requires before the draft can move on.
+    contractorRole: (details.contractorRole ?? "") as ContractDetailsInput["contractorRole"],
+    mainContractorName: details.mainContractorName ?? "",
+    backToBackPayment: yesNoView(details.backToBackPayment),
+    awardMethod: (details.awardMethod ?? "") as ContractDetailsInput["awardMethod"],
+    priorContractsWithBeneficiary: details.priorContractsWithBeneficiary?.toString() ?? "",
+    advancePaymentPct: details.advancePaymentPct?.toString() ?? "",
+    billingCycle: (details.billingCycle ?? "") as ContractDetailsInput["billingCycle"],
+    retentionPct: details.retentionPct?.toString() ?? "",
+    paymentPeriodDays: (details.paymentPeriodDays?.toString() ??
+      "") as ContractDetailsInput["paymentPeriodDays"],
+    paymentNotes: details.paymentNotes ?? details.expectedPaymentTerms ?? "",
+    requiredBondPct: details.requiredBondPct?.toString() ?? "",
+    bondValidityDate: isoDate(details.bondValidityDate),
+    onFirstDemand: yesNoView(details.onFirstDemand) as ContractDetailsInput["onFirstDemand"],
+    extendOrPay: yesNoView(details.extendOrPay) as ContractDetailsInput["extendOrPay"],
+    ldRatePctPerWeek: details.ldRatePctPerWeek?.toString() ?? "",
+    ldCapPct: details.ldCapPct?.toString() ?? "",
+    mobilizationWeeks: details.mobilizationWeeks?.toString() ?? "",
+    keySuppliersIdentified: yesNoView(
+      details.keySuppliersIdentified,
+    ) as ContractDetailsInput["keySuppliersIdentified"],
+    keySuppliersNote: details.keySuppliersNote ?? "",
+    expectedGrossMarginPct: details.expectedGrossMarginPct?.toString() ?? "",
+  };
+}
+
+export function toQualitativeInput(row: CaseQualitative | null): CaseQualitativeInput | null {
+  if (!row) return null;
+  return {
+    crIssueDate: isoDate(row.crIssueDate),
+    crActivities: row.crActivities,
+    contractorClassification: (row.contractorClassification ??
+      "NONE") as CaseQualitativeInput["contractorClassification"],
+    partOfGroup: yesNoView(row.partOfGroup) as "YES" | "NO",
+    groupName: row.groupName ?? "",
+    gmName: row.gmName,
+    gmExperienceYears: row.gmExperienceYears.toString(),
+    ownershipChanged: yesNoView(row.ownershipChanged) as "YES" | "NO",
+    ownershipChangeNote: row.ownershipChangeNote ?? "",
+    nitaqatBand: row.nitaqatBand,
+    ongoingLitigation: yesNoView(row.ongoingLitigation) as "YES" | "NO",
+    litigationNote: row.litigationNote ?? "",
+    projectsCompletedBand: row.projectsCompletedBand,
+    largestProjectValue: row.largestProjectValue.toString(),
+    hadProjectIssues: yesNoView(row.hadProjectIssues) as "YES" | "NO",
+    projectIssuesNote: row.projectIssuesNote ?? "",
+    guaranteeCalled: yesNoView(row.guaranteeCalled) as "YES" | "NO",
+    guaranteeCalledNote: row.guaranteeCalledNote ?? "",
+    sameTypeExperience: yesNoView(row.sameTypeExperience) as "YES" | "NO",
+    sameTypeExperienceNote: row.sameTypeExperienceNote ?? "",
+    runningProjectsCount: row.runningProjectsCount.toString(),
+    backlogValue: row.backlogValue.toString(),
+    outstandingGuarantees: row.outstandingGuarantees.toString(),
+    equipmentPlan: row.equipmentPlan,
+    heavyHiringNeeded: yesNoView(row.heavyHiringNeeded) as "YES" | "NO",
+    mainBank: row.mainBank,
+    conductIncidents: yesNoView(row.conductIncidents) as "YES" | "NO",
+    conductIncidentsNote: row.conductIncidentsNote ?? "",
+    auditorTier: row.auditorTier,
+    auditorName: row.auditorName ?? "",
+    fundingSource: row.fundingSource,
   };
 }
 
@@ -88,6 +160,8 @@ export function toDocumentView(document: Document): DocumentView {
     fileName: document.fileName,
     fileSize: document.fileSize,
     fiscalYear: document.fiscalYear,
+    docType: document.docType,
+    statementType: document.statementType,
     processingStatus: document.processingStatus,
     createdAt: document.createdAt.toISOString(),
   };

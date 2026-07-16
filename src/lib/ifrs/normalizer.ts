@@ -18,6 +18,7 @@ export const CANONICAL_KEYS = [
   "operatingIncome",
   "netIncome",
   "ebitda",
+  "depreciationAmortization",
   "interestExpense",
   "cash",
   "receivables",
@@ -125,11 +126,15 @@ const RULES: MappingRule[] = [
   { key: "cash", statements: BS, pattern: /^(cash and (cash )?equivalents?|cash and bank balances|bank balances and cash|cash at banks?|cash and short.?term deposits?|cash (on|in) hand and at banks?)/, ar: [["النقد", "حكمه"], ["النقد", "يعادل"], ["النقديه", "النقديه"], ["نقد", "بنك"]] },
   { key: "receivables", statements: BS, pattern: /^(trade (and other )?receivables|accounts? receivables?|contract receivables|consumer receivables|financing receivables|trade debtors?)/, ar: [["ذمم", "مدينه"], ["المدينون"]] },
   { key: "inventory", statements: BS, pattern: /^(inventor(y|ies)|stock\b)/, ar: [["المخزون"], ["البضاعه"]] },
-  { key: "currentAssets", statements: BS, pattern: /^total current assets/, ar: [["اجمالي", "الموجودات", "المتداوله"], ["مجموع", "الموجودات", "المتداوله"], ["اجمالي", "الاصول", "المتداوله"]] },
+  // Some classified balance sheets subtotal with the bare "Current assets"
+  // caption instead of "Total current assets" — accept either, but only as
+  // a COMPLETE caption (anchored to end) so a specific line item like
+  // "Current assets held for sale" is never mistaken for the subtotal.
+  { key: "currentAssets", statements: BS, pattern: /^(total current assets|current assets\s*:?\s*$)/, ar: [["اجمالي", "الموجودات", "المتداوله"], ["مجموع", "الموجودات", "المتداوله"], ["اجمالي", "الاصول", "المتداوله"]] },
   { key: "totalAssets", statements: BS, pattern: /^total assets/, ar: [["اجمالي", "الموجودات"], ["مجموع", "الموجودات"], ["اجمالي", "الاصول"], ["مجموع", "الاصول"]] },
 
   // ---- Statement of Financial Position - liabilities & equity
-  { key: "currentLiabilities", statements: BS, pattern: /^total current liabilit/, ar: [["اجمالي", "المطلوبات", "المتداوله"], ["مجموع", "المطلوبات", "المتداوله"], ["اجمالي", "الخصوم", "المتداوله"]] },
+  { key: "currentLiabilities", statements: BS, pattern: /^(total current liabilit\w*|current liabilities?\s*:?\s*$)/, ar: [["اجمالي", "المطلوبات", "المتداوله"], ["مجموع", "المطلوبات", "المتداوله"], ["اجمالي", "الخصوم", "المتداوله"]] },
   // "Total liabilities and equity" is the balance-sheet GRAND TOTAL (it equals
   // total assets), not liabilities — claiming it would inflate every leverage
   // ratio. Decline any caption naming both sides of the identity.
@@ -145,6 +150,10 @@ const RULES: MappingRule[] = [
   // "net" is optional and "provided by" is as common as "generated from" —
   // a bare "Cash flows from operating activities" section heading carries no
   // amounts, so it never becomes a line item and cannot shadow the subtotal.
+  // The operating-activities reconciliation add-back — used to derive EBITDA
+  // (operatingIncome + D&A) when a statement never prints an "EBITDA" line,
+  // which is the common case (EBITDA is a non-IFRS metric).
+  { key: "depreciationAmortization", statements: CF, pattern: /^depreciation(?:\s*(?:and|&)\s*amortization)?\b/, ar: [["الاستهلاك", "الاطفاء"], ["استهلاك", "اطفاء"]] },
   { key: "operatingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) operating activit/, ar: [["صافي", "النقد", "التشغيليه"], ["النقد", "الانشطه", "التشغيليه"]] },
   { key: "investingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) investing activit/, ar: [["صافي", "النقد", "الاستثماريه"], ["النقد", "الانشطه", "الاستثماريه"]] },
   { key: "financingCashFlow", statements: CF, pattern: /^(net )?cash (flows? )?(generated |used |provided )?(from|in|by) financing activit/, ar: [["صافي", "النقد", "التمويليه"], ["النقد", "الانشطه", "التمويليه"]] },

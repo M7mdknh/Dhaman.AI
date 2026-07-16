@@ -9,6 +9,7 @@ import {
   saveMemoRevisionAction,
   submitToRiskOfficerAction,
 } from "@/app/(app)/review/actions";
+import { DECISION_OPTIONS, type DecisionValue } from "@/components/review/decision-options";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 /**
  * The Relationship Manager's working surface: refine the AI-drafted
@@ -48,6 +50,17 @@ export function RmReviewForm({
   const [context, setContext] = useState(defaultContext);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
+  // The suggested decision — a recommendation for the Risk Officer, never
+  // binding. Required before routing: the officer should never receive a
+  // package with no starting point.
+  const [decision, setDecision] = useState<DecisionValue | null>(null);
+  const [decisionReason, setDecisionReason] = useState("");
+  const [decisionConditions, setDecisionConditions] = useState("");
+  const needsConditions = decision === "APPROVE_WITH_CONDITIONS";
+  const decisionReady =
+    decision !== null &&
+    decisionReason.trim().length > 0 &&
+    (!needsConditions || decisionConditions.trim().length > 0);
 
   // The AI draft is generated lazily: opening this desk starts it, and it
   // lands seconds later via a background refresh that re-renders the server
@@ -77,6 +90,7 @@ export function RmReviewForm({
   }
 
   async function handleSubmit() {
+    if (!decision) return;
     setPending(true);
     // Route with the latest wording: persist any unsaved refinement first so
     // the officer never reads a stale version of what the RM meant to send.
@@ -92,7 +106,11 @@ export function RmReviewForm({
         return;
       }
     }
-    const result = await submitToRiskOfficerAction(caseId);
+    const result = await submitToRiskOfficerAction(caseId, {
+      decision,
+      reason: decisionReason,
+      conditions: needsConditions ? decisionConditions : undefined,
+    });
     setPending(false);
     setConfirming(false);
     if (result.ok) {
@@ -134,6 +152,77 @@ export function RmReviewForm({
         />
       </div>
 
+      {canSubmit && (
+        <div className="space-y-4 border-t border-border pt-4">
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Suggested Decision
+            </legend>
+            <p className="text-[11px] text-muted-foreground">
+              A recommendation for the Risk Officer — never binding. The Officer reviews it
+              alongside the case and makes the final call.
+            </p>
+            {DECISION_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg border p-3 transition-colors",
+                  decision === option.value
+                    ? "border-ring bg-accent"
+                    : "border-border hover:bg-accent/50",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="rm-suggested-decision"
+                  value={option.value}
+                  checked={decision === option.value}
+                  onChange={() => setDecision(option.value)}
+                  className="sr-only"
+                />
+                <option.icon className={cn("mt-0.5 size-4 shrink-0", option.iconClass)} aria-hidden />
+                <span>
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">{option.hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="rm-decision-reason">
+              Reasoning <span className="text-red-600">*</span>
+            </Label>
+            <Textarea
+              id="rm-decision-reason"
+              value={decisionReason}
+              onChange={(e) => setDecisionReason(e.target.value)}
+              rows={3}
+              maxLength={4000}
+              placeholder="Why you're recommending this outcome (shown to the Risk Officer)."
+            />
+          </div>
+
+          {needsConditions && (
+            <div className="space-y-1.5">
+              <Label htmlFor="rm-decision-conditions">
+                Conditions <span className="text-red-600">*</span>
+              </Label>
+              <Textarea
+                id="rm-decision-conditions"
+                value={decisionConditions}
+                onChange={(e) => setDecisionConditions(e.target.value)}
+                rows={3}
+                maxLength={4000}
+                placeholder="Explicit conditions the suggested approval is subject to."
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="space-y-2">
         <Button
           variant="outline"
@@ -147,7 +236,7 @@ export function RmReviewForm({
         {canSubmit && (
           <Button
             className="w-full"
-            disabled={pending || !summary.trim()}
+            disabled={pending || !summary.trim() || !decisionReady}
             onClick={() => setConfirming(true)}
           >
             <Send className="size-4" aria-hidden />
@@ -161,9 +250,9 @@ export function RmReviewForm({
           <DialogHeader>
             <DialogTitle>Submit to Risk Officer?</DialogTitle>
             <DialogDescription>
-              {reference} — your current wording is saved as a new revision and the package
-              moves to the Risk Officer&apos;s queue. The final decision rests with the Risk
-              Officer.
+              {reference} — your current wording is saved as a new revision, your suggested
+              decision is recorded, and the package moves to the Risk Officer&apos;s queue. The
+              final decision rests with the Risk Officer.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

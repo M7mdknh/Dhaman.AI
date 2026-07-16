@@ -6,11 +6,13 @@
 import { Prisma } from "@/generated/prisma/client";
 import { assessExecutionCapacity } from "@/services/finance/execution-capacity-service";
 import { computeGrowth, computeRatios } from "@/services/finance/financial-ratio-service";
+import { composeOverallGrade } from "@/services/finance/overall-grade-service";
 import { detectRiskFlags } from "@/services/finance/risk-flag-service";
 import { assessRisk } from "@/services/finance/risk-score-service";
 import { computeTrends } from "@/services/finance/trend-analysis-service";
 
 import { STRONG_PROFILE } from "./company-profiles";
+import { contractInputs } from "./contract-inputs";
 import { toEngineYear } from "./year-financials";
 
 import type { FinancialIntelligenceReport } from "@/lib/finance/types";
@@ -52,6 +54,29 @@ export function strongContract(): ContractDetails {
     projectEndDate: new Date("2028-08-31T00:00:00Z"),
     expectedPaymentTerms: "Monthly certified progress payments",
     additionalNotes: null,
+    // Structured Step-3 fields stay null (a legacy-shaped contract): the
+    // decision tests hand-verify the financial pillar, and null structured
+    // fields keep overall == financial without re-deriving expectations.
+    contractorRole: null,
+    mainContractorName: null,
+    backToBackPayment: null,
+    awardMethod: null,
+    priorContractsWithBeneficiary: null,
+    advancePaymentPct: null,
+    billingCycle: null,
+    retentionPct: null,
+    paymentPeriodDays: null,
+    paymentNotes: null,
+    requiredBondPct: null,
+    bondValidityDate: null,
+    onFirstDemand: null,
+    extendOrPay: null,
+    ldRatePctPerWeek: null,
+    ldCapPct: null,
+    mobilizationWeeks: null,
+    keySuppliersIdentified: null,
+    keySuppliersNote: null,
+    expectedGrossMarginPct: null,
     createdAt: new Date("2026-07-01T00:00:00Z"),
     updatedAt: new Date("2026-07-01T00:00:00Z"),
   };
@@ -61,13 +86,14 @@ export function strongContract(): ContractDetails {
 export function strongReport(): FinancialIntelligenceReport {
   const years = STRONG_PROFILE.years.map(toEngineYear).sort((a, b) => a.fiscalYear - b.fiscalYear);
   const latest = years.at(-1)!;
-  const contractInputs = {
+  const contract = contractInputs({
     contractValue: D(60_000_000),
     guaranteeAmount: D(6_000_000),
-    beneficiaryType: "GOVERNMENT" as const,
+    beneficiaryType: "GOVERNMENT",
     durationMonths: 24,
-  };
+  });
   const flags = detectRiskFlags(years);
+  const risk = assessRisk(years, flags, contract);
   return {
     years: years.map((y) => y.fiscalYear),
     latestYear: latest.fiscalYear,
@@ -77,7 +103,10 @@ export function strongReport(): FinancialIntelligenceReport {
     growthPeriods: computeGrowth(years),
     trends: computeTrends(years),
     flags,
-    risk: assessRisk(years, flags, contractInputs),
-    capacity: assessExecutionCapacity(latest, contractInputs),
+    risk,
+    capacity: assessExecutionCapacity(latest, contract),
+    qualitative: null,
+    contractRisk: null,
+    overall: composeOverallGrade(risk, null, null, [], ["AUDITED", "AUDITED", "AUDITED"]),
   };
 }

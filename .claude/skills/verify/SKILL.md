@@ -23,8 +23,9 @@ Node is not on the non-interactive PATH — prefix every command:
 
 - `contractor@daman.local` (Rawabi), `contractor.nimah@daman.local`,
   `contractor.faisal@daman.local`
-- `rm@daman.local` (Relationship Manager), `officer@daman.local` (Risk
-  Officer), `admin@daman.local`
+- `rm@daman.local` and `officer@daman.local` (both Relationship Managers —
+  the Risk Officer login is retired; only `admin@daman.local` can record
+  decisions and issue guarantees)
 
 ## Creating test cases
 

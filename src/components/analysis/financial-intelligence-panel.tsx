@@ -1,6 +1,7 @@
 import { ExecutiveKpis } from "@/components/analysis/executive-kpis";
 import { FinancialDrivers } from "@/components/analysis/financial-drivers";
 import { FlagList } from "@/components/analysis/flag-list";
+import { GradePillars } from "@/components/analysis/grade-pillars";
 import { GrowthTable, RatioTables } from "@/components/analysis/ratio-tables";
 import { TrendChart } from "@/components/analysis/trend-chart";
 import { ValidationReport } from "@/components/analysis/validation-report";
@@ -83,6 +84,11 @@ export function FinancialIntelligencePanel({
       )}
 
       <ExecutiveKpis headline={headline} />
+
+      {/* The composite grade behind the verdict: three pillars + hard caps. */}
+      <div className="scroll-reveal">
+        <GradePillars report={report} />
+      </div>
 
       <div className="scroll-reveal">
         <FinancialDrivers report={report} />

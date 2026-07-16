@@ -5,8 +5,6 @@
  * FinancialIntelligenceReport (no AI, no I/O). Rendered by the processing
  * dashboard the moment Stage 1 completes.
  */
-import { RECOMMENDATION_BY_BAND } from "@/lib/finance/thresholds";
-
 import type {
   CapacityBand,
   FinancialIntelligenceReport,
@@ -45,14 +43,17 @@ export function deriveRating(riskScore: number): string {
 }
 
 export function deriveHeadline(report: FinancialIntelligenceReport): UnderwritingHeadline {
-  const riskScore = Math.round(report.risk.score);
+  // The composite grade (financial + qualitative + contract pillars, hard
+  // caps applied) — renormalizes to the financial score alone on pre-KYC
+  // cases, so legacy headlines are unchanged.
+  const riskScore = Math.round(report.overall.score);
   return {
     capacityScore: report.capacity ? Math.round(report.capacity.score) : null,
     capacityBand: report.capacity?.band ?? null,
-    rating: deriveRating(report.risk.score),
-    healthScore: Math.max(0, Math.min(100, Math.round(100 - report.risk.score))),
+    rating: deriveRating(report.overall.score),
+    healthScore: Math.max(0, Math.min(100, Math.round(100 - report.overall.score))),
     riskScore,
-    riskBand: report.risk.band,
-    recommendation: RECOMMENDATION_BY_BAND[report.risk.band],
+    riskBand: report.overall.band,
+    recommendation: report.overall.recommendation,
   };
 }

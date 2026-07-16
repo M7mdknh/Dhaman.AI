@@ -81,6 +81,9 @@ function format(display: Display, value: number | null): string {
 
 const ORDER_OF_LIQUIDITY_NOTE =
   "Not disclosed — this balance sheet is presented in order of liquidity, without a current/non-current split.";
+const ORDER_OF_LIQUIDITY_CASH_FLOW_NOTE =
+  "Operating Cash Flow Ratio is not disclosed — it needs current liabilities, and this balance sheet is " +
+  "presented in order of liquidity, without a current/non-current split. DSCR and EBITDA Coverage are unaffected.";
 
 /** Per-category ratio tables, one column per fiscal year (ascending). */
 export function RatioTables({
@@ -130,6 +133,11 @@ export function RatioTables({
             </Table>
             {orderOfLiquidity && category.title === "Liquidity" && (
               <p className="mt-2 text-xs text-muted-foreground">{ORDER_OF_LIQUIDITY_NOTE}</p>
+            )}
+            {orderOfLiquidity && category.title === "Cash Flow & Coverage" && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {ORDER_OF_LIQUIDITY_CASH_FLOW_NOTE}
+              </p>
             )}
           </CardContent>
         </Card>

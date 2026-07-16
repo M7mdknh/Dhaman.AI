@@ -88,6 +88,77 @@ enum DocumentType {
   OTHER
 }
 
+// Reliability of an uploaded statement: audited > reviewed > management
+// accounts. Drives the confidence weighting on the financial pillar —
+// never the score itself (uncertainty must not read as risk OR safety).
+enum StatementType {
+  AUDITED
+  REVIEWED
+  MANAGEMENT
+}
+
+// Saudization compliance band (Nitaqat). RED can freeze work visas and
+// stall a labor-dependent project mid-execution — scored AND hard-capped.
+enum NitaqatBand {
+  PLATINUM
+  GREEN
+  YELLOW
+  RED
+}
+
+// Track-record depth band (KYC 1B).
+enum ProjectsCompletedBand {
+  UNDER_5
+  FROM_5_TO_10
+  FROM_10_TO_25
+  OVER_25
+}
+
+// How the equipment for the guaranteed project is sourced (KYC 1C).
+enum EquipmentPlan {
+  OWNED
+  RENT
+  PURCHASE
+}
+
+// Who audits the applicant's financials (KYC 1D) — governs how much the
+// ratio engine's inputs can be trusted.
+enum AuditorTier {
+  BIG_FOUR
+  ACCREDITED_LOCAL
+  OTHER_FIRM
+  UNAUDITED
+}
+
+// How the project is funded until the first payment certificate (KYC 1D).
+enum FundingSource {
+  OWN_CASH
+  THIS_BANK
+  OTHER_BANK
+  SUPPLIER_CREDIT
+}
+
+// The applicant's role in the guaranteed contract (Step 3, 2A).
+enum ContractorRole {
+  MAIN_CONTRACTOR
+  SUBCONTRACTOR
+}
+
+// How the contract was won (Step 3, 2A). Public tenders are won on price —
+// interacts with the declared-margin factors.
+enum AwardMethod {
+  PUBLIC_TENDER
+  LIMITED_TENDER
+  DIRECT_AWARD
+}
+
+// Progress billing cadence (Step 3, 2B) — frequency of project cash inflows.
+enum BillingCycle {
+  MONTHLY
+  MILESTONE
+  OTHER
+}
+
 // Lifecycle of the IFRS extraction pipeline for one uploaded document.
 enum DocumentProcessingStatus {
   UPLOADED
@@ -121,6 +192,7 @@ model User {
   assignedCases      UnderwritingCase[]     @relation("AssignedOfficer")
   rmReviewedCases    UnderwritingCase[]     @relation("RmReviewer")
   officerDecisions   OfficerDecision[]
+  rmSuggestedDecisions RmSuggestedDecision[]
   caseNotes          CaseNote[]
   memoRevisions      MemoRevision[]
   guaranteesIssued   Guarantee[]
@@ -178,11 +250,13 @@ model UnderwritingCase {
   assignedOfficer      User?                  @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id], onDelete: SetNull)
   rmReviewer           User?                  @relation("RmReviewer", fields: [rmReviewerId], references: [id], onDelete: SetNull)
   contractDetails      ContractDetails?
+  qualitative          CaseQualitative?
   documents            Document[]
   financialStatements  FinancialStatement[]
   auditLogs            AuditLog[]
   decisionIntelligence DecisionIntelligence[]
   officerDecisions     OfficerDecision[]
+  rmSuggestedDecisions RmSuggestedDecision[]
   notes                CaseNote[]
   memoRevisions        MemoRevision[]
   guarantee            Guarantee?
@@ -193,6 +267,78 @@ model UnderwritingCase {
   @@index([createdAt])
   @@index([assignedOfficerId])
   @@map("underwriting_cases")
+}
+
+// Per-case KYC questionnaire (wizard Step 2) — the qualitative side of the
+// underwriting grade. Deliberately 1:1 with the CASE, not the company:
+// every decision permanently keeps the exact answers it was made under
+// (same principle as the company identity lock), and answers that drift
+// between a company's cases are themselves a signal the officer can see.
+// Scores are NEVER persisted — the qualitative pillar is computed on demand
+// from this row by qualitative-score-service (same rule as the ratios).
+model CaseQualitative {
+  id     String @id @default(cuid())
+  caseId String @unique @map("case_id")
+
+  // ---- 1A. Company profile
+  // CR issuance date — operating age is DERIVED from it (never self-banded).
+  crIssueDate DateTime @map("cr_issue_date") @db.Date
+  // Registered CR activities (free text from the certificate) — feeds the
+  // scope-vs-capability check against the contract sector.
+  crActivities             String  @map("cr_activities")
+  // Contractor classification (Momtaz / 1–5), when the applicant holds one.
+  contractorClassification String? @map("contractor_classification")
+  partOfGroup              Boolean @map("part_of_group")
+  groupName                String? @map("group_name")
+  gmName                   String  @map("gm_name")
+  gmExperienceYears        Int     @map("gm_experience_years")
+  // Ownership or management change in the last 2 years — invalidates the
+  // track record earned before it.
+  ownershipChanged     Boolean     @map("ownership_changed")
+  ownershipChangeNote  String?     @map("ownership_change_note")
+  nitaqatBand          NitaqatBand @map("nitaqat_band")
+  ongoingLitigation    Boolean     @map("ongoing_litigation")
+  litigationNote       String?     @map("litigation_note")
+
+  // ---- 1B. Track record & experience
+  projectsCompletedBand ProjectsCompletedBand @map("projects_completed_band")
+  // Largest single completed project — the jump-risk denominator.
+  largestProjectValue Decimal @map("largest_project_value") @db.Decimal(18, 2)
+  // Any project terminated / withdrawn / hit by major delay or penalty.
+  hadProjectIssues  Boolean @map("had_project_issues")
+  projectIssuesNote String? @map("project_issues_note")
+  // The strongest negative signal for a guarantee product — hard cap.
+  guaranteeCalled     Boolean @map("guarantee_called")
+  guaranteeCalledNote String? @map("guarantee_called_note")
+  sameTypeExperience     Boolean @map("same_type_experience")
+  sameTypeExperienceNote String? @map("same_type_experience_note")
+
+  // ---- 1C. Current workload & capacity
+  runningProjectsCount Int     @map("running_projects_count")
+  // Combined remaining (unbilled) value of running projects.
+  backlogValue Decimal @map("backlog_value") @db.Decimal(18, 2)
+  // Self-declared outstanding guarantees across ALL banks (no SIMAH
+  // cross-check in this phase — declaration only).
+  outstandingGuarantees Decimal       @map("outstanding_guarantees") @db.Decimal(18, 2)
+  equipmentPlan         EquipmentPlan @map("equipment_plan")
+  heavyHiringNeeded     Boolean       @map("heavy_hiring_needed")
+
+  // ---- 1D. Financial conduct
+  mainBank String @map("main_bank")
+  // Bounced cheques / past dues / restructured facilities — declared. Any
+  // "yes" is a hard cap; a clean declaration earns the conduct points.
+  conductIncidents     Boolean       @map("conduct_incidents")
+  conductIncidentsNote String?       @map("conduct_incidents_note")
+  auditorTier          AuditorTier   @map("auditor_tier")
+  auditorName          String?       @map("auditor_name")
+  fundingSource        FundingSource @map("funding_source")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  case UnderwritingCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("case_qualitatives")
 }
 
 model ContractDetails {
@@ -206,14 +352,57 @@ model ContractDetails {
   projectLocation      String          @map("project_location")
   contractValue        Decimal         @map("contract_value") @db.Decimal(18, 2)
   currency             String          @default("SAR")
+  // Derived (never entered directly): contractValue * guaranteePercentage / 100.
+  // See saveContractDetails (case-service.ts) — the ratio is the single
+  // source of truth for exposure size.
   guaranteeAmount      Decimal         @map("guarantee_amount") @db.Decimal(18, 2)
   guaranteeType        GuaranteeType   @map("guarantee_type")
-  // Optional: % of contract value the guarantee covers (0–100, informational).
-  guaranteePercentage  Decimal?        @map("guarantee_percentage") @db.Decimal(5, 2)
+  // % of contract value the guarantee covers (0–100). Required: this is now
+  // the applicant's actual input; guaranteeAmount is derived from it.
+  guaranteePercentage  Decimal         @map("guarantee_percentage") @db.Decimal(5, 2)
   projectStartDate     DateTime        @map("project_start_date") @db.Date
   projectEndDate       DateTime        @map("project_end_date") @db.Date
+  // Legacy free-text payment terms — superseded by the structured payment
+  // fields below; kept nullable so pre-existing cases still display.
   expectedPaymentTerms String?         @map("expected_payment_terms")
   additionalNotes      String?         @map("additional_notes")
+
+  // ---- 2A. Contractor role (nullable: cases predating the detailed form).
+  contractorRole     ContractorRole? @map("contractor_role")
+  mainContractorName String?         @map("main_contractor_name")
+  // Subcontractor paid only when the main contractor is paid.
+  backToBackPayment Boolean?     @map("back_to_back_payment")
+  awardMethod       AwardMethod? @map("award_method")
+  // Prior contracts completed with this awarding entity (0 = first time).
+  priorContractsWithBeneficiary Int? @map("prior_contracts_with_beneficiary")
+
+  // ---- 2B. Payment mechanics (replaces the free-text terms).
+  advancePaymentPct Decimal?      @map("advance_payment_pct") @db.Decimal(5, 2)
+  billingCycle      BillingCycle? @map("billing_cycle")
+  retentionPct      Decimal?      @map("retention_pct") @db.Decimal(5, 2)
+  // Days from invoice certification to payment (30/60/90/120).
+  paymentPeriodDays Int? @map("payment_period_days")
+  // Anything unusual about the payment arrangement (optional notes).
+  paymentNotes String? @map("payment_notes")
+
+  // ---- 2C. Bond requirements per the contract text.
+  requiredBondPct  Decimal?  @map("required_bond_pct") @db.Decimal(5, 2)
+  bondValidityDate DateTime? @map("bond_validity_date") @db.Date
+  onFirstDemand    Boolean?  @map("on_first_demand")
+  extendOrPay      Boolean?  @map("extend_or_pay")
+
+  // ---- 2D. Penalty clauses.
+  // Liquidated damages for delay, % of contract value per week.
+  ldRatePctPerWeek Decimal? @map("ld_rate_pct_per_week") @db.Decimal(5, 2)
+  ldCapPct         Decimal? @map("ld_cap_pct") @db.Decimal(5, 2)
+
+  // ---- 2E. Execution plan. (Expected first invoice date is DERIVED from
+  // start date + mobilization + billing cycle + payment period — never asked.)
+  mobilizationWeeks      Int?     @map("mobilization_weeks")
+  keySuppliersIdentified Boolean? @map("key_suppliers_identified")
+  keySuppliersNote       String?  @map("key_suppliers_note")
+  expectedGrossMarginPct Decimal? @map("expected_gross_margin_pct") @db.Decimal(5, 2)
+
   createdAt            DateTime        @default(now()) @map("created_at")
   updatedAt            DateTime        @updatedAt @map("updated_at")
 
@@ -235,6 +424,9 @@ model Document {
   docType      DocumentType @default(FINANCIAL_STATEMENT) @map("doc_type")
   // Fiscal year the statement covers (financial statements only).
   fiscalYear   Int?         @map("fiscal_year")
+  // Reliability class declared at upload (financial statements only) —
+  // audited / reviewed / management accounts.
+  statementType StatementType? @map("statement_type")
   // IFRS pipeline status; set to QUEUED at case submission.
   processingStatus DocumentProcessingStatus @default(UPLOADED) @map("processing_status")
   // Live per-stage execution log of THIS document's current processing run:
@@ -299,7 +491,11 @@ model FinancialStatement {
   documentId String? @map("document_id")
   fiscalYear Int     @map("fiscal_year")
   currency   String  @default("SAR")
+  // Kept in sync with statementType (audited = AUDITED) for legacy readers.
   audited    Boolean @default(true)
+  // Reliability class, carried from the source document's upload declaration.
+  // Weights the officer's confidence in the financial pillar — never the score.
+  statementType StatementType @default(AUDITED) @map("statement_type")
 
   revenue            Decimal? @db.Decimal(18, 2)
   cogs               Decimal? @db.Decimal(18, 2)
@@ -307,6 +503,11 @@ model FinancialStatement {
   operatingIncome    Decimal? @map("operating_income") @db.Decimal(18, 2)
   netIncome          Decimal? @map("net_income") @db.Decimal(18, 2)
   ebitda             Decimal? @db.Decimal(18, 2)
+  // Depreciation & amortization add-back (from the cash flow reconciliation).
+  // Used to derive EBITDA (operatingIncome + D&A) when a statement never
+  // prints an "EBITDA" line itself — the common case, since EBITDA is a
+  // non-IFRS metric. See financial-ratio-service.ts:derivedEbitda.
+  depreciationAmortization Decimal? @map("depreciation_amortization") @db.Decimal(18, 2)
   interestExpense    Decimal? @map("interest_expense") @db.Decimal(18, 2)
   cash               Decimal? @db.Decimal(18, 2)
   receivables        Decimal? @db.Decimal(18, 2)
@@ -389,10 +590,11 @@ model DecisionIntelligence {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  case             UnderwritingCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  requestedBy      User?             @relation(fields: [requestedById], references: [id], onDelete: SetNull)
-  officerDecisions OfficerDecision[]
-  memoRevisions    MemoRevision[]
+  case                 UnderwritingCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requestedBy          User?                 @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  officerDecisions     OfficerDecision[]
+  rmSuggestedDecisions RmSuggestedDecision[]
+  memoRevisions        MemoRevision[]
 
   @@index([caseId, createdAt])
   @@index([caseId, inputHash])
@@ -432,6 +634,35 @@ model OfficerDecision {
 
   @@index([caseId, createdAt])
   @@map("officer_decisions")
+}
+
+// The RM's suggested decision (framework step 8, extended): recorded exactly
+// once, alongside routing the package to the Risk Officer (canRmSubmit is a
+// one-time transition from ANALYSIS_READY). Uses the same vocabulary as
+// OfficerDecisionType so the officer's screen can show it as a starting
+// point — the RM never decides; this is a recommendation the officer may
+// accept or override. Separate table from OfficerDecision so "decision of
+// record" queries (guarantee issuance, contractor-visible status) can never
+// confuse a suggestion with an actual decision.
+model RmSuggestedDecision {
+  id        String              @id @default(cuid())
+  caseId    String              @map("case_id")
+  rmId      String              @map("rm_id")
+  decision  OfficerDecisionType
+  reason     String
+  // Conditions attached to APPROVE_WITH_CONDITIONS (null otherwise).
+  conditions String?
+  // Which AI memo the RM had in front of them (SetNull: the record outlives
+  // memo housekeeping).
+  decisionIntelligenceId String?  @map("decision_intelligence_id")
+  createdAt              DateTime @default(now()) @map("created_at")
+
+  case                 UnderwritingCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  rm                   User                  @relation(fields: [rmId], references: [id], onDelete: Restrict)
+  decisionIntelligence DecisionIntelligence? @relation(fields: [decisionIntelligenceId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, createdAt])
+  @@map("rm_suggested_decisions")
 }
 
 // RM refinement of the AI-drafted memo (framework step 8: the RM reviews the

@@ -103,7 +103,8 @@ export async function getGuaranteePdf(
   });
   if (!user) return { ok: false, error: "Not authorized." };
 
-  const isBankStaff = user.role === "RISK_OFFICER" || user.role === "ADMIN";
+  const isBankStaff =
+    user.role === "RELATIONSHIP_MANAGER" || user.role === "RISK_OFFICER" || user.role === "ADMIN";
   const guarantee = await prisma.guarantee.findFirst({
     where: {
       case: {

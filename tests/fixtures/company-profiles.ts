@@ -31,6 +31,11 @@ export interface YearFigures {
   investingCashFlow: number;
   financingCashFlow: number;
   capex: number;
+  // The operating-activities add-back — the line real statements print in the
+  // cash-flow reconciliation, and the engine's only path to a derived EBITDA
+  // (and therefore DSCR / EBITDA coverage) since EBITDA itself is non-IFRS
+  // and never printed.
+  depreciationAmortization: number;
 }
 
 export interface CompanyProfile {
@@ -51,7 +56,7 @@ export const STRONG_PROFILE: CompanyProfile = {
       longTermDebt: 15_000_000, totalLiabilities: 45_000_000,
       shareCapital: 40_000_000, retainedEarnings: 35_000_000, totalEquity: 75_000_000,
       operatingCashFlow: 20_000_000, investingCashFlow: -8_000_000,
-      financingCashFlow: -5_000_000, capex: 8_000_000,
+      financingCashFlow: -5_000_000, capex: 8_000_000, depreciationAmortization: 6_000_000,
     },
     {
       fiscalYear: 2024,
@@ -63,7 +68,7 @@ export const STRONG_PROFILE: CompanyProfile = {
       longTermDebt: 18_000_000, totalLiabilities: 48_000_000,
       shareCapital: 40_000_000, retainedEarnings: 17_000_000, totalEquity: 57_000_000,
       operatingCashFlow: 15_000_000, investingCashFlow: -6_000_000,
-      financingCashFlow: -4_000_000, capex: 6_000_000,
+      financingCashFlow: -4_000_000, capex: 6_000_000, depreciationAmortization: 5_500_000,
     },
   ],
 };
@@ -81,7 +86,7 @@ export const MODERATE_PROFILE: CompanyProfile = {
       longTermDebt: 20_600_000, totalLiabilities: 42_000_000,
       shareCapital: 20_000_000, retainedEarnings: 8_000_000, totalEquity: 28_000_000,
       operatingCashFlow: 4_200_000, investingCashFlow: -2_000_000,
-      financingCashFlow: -1_500_000, capex: 2_000_000,
+      financingCashFlow: -1_500_000, capex: 2_000_000, depreciationAmortization: 7_500_000,
     },
     {
       fiscalYear: 2024,
@@ -93,7 +98,7 @@ export const MODERATE_PROFILE: CompanyProfile = {
       longTermDebt: 19_800_000, totalLiabilities: 40_000_000,
       shareCapital: 20_000_000, retainedEarnings: 6_000_000, totalEquity: 26_000_000,
       operatingCashFlow: 3_900_000, investingCashFlow: -1_800_000,
-      financingCashFlow: -1_400_000, capex: 1_800_000,
+      financingCashFlow: -1_400_000, capex: 1_800_000, depreciationAmortization: 7_200_000,
     },
   ],
 };
@@ -116,7 +121,7 @@ export const WEAK_PROFILE: CompanyProfile = {
       longTermDebt: 20_000_000, totalLiabilities: 48_000_000,
       shareCapital: 15_000_000, retainedEarnings: -3_000_000, totalEquity: 12_000_000,
       operatingCashFlow: -1_500_000, investingCashFlow: -500_000,
-      financingCashFlow: 2_000_000, capex: 500_000,
+      financingCashFlow: 2_000_000, capex: 500_000, depreciationAmortization: 3_500_000,
     },
     {
       fiscalYear: 2024,
@@ -128,7 +133,7 @@ export const WEAK_PROFILE: CompanyProfile = {
       longTermDebt: 20_000_000, totalLiabilities: 41_200_000,
       shareCapital: 15_000_000, retainedEarnings: 1_800_000, totalEquity: 16_800_000,
       operatingCashFlow: 2_500_000, investingCashFlow: -1_000_000,
-      financingCashFlow: 1_500_000, capex: 1_000_000,
+      financingCashFlow: 1_500_000, capex: 1_000_000, depreciationAmortization: 3_400_000,
     },
   ],
 };

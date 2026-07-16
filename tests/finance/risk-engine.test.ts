@@ -5,6 +5,7 @@ import { detectRiskFlags } from "@/services/finance/risk-flag-service";
 import { assessRisk, riskBandFor } from "@/services/finance/risk-score-service";
 
 import { STRONG_PROFILE, WEAK_PROFILE } from "../fixtures/company-profiles";
+import { contractInputs } from "../fixtures/contract-inputs";
 import { EMPTY_YEAR, toEngineYear } from "../fixtures/year-financials";
 
 import type { YearFinancials } from "@/lib/finance/types";
@@ -12,19 +13,19 @@ import type { YearFigures } from "../fixtures/company-profiles";
 
 const D = (n: number) => new Prisma.Decimal(n);
 
-const STRONG_CONTRACT = {
+const STRONG_CONTRACT = contractInputs({
   contractValue: D(60_000_000),
   guaranteeAmount: D(6_000_000),
-  beneficiaryType: "GOVERNMENT" as const,
+  beneficiaryType: "GOVERNMENT",
   durationMonths: 24,
-};
+});
 
-const WEAK_CONTRACT = {
+const WEAK_CONTRACT = contractInputs({
   contractValue: D(75_000_000),
   guaranteeAmount: D(7_500_000),
-  beneficiaryType: "PRIVATE" as const,
+  beneficiaryType: "PRIVATE",
   durationMonths: 36,
-};
+});
 
 /** Ascending years + flags, exactly as the orchestrator feeds the engine. */
 function inputs(profileYears: YearFigures[]) {
@@ -45,7 +46,7 @@ describe("risk score engine (hand-computed)", () => {
     expect(byKey.liquidity).toBe(1); // CR 2.33 ≥ 1.5
     expect(byKey.leverage).toBe(1); // D/E 0.60 ≤ 1.0
     expect(byKey.profitability).toBe(1); // net margin 11.7% ≥ 8%
-    expect(byKey.coverage).toBe(1); // IC fallback 9.0 ≥ 3.0 (EBITDA not printed)
+    expect(byKey.coverage).toBe(1); // DSCR 3.43 ≥ 1.5 (EBITDA derived from D&A)
     expect(byKey.trend).toBeCloseTo(0.9, 6); // 0.7 + capped(+20% revenue) − 0 flags
     expect(byKey.contractExposure).toBe(1); // 0.08× equity, 0.5× revenue, gov bonus
 

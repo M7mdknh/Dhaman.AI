@@ -3,8 +3,12 @@
  * from the contractor's ownership-scoped `case-service`: officers see every
  * post-submission case, gated on role — never on company ownership.
  */
-import { buildFinancialIntelligence } from "@/services/finance/financial-intelligence-service";
+import {
+  buildFinancialIntelligence,
+  toIdentityInputs,
+} from "@/services/finance/financial-intelligence-service";
 import { recordAudit } from "@/services/audit-service";
+import { renderFinancialAnalysisPdf } from "@/lib/pdf/financial-analysis-pdf";
 import { prisma } from "@/lib/prisma";
 import {
   DECIDED_STATUSES,
@@ -61,6 +65,7 @@ export type ReviewCase = Prisma.UnderwritingCaseGetPayload<{
     assignedOfficer: { select: { id: true; fullName: true } };
     rmReviewer: { select: { id: true; fullName: true } };
     contractDetails: true;
+    qualitative: true;
     documents: {
       include: {
         extraction: {
@@ -78,6 +83,7 @@ export type ReviewCase = Prisma.UnderwritingCaseGetPayload<{
     financialStatements: true;
     decisionIntelligence: true;
     officerDecisions: { include: { officer: { select: { fullName: true } } } };
+    rmSuggestedDecisions: { include: { rm: { select: { fullName: true } } } };
     notes: { include: { author: { select: { fullName: true } } } };
     memoRevisions: { include: { author: { select: { fullName: true } } } };
     guarantee: true;
@@ -105,6 +111,7 @@ export async function getCaseForReview(
       assignedOfficer: { select: { id: true, fullName: true } },
       rmReviewer: { select: { id: true, fullName: true } },
       contractDetails: true,
+      qualitative: true,
       documents: {
         orderBy: { fiscalYear: "desc" },
         include: {
@@ -125,6 +132,11 @@ export async function getCaseForReview(
       officerDecisions: {
         orderBy: { createdAt: "desc" },
         include: { officer: { select: { fullName: true } } },
+      },
+      rmSuggestedDecisions: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { rm: { select: { fullName: true } } },
       },
       notes: {
         orderBy: { createdAt: "desc" },
@@ -233,8 +245,9 @@ export async function listReviewQueue(
   const cases = await prisma.underwritingCase.findMany({
     where,
     include: {
-      company: { select: { name: true } },
+      company: { select: { name: true, sector: true } },
       contractDetails: true,
+      qualitative: true,
       financialStatements: true,
       assignedOfficer: { select: { fullName: true } },
     },
@@ -247,7 +260,13 @@ export async function listReviewQueue(
   const rows = cases.map((item): QueueRow => {
     const report =
       item.contractDetails && item.financialStatements.length > 0
-        ? buildFinancialIntelligence(item.financialStatements, item.contractDetails)
+        ? buildFinancialIntelligence(
+            item.financialStatements,
+            item.contractDetails,
+            null,
+            item.qualitative,
+            item.company.sector,
+          )
         : null;
     return {
       id: item.id,
@@ -261,10 +280,12 @@ export async function listReviewQueue(
       submittedAt: item.submittedAt?.toISOString() ?? null,
       updatedAt: item.updatedAt.toISOString(),
       capacityScore: report?.capacity?.score ?? null,
-      riskScore: report?.risk.score ?? null,
-      riskBand: report?.risk.band ?? null,
+      // The queue ranks by the composite grade (all three pillars), which
+      // renormalizes to the financial score alone on pre-KYC cases.
+      riskScore: report?.overall.score ?? null,
+      riskBand: report?.overall.band ?? null,
       priority: derivePriority(
-        report?.risk.band ?? null,
+        report?.overall.band ?? null,
         item.contractDetails?.guaranteeAmount ?? null,
       ),
       assignedOfficer: item.assignedOfficer?.fullName ?? null,
@@ -318,5 +339,71 @@ export async function getQueueStats(officerUserId: string): Promise<QueueStats |
     underReview: count(["UNDER_REVIEW", "INFO_REQUESTED"]),
     decided: count(["APPROVED", "DECLINED"]),
     issued: count(["ISSUED"]),
+  };
+}
+
+/**
+ * Financial Intelligence Report PDF (bank-side export). Rendered on demand
+ * from the deterministic engine's already-computed output — never stored,
+ * nothing recalculated. Gated to bank staff: the analysis is bank-internal,
+ * the contractor only submits and tracks status.
+ */
+export async function getFinancialAnalysisPdf(
+  userId: string,
+  caseId: string,
+): Promise<
+  { ok: true; data: { fileName: string; bytes: Uint8Array } } | { ok: false; error: string }
+> {
+  const staff = await getBankUser(userId);
+  if (!staff) return { ok: false, error: "Only bank staff can export the financial analysis." };
+
+  const underwritingCase = await prisma.underwritingCase.findFirst({
+    where: { id: caseId, status: { not: "DRAFT" } },
+    include: {
+      company: { select: { name: true, crNumber: true, sector: true } },
+      contractDetails: true,
+      qualitative: true,
+      financialStatements: { orderBy: { fiscalYear: "desc" } },
+      documents: {
+        select: { fiscalYear: true, extraction: { select: { companyName: true } } },
+      },
+    },
+  });
+  if (!underwritingCase) return { ok: false, error: "Case not found." };
+
+  const report = buildFinancialIntelligence(
+    underwritingCase.financialStatements,
+    underwritingCase.contractDetails,
+    toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
+    underwritingCase.qualitative,
+    underwritingCase.company.sector,
+  );
+  if (!report) {
+    return {
+      ok: false,
+      error: "No validated financial analysis exists for this case yet — nothing to export.",
+    };
+  }
+
+  const bytes = await renderFinancialAnalysisPdf({
+    caseReference: underwritingCase.reference,
+    companyName: underwritingCase.company.name,
+    crNumber: underwritingCase.company.crNumber,
+    contractTitle: underwritingCase.contractDetails?.contractTitle ?? "—",
+    guaranteeAmount: underwritingCase.contractDetails?.guaranteeAmount.toString() ?? "0",
+    currency: underwritingCase.contractDetails?.currency ?? "SAR",
+    generatedAt: new Date(),
+    report,
+  });
+
+  await recordAudit({
+    action: "officer.analysis_pdf_downloaded",
+    actorId: userId,
+    caseId,
+    detail: { reference: underwritingCase.reference },
+  });
+  return {
+    ok: true,
+    data: { fileName: `${underwritingCase.reference}-financial-analysis.pdf`, bytes },
   };
 }

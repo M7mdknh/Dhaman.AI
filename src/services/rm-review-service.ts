@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma";
 import { canReviseMemo, canRmSubmit } from "@/lib/review";
 import { recordAudit } from "@/services/audit-service";
 
+import type { OfficerDecisionType } from "@/generated/prisma/enums";
+
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 /** Role gate for every RM entry point. Null = not an RM (admins may act). */
@@ -76,19 +78,34 @@ export async function saveMemoRevision(
 
 /**
  * Routes the package to the Risk Officer: ANALYSIS_READY → RM_REVIEWED.
- * Records who routed it and when. The officer can also start directly from
- * ANALYSIS_READY — the RM stage improves the package, it never blocks it.
+ * Records who routed it and when, together with the RM's suggested decision
+ * — a recommendation the Risk Officer reviews and either accepts or
+ * overrides; it never binds the case (the RM never decides). Routing
+ * happens exactly once, so the suggestion is captured in the same
+ * transaction as the status change.
  */
 export async function submitToRiskOfficer(
   rmUserId: string,
   caseId: string,
+  input: { decision: OfficerDecisionType; reason: string; conditions?: string },
 ): Promise<ActionResult> {
   const rm = await getRmUser(rmUserId);
   if (!rm) return { ok: false, error: "Only Relationship Managers can route cases." };
 
+  const reason = input.reason.trim();
+  if (!reason) return { ok: false, error: "A reason is required for the suggested decision." };
+  const conditions = input.conditions?.trim() || null;
+  if (input.decision === "APPROVE_WITH_CONDITIONS" && !conditions) {
+    return { ok: false, error: "Conditions are required when suggesting approval with conditions." };
+  }
+
   const underwritingCase = await prisma.underwritingCase.findUnique({
     where: { id: caseId },
-    select: { status: true, reference: true },
+    select: {
+      status: true,
+      reference: true,
+      decisionIntelligence: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
+    },
   });
   if (!underwritingCase) return { ok: false, error: "Case not found." };
   if (!canRmSubmit(underwritingCase.status)) {
@@ -101,15 +118,27 @@ export async function submitToRiskOfficer(
     };
   }
 
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
-    data: { status: "RM_REVIEWED", rmReviewerId: rmUserId, rmSubmittedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.rmSuggestedDecision.create({
+      data: {
+        caseId,
+        rmId: rmUserId,
+        decision: input.decision,
+        reason,
+        conditions: input.decision === "APPROVE_WITH_CONDITIONS" ? conditions : null,
+        decisionIntelligenceId: underwritingCase.decisionIntelligence[0]?.id ?? null,
+      },
+    }),
+    prisma.underwritingCase.update({
+      where: { id: caseId },
+      data: { status: "RM_REVIEWED", rmReviewerId: rmUserId, rmSubmittedAt: new Date() },
+    }),
+  ]);
   await recordAudit({
     action: "rm.submitted_to_risk_officer",
     actorId: rmUserId,
     caseId,
-    detail: { reference: underwritingCase.reference },
+    detail: { reference: underwritingCase.reference, suggestedDecision: input.decision },
   });
   return { ok: true };
 }

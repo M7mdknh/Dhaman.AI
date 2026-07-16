@@ -17,10 +17,15 @@ const prisma = new PrismaClient({
 // against a non-dev environment on purpose.
 const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
 
+// The Risk Officer's working login is retired for now: the RM absorbs the
+// full review workflow and records a SUGGESTED decision instead (see
+// RmSuggestedDecision) — the Risk Officer keeps the final say in the schema
+// and services, but has no seeded account to log in with. Both bank-side
+// demo accounts are RELATIONSHIP_MANAGER; the person and email are kept.
 const USERS: { email: string; fullName: string; role: UserRole }[] = [
   { email: "admin@daman.local", fullName: "Nawaf Alharthi", role: "ADMIN" },
   { email: "rm@daman.local", fullName: "Salman Alghamdi", role: "RELATIONSHIP_MANAGER" },
-  { email: "officer@daman.local", fullName: "Omar Alkaltham", role: "RISK_OFFICER" },
+  { email: "officer@daman.local", fullName: "Omar Alkaltham", role: "RELATIONSHIP_MANAGER" },
   { email: "contractor@daman.local", fullName: "Abdulrahman Yaghmour", role: "CONTRACTOR" },
 ];
 

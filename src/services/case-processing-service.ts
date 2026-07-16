@@ -25,7 +25,7 @@
  * self-claiming, so a duplicate trigger is a no-op rather than a double run.
  */
 import { env } from "@/lib/env";
-import { deriveHeadline, type UnderwritingHeadline } from "@/lib/finance/headline";
+import type { UnderwritingHeadline } from "@/lib/finance/headline";
 import { formatPerfReport, formatStageTargets, StageTimer, STAGE } from "@/lib/ifrs/perf";
 import { prisma } from "@/lib/prisma";
 import {
@@ -128,6 +128,12 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     .update({ where: { id: caseId }, data: { status: "PROCESSING" } })
     .then(() => {}, () => {});
   const contractPromise = prisma.contractDetails.findUnique({ where: { caseId } });
+  // KYC answers + company sector feed the qualitative/contract pillars of
+  // the readiness report (fired in parallel with the contract read).
+  const qualitativePromise = prisma.caseQualitative.findUnique({ where: { caseId } });
+  const companySectorPromise = prisma.underwritingCase
+    .findUnique({ where: { id: caseId }, select: { company: { select: { sector: true } } } })
+    .then((c) => c?.company.sector ?? null);
 
   // Non-critical writes moved off the Stage-1 critical path, settled before the
   // job is marked COMPLETED (so nothing is lost) but never gating readiness.
@@ -186,8 +192,15 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
   const flipAnalysisReady = async (
     statements: Parameters<typeof buildFinancialIntelligence>[0],
   ): Promise<boolean> => {
-    const contract = await contractPromise;
-    const report = statements.length > 0 ? buildFinancialIntelligence(statements, contract) : null;
+    const [contract, qualitative, companySector] = await Promise.all([
+      contractPromise,
+      qualitativePromise,
+      companySectorPromise,
+    ]);
+    const report =
+      statements.length > 0
+        ? buildFinancialIntelligence(statements, contract, null, qualitative, companySector)
+        : null;
     if (!report) return false;
     await statusPromise; // PROCESSING must be committed before ANALYSIS_READY
     await prisma.underwritingCase.update({
@@ -203,7 +216,7 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
           mode,
           stage1Ms: Date.now() - runStarted,
           years: statements.map((s) => s.fiscalYear).sort((a, b) => b - a),
-          band: report.risk.band,
+          band: report.overall.band,
         },
       }),
     );
@@ -657,13 +670,12 @@ export async function getProcessingViewForOwner(
   });
   if (!underwritingCase?.processing) return null;
 
-  const report = buildFinancialIntelligence(
-    underwritingCase.financialStatements,
-    underwritingCase.contractDetails,
-  );
+  // No Financial Intelligence headline here — this poll is contractor-scoped
+  // (ownership-checked above), and that analysis is bank-internal until a
+  // decision is made; the contractor only submits and tracks status.
   return {
     snapshot: toProcessingSnapshot(underwritingCase.processing),
     documents: toDocumentSnapshots(underwritingCase.documents),
-    headline: report ? deriveHeadline(report) : null,
+    headline: null,
   };
 }

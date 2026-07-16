@@ -1,5 +1,6 @@
 import { Handshake } from "lucide-react";
 
+import { decisionOptionLabel, type DecisionValue } from "@/components/review/decision-options";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/format";
@@ -9,6 +10,14 @@ export interface MemoRevisionView {
   summary: string;
   relationshipContext: string | null;
   author: string;
+  createdAt: string; // ISO
+}
+
+export interface RmSuggestedDecisionView {
+  decision: DecisionValue;
+  reason: string;
+  conditions: string | null;
+  rm: string;
   createdAt: string; // ISO
 }
 
@@ -22,11 +31,13 @@ export function RmAssessmentPanel({
   revisionCount,
   routedBy,
   routedAt,
+  suggestedDecision,
 }: {
   revision: MemoRevisionView | null;
   revisionCount: number;
   routedBy: string | null;
   routedAt: string | null; // ISO
+  suggestedDecision?: RmSuggestedDecisionView | null;
 }) {
   return (
     <Card>
@@ -78,6 +89,29 @@ export function RmAssessmentPanel({
           <p className="text-[13px] text-muted-foreground">
             Routed without memo edits — the AI draft below stands as submitted.
           </p>
+        )}
+        {suggestedDecision && (
+          <section
+            aria-label="RM suggested decision"
+            className="rounded-lg border border-primary/30 bg-primary/5 p-4"
+          >
+            <h3 className="text-[13px] font-semibold text-foreground">
+              Suggested Decision — {decisionOptionLabel(suggestedDecision.decision)}
+            </h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+              {suggestedDecision.reason}
+            </p>
+            {suggestedDecision.conditions && (
+              <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+                <span className="font-medium text-foreground">Conditions: </span>
+                {suggestedDecision.conditions}
+              </p>
+            )}
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Recommended by {suggestedDecision.rm} ·{" "}
+              {formatDateTime(new Date(suggestedDecision.createdAt))} — the Risk Officer decides.
+            </p>
+          </section>
         )}
         {routedAt && (
           <p className="text-[11px] text-muted-foreground">

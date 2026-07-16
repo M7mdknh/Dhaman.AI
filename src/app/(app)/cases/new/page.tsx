@@ -27,10 +27,10 @@ export default async function NewCasePage() {
           New Underwriting Case
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Request a Letter of Guarantee in four steps. Your progress is saved as a draft.
+          Request a Letter of Guarantee in five steps. Your progress is saved as a draft.
         </p>
       </div>
-      <CaseWizard mode="new" company={defaults} contract={null} documents={[]} />
+      <CaseWizard mode="new" company={defaults} qualitative={null} contract={null} documents={[]} />
     </div>
   );
 }

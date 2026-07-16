@@ -1,8 +1,31 @@
 import type { NextConfig } from "next";
 
-// Baseline security headers for every response. A strict Content-Security-Policy
-// is intentionally deferred (it needs per-request nonces for Next's inline
-// runtime and is easy to get subtly wrong); these headers are the safe wins.
+/**
+ * Content-Security-Policy. `script-src`/`style-src` still need 'unsafe-inline'
+ * because Next's App Router injects inline hydration/streaming scripts and the
+ * UI (next-themes, recharts) sets inline styles — a nonce-per-request scheme is
+ * the only way to drop that, and is easy to get subtly wrong. Even so this is a
+ * real gain: `connect-src 'self'` blocks exfiltration to any foreign origin,
+ * `object-src 'none'` kills plugin vectors, and `base-uri`/`form-action`/
+ * `frame-ancestors` close base-tag, form-hijack, and clickjacking vectors.
+ * All browser resources are same-origin (next/font self-hosts Inter at build
+ * time; no remote images, scripts, or fetches). Applied in PRODUCTION only —
+ * Turbopack dev HMR needs 'unsafe-eval' and a websocket connection.
+ */
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+].join("; ");
+
+// Baseline security headers for every response.
 const securityHeaders = [
   {
     key: "Strict-Transport-Security",
@@ -12,6 +35,9 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  ...(process.env.NODE_ENV === "production"
+    ? [{ key: "Content-Security-Policy", value: contentSecurityPolicy }]
+    : []),
 ];
 
 const nextConfig: NextConfig = {
@@ -25,6 +51,13 @@ const nextConfig: NextConfig = {
   // (native binary), and tesseract.js (loads its WASM core + worker from
   // node_modules). Keep these external so the server build resolves them.
   serverExternalPackages: ["mupdf", "sharp", "tesseract.js"],
+  // The PDF letterheads read the bank logo from public/ with fs.readFile —
+  // a dynamic path the serverless file tracer cannot see, so include it
+  // explicitly or the deployed function silently falls back to the text
+  // wordmark.
+  outputFileTracingIncludes: {
+    "/api/cases/[caseId]/analysis-pdf": ["./public/bank-logo.*"],
+  },
   experimental: {
     // Every request (statement uploads included) passes through the auth
     // middleware, and Next caps middleware-buffered bodies at 10 MiB by

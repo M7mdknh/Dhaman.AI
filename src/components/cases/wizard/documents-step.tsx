@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { FileText, Trash2, Upload } from "lucide-react";
+import { FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { removeDocumentAction } from "@/app/(app)/cases/actions";
@@ -16,9 +16,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { looksLikePdf, MAX_STATEMENT_FILE_BYTES, STATEMENT_YEARS } from "@/lib/case-constants";
+import {
+  EARLIEST_STATEMENT_YEAR,
+  LATEST_STATEMENT_YEAR,
+  looksLikePdf,
+  MAX_STATEMENT_FILE_BYTES,
+  STATEMENT_TYPE_OPTIONS,
+} from "@/lib/case-constants";
 import { cn } from "@/lib/utils";
 
+import type { StatementType } from "@/generated/prisma/enums";
 import type { DocumentView } from "@/lib/case-view";
 
 interface DocumentsStepProps {
@@ -81,12 +88,14 @@ function uploadMultipart(
   caseId: string,
   file: File,
   fiscalYear: number,
+  statementType: StatementType,
   onProgress: (percent: number) => void,
 ): Promise<DocumentView> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("fiscalYear", String(fiscalYear));
+    formData.append("statementType", statementType);
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/cases/${caseId}/documents`);
@@ -123,6 +132,7 @@ async function uploadStatement(
   caseId: string,
   file: File,
   fiscalYear: number,
+  statementType: StatementType,
   onProgress: (percent: number) => void,
 ): Promise<DocumentView> {
   // Step 1: ask for a direct-to-storage upload slot. A VALIDATION answer
@@ -141,6 +151,7 @@ async function uploadStatement(
       fileSize: file.size,
       fileType: file.type,
       fiscalYear,
+      statementType,
     }),
   }).catch(() => null);
   if (presign) {
@@ -164,7 +175,7 @@ async function uploadStatement(
         // Verification re-reads the object from storage server-side — allow
         // for that, but never hang indefinitely.
         signal: AbortSignal.timeout(60_000),
-        body: JSON.stringify({ storageKey, fileName: file.name, fiscalYear }),
+        body: JSON.stringify({ storageKey, fileName: file.name, fiscalYear, statementType }),
       }).catch(() => {
         throw new Error(
           "The file reached secure storage but could not be verified in time. Retry the upload.",
@@ -188,7 +199,7 @@ async function uploadStatement(
     }
   }
 
-  return uploadMultipart(caseId, file, fiscalYear, onProgress);
+  return uploadMultipart(caseId, file, fiscalYear, statementType, onProgress);
 }
 
 export function DocumentsStep({
@@ -204,6 +215,24 @@ export function DocumentsStep({
   const [failedByYear, setFailedByYear] = useState<Record<number, { file: File; error: string }>>(
     {},
   );
+  // The wizard starts with only the latest (required) year slot. "+ Add
+  // Year" reveals earlier years one at a time, up to the historical cap —
+  // years that already carry an uploaded statement (editing a draft) are
+  // always shown regardless of this state.
+  const [addedYears, setAddedYears] = useState<number[]>([]);
+  // Reliability class the applicant declares before each upload (per year).
+  const [typeByYear, setTypeByYear] = useState<Record<number, StatementType>>({});
+  // The contract/award-letter document (uploaded in the contract step) also
+  // lives in `documents` — the year slots below are statements only.
+  const statements = documents.filter((d) => d.docType === "FINANCIAL_STATEMENT");
+  const uploadedYears = statements
+    .map((d) => d.fiscalYear)
+    .filter((y): y is number => y !== null);
+  const visibleYears = Array.from(
+    new Set([LATEST_STATEMENT_YEAR, ...addedYears, ...uploadedYears]),
+  ).sort((a, b) => b - a);
+  const nextAddableYear = Math.min(...visibleYears) - 1;
+  const canAddYear = nextAddableYear >= EARLIEST_STATEMENT_YEAR;
   const [removing, startRemoving] = useTransition();
   const uploading = Object.keys(progressByYear).length > 0;
 
@@ -228,8 +257,12 @@ export function DocumentsStep({
     });
     setProgressByYear((p) => ({ ...p, [fiscalYear]: 0 }));
     try {
-      const document = await uploadStatement(caseId, file, fiscalYear, (percent) =>
-        setProgressByYear((p) => ({ ...p, [fiscalYear]: percent })),
+      const document = await uploadStatement(
+        caseId,
+        file,
+        fiscalYear,
+        typeByYear[fiscalYear] ?? "AUDITED",
+        (percent) => setProgressByYear((p) => ({ ...p, [fiscalYear]: percent })),
       );
       onDocumentsChange([...documents, document]);
       toast.success(`FY ${fiscalYear} statement uploaded`);
@@ -273,8 +306,8 @@ export function DocumentsStep({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {STATEMENT_YEARS.map((year) => {
-          const document = documents.find((d) => d.fiscalYear === year);
+        {visibleYears.map((year) => {
+          const document = statements.find((d) => d.fiscalYear === year);
           const progress = progressByYear[year];
           const failed = failedByYear[year];
           const inputId = `statement-${year}`;
@@ -343,41 +376,71 @@ export function DocumentsStep({
                       <span
                         className={cn(
                           "rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-                          year === STATEMENT_YEARS[0]
+                          year === LATEST_STATEMENT_YEAR
                             ? "bg-primary/10 text-primary"
                             : "bg-muted text-muted-foreground",
                         )}
                       >
-                        {year === STATEMENT_YEARS[0] ? "Latest · Recommended" : "Optional"}
+                        {year === LATEST_STATEMENT_YEAR ? "Latest · Recommended" : "Optional"}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Audited IFRS financial statement (PDF)
+                      IFRS financial statement (PDF)
                     </p>
                   </div>
-                  <label
-                    htmlFor={inputId}
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer")}
-                  >
-                    <Upload className="size-3.5" aria-hidden />
-                    Upload PDF
-                    <input
-                      id={inputId}
-                      type="file"
-                      accept="application/pdf,.pdf"
-                      className="sr-only"
-                      onChange={(event) => {
-                        void handleFile(year, event.target.files?.[0]);
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={typeByYear[year] ?? "AUDITED"}
+                      onChange={(event) =>
+                        setTypeByYear((t) => ({
+                          ...t,
+                          [year]: event.target.value as StatementType,
+                        }))
+                      }
+                      aria-label={`FY ${year} statement type`}
+                      className="h-8 rounded-md border border-input bg-transparent px-2 text-xs text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {STATEMENT_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label
+                      htmlFor={inputId}
+                      className={cn(buttonVariants({ variant: "outline", size: "sm" }), "cursor-pointer")}
+                    >
+                      <Upload className="size-3.5" aria-hidden />
+                      Upload PDF
+                      <input
+                        id={inputId}
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        className="sr-only"
+                        onChange={(event) => {
+                          void handleFile(year, event.target.files?.[0]);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
-        {documents.length === 0 && (
+        {canAddYear && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAddedYears((years) => [...years, nextAddableYear])}
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Add Year {nextAddableYear}
+          </Button>
+        )}
+        {statements.length === 0 && (
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2.5 dark:border-amber-400/25 dark:bg-amber-400/10">
             <FileText
               className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
@@ -400,7 +463,7 @@ export function DocumentsStep({
         <Button type="button" variant="outline" onClick={onBack}>
           Back
         </Button>
-        <Button type="button" onClick={onContinue} disabled={documents.length === 0}>
+        <Button type="button" onClick={onContinue} disabled={statements.length === 0}>
           Continue to Review
         </Button>
       </CardFooter>

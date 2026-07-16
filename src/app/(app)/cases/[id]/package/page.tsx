@@ -97,6 +97,8 @@ export default async function UnderwritingPackagePage({
     underwritingCase.financialStatements,
     underwritingCase.contractDetails,
     toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
+    underwritingCase.qualitative,
+    underwritingCase.company.sector,
   );
   if (!report) redirect(`/cases/${id}`);
   const integrity = validateFinancialIntegrity(underwritingCase.financialStatements);
@@ -109,7 +111,19 @@ export default async function UnderwritingPackagePage({
       label: "Underwriting Capacity",
       value: report.capacity ? `${report.capacity.score}/100 · ${report.capacity.band}` : "—",
     },
-    { label: "Risk Score", value: `${report.risk.score}/100 · ${report.risk.band}` },
+    { label: "Overall Grade", value: `${report.overall.score}/100 · ${report.overall.band}` },
+    {
+      label: "Company Qualitative",
+      value: report.qualitative
+        ? `${report.qualitative.score}/100 · ${report.qualitative.band}`
+        : "—",
+    },
+    {
+      label: "Contract Risk",
+      value: report.contractRisk
+        ? `${report.contractRisk.score}/100 · ${report.contractRisk.band}`
+        : "—",
+    },
     { label: "Current Ratio", value: formatRatio(latestRatios.ratios.currentRatio) },
     { label: "Debt-to-Equity", value: formatRatio(latestRatios.ratios.debtToEquity) },
     { label: "Net Profit Margin", value: formatPercent(latestRatios.ratios.netMargin) },

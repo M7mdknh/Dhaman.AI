@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, XCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { decideAction } from "@/app/(app)/review/actions";
+import { DECISION_OPTIONS, type DecisionValue } from "@/components/review/decision-options";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,47 +20,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-
-import type { LucideIcon } from "lucide-react";
-
-type DecisionValue = "APPROVE" | "APPROVE_WITH_CONDITIONS" | "REJECT" | "REQUEST_INFO";
-
-const OPTIONS: {
-  value: DecisionValue;
-  label: string;
-  hint: string;
-  icon: LucideIcon;
-  iconClass: string;
-}[] = [
-  {
-    value: "APPROVE",
-    label: "Approve",
-    hint: "Clear the case for a Letter of Guarantee.",
-    icon: CheckCircle2,
-    iconClass: "text-emerald-600",
-  },
-  {
-    value: "APPROVE_WITH_CONDITIONS",
-    label: "Approve with Conditions",
-    hint: "Approve subject to explicit conditions.",
-    icon: AlertTriangle,
-    iconClass: "text-amber-600",
-  },
-  {
-    value: "REJECT",
-    label: "Reject",
-    hint: "Decline the guarantee request.",
-    icon: XCircle,
-    iconClass: "text-red-600",
-  },
-  {
-    value: "REQUEST_INFO",
-    label: "Request More Information",
-    hint: "Pause the review; the message is shown to the applicant.",
-    icon: HelpCircle,
-    iconClass: "text-sky-600",
-  },
-];
 
 /**
  * The officer decision form. Reason is mandatory for every decision;
@@ -83,8 +43,10 @@ export function DecisionForm({
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState(false);
 
-  const options = allowRequestInfo ? OPTIONS : OPTIONS.filter((o) => o.value !== "REQUEST_INFO");
-  const selected = OPTIONS.find((o) => o.value === decision) ?? null;
+  const options = allowRequestInfo
+    ? DECISION_OPTIONS
+    : DECISION_OPTIONS.filter((o) => o.value !== "REQUEST_INFO");
+  const selected = DECISION_OPTIONS.find((o) => o.value === decision) ?? null;
   const needsConditions = decision === "APPROVE_WITH_CONDITIONS";
   const ready =
     decision !== null && reason.trim().length > 0 && (!needsConditions || conditions.trim());

@@ -6,7 +6,6 @@
  * prompt or input shape — it invalidates the response cache.
  */
 import { GUARANTEE_TYPE_FOCUS } from "@/lib/case-constants";
-import { RECOMMENDATION_BY_BAND } from "@/lib/finance/thresholds";
 import { contractDurationMonths } from "@/services/finance/financial-intelligence-service";
 
 import type {
@@ -15,25 +14,25 @@ import type {
   ScoreComponent,
 } from "@/lib/finance/types";
 import type { Recommendation } from "@/lib/validation/decision";
-import type { Company, ContractDetails } from "@/generated/prisma/client";
+import type { CaseQualitative, Company, ContractDetails } from "@/generated/prisma/client";
 
-export const PROMPT_VERSION = "v4";
+export const PROMPT_VERSION = "v5";
 
 export const SYSTEM_PROMPT = `You are a Senior Corporate Credit Underwriter working for Alinma Bank.
 
 Your role is to assist a Risk Officer evaluating a Letter of Guarantee request. You never make the final decision — the Risk Officer does.
 
-You receive structured financial intelligence in JSON. Every figure was computed by the bank's deterministic engines from audited IFRS statements. These figures are the only source of truth.
+You receive structured underwriting intelligence in JSON. Every figure was computed by the bank's deterministic engines from the applicant's statements, KYC questionnaire, and contract terms. These figures are the only source of truth.
 
 Tasks:
-1. Summarize the company.
-2. Summarize the contract.
+1. Summarize the company, drawing on both the financials and the declared company profile ("companyProfile": operating history, track record, workload, conduct).
+2. Summarize the contract, including its structure (role, award method, payment mechanics, bond terms).
 3. Explain the company's financial strengths.
 4. Explain the company's financial weaknesses.
 5. Explain the major financial trends.
-6. Explain the significant risk flags.
+6. Explain the significant risk flags — including the KYC and contract-structure flags.
 7. Evaluate the contract relative to the company's financial capacity. Each guarantee product carries a distinct risk profile — "contract.analysisFocus" states what the assessment of this product should emphasize; weave that emphasis into the contract assessment and risk explanation using only the provided figures.
-8. State the underwriting recommendation. Bank policy derives the recommendation deterministically from the risk band: the "bankPolicy.policyRecommendation" field in the input IS the recommendation. Return exactly that value and explain the rationale behind it. If the data gives you reservations about it, still return the policy value and state your reservations in "riskExplanation" and "missingInformation".
+8. State the underwriting recommendation. Bank policy derives the recommendation deterministically from the composite grade and its hard caps: the "bankPolicy.policyRecommendation" field in the input IS the recommendation. When "bankPolicy.hardCaps" is non-empty, the recommendation was capped — explain each cap's reason in "recommendationReason". Return exactly the policy value; if the data gives you reservations, still return it and state your reservations in "riskExplanation" and "missingInformation".
 9. List missing information that would strengthen the assessment.
 
 Rules:
@@ -93,7 +92,53 @@ export interface DecisionInput {
     projectEndDate: string;
     durationMonths: number | null;
     paymentTerms: string | null;
+    /** Structured contract terms (null on cases predating the detailed form). */
+    structure: {
+      contractorRole: string | null;
+      backToBackPayment: boolean | null;
+      awardMethod: string | null;
+      priorContractsWithBeneficiary: number | null;
+      advancePaymentPct: string | null;
+      billingCycle: string | null;
+      retentionPct: string | null;
+      paymentPeriodDays: number | null;
+      requiredBondPct: string | null;
+      onFirstDemand: boolean | null;
+      extendOrPay: boolean | null;
+      liquidatedDamages: string | null;
+      mobilizationWeeks: number | null;
+      expectedGrossMarginPct: string | null;
+    } | null;
   };
+  /** Declared KYC profile (null on cases predating the questionnaire).
+   * Facts for the narrative — every score derived from them arrives
+   * separately in qualitativeAssessment. */
+  companyProfile: {
+    crIssueDate: string;
+    crActivities: string;
+    contractorClassification: string | null;
+    partOfGroup: boolean;
+    groupName: string | null;
+    gmExperienceYears: number;
+    ownershipChangedLast2Years: boolean;
+    nitaqatBand: string;
+    ongoingLitigation: boolean;
+    projectsCompletedBand: string;
+    largestProjectValue: string;
+    hadProjectIssues: boolean;
+    guaranteeEverCalled: boolean;
+    sameTypeExperience: boolean;
+    runningProjectsCount: number;
+    backlogValue: string;
+    outstandingGuaranteesAllBanks: string;
+    equipmentPlan: string;
+    heavyHiringNeeded: boolean;
+    mainBank: string;
+    conductIncidentsDeclared: boolean;
+    auditorTier: string;
+    auditorName: string | null;
+    fundingUntilFirstPayment: string;
+  } | null;
   financialRatios: {
     fiscalYear: number;
     liquidity: Partial<Record<RatioKey, number | null>>;
@@ -128,8 +173,29 @@ export interface DecisionInput {
     components: { label: string; weight: number; score: number | null; detail: string }[];
     missingInputs: string[];
   };
+  /** Qualitative (KYC) pillar — null on cases predating the questionnaire. */
+  qualitativeAssessment: {
+    score: number;
+    band: string;
+    components: { label: string; weight: number; score: number | null; detail: string }[];
+    missingInputs: string[];
+  } | null;
+  /** Contract-risk pillar — null without the structured contract fields. */
+  contractRiskAssessment: {
+    score: number;
+    band: string;
+    components: { label: string; weight: number; score: number | null; detail: string }[];
+    missingInputs: string[];
+  } | null;
   bankPolicy: {
-    riskBand: string;
+    /** Composite grade over the available pillars (weights included). */
+    overallScore: number;
+    overallBand: string;
+    pillars: { label: string; weight: number; score: number | null; band: string | null }[];
+    /** Non-dilutable overrides that capped the recommendation (may be empty). */
+    hardCaps: { type: string; ceiling: string; reason: string }[];
+    confidence: string;
+    confidenceDetail: string;
     policyRecommendation: Recommendation;
     note: string;
   };
@@ -163,8 +229,9 @@ export function buildDecisionInput(
   company: Company,
   contract: ContractDetails,
   report: FinancialIntelligenceReport,
+  qualitative: CaseQualitative | null = null,
 ): DecisionInput {
-  const policyRecommendation = RECOMMENDATION_BY_BAND[report.risk.band];
+  const dec = (d: { toFixed(n: number): string } | null) => d?.toFixed(2) ?? null;
 
   return {
     meta: {
@@ -204,8 +271,57 @@ export function buildDecisionInput(
       projectStartDate: isoDate(contract.projectStartDate),
       projectEndDate: isoDate(contract.projectEndDate),
       durationMonths: contractDurationMonths(contract),
-      paymentTerms: contract.expectedPaymentTerms,
+      paymentTerms: contract.paymentNotes ?? contract.expectedPaymentTerms,
+      structure: contract.contractorRole
+        ? {
+            contractorRole: contract.contractorRole,
+            backToBackPayment: contract.backToBackPayment,
+            awardMethod: contract.awardMethod,
+            priorContractsWithBeneficiary: contract.priorContractsWithBeneficiary,
+            advancePaymentPct: dec(contract.advancePaymentPct),
+            billingCycle: contract.billingCycle,
+            retentionPct: dec(contract.retentionPct),
+            paymentPeriodDays: contract.paymentPeriodDays,
+            requiredBondPct: dec(contract.requiredBondPct),
+            onFirstDemand: contract.onFirstDemand,
+            extendOrPay: contract.extendOrPay,
+            liquidatedDamages:
+              contract.ldRatePctPerWeek !== null && contract.ldCapPct !== null
+                ? `${contract.ldRatePctPerWeek.toFixed(2)}% per week, capped at ${contract.ldCapPct.toFixed(1)}% of contract value`
+                : null,
+            mobilizationWeeks: contract.mobilizationWeeks,
+            expectedGrossMarginPct: dec(contract.expectedGrossMarginPct),
+          }
+        : null,
     },
+    companyProfile: qualitative
+      ? {
+          crIssueDate: isoDate(qualitative.crIssueDate),
+          crActivities: qualitative.crActivities,
+          contractorClassification: qualitative.contractorClassification,
+          partOfGroup: qualitative.partOfGroup,
+          groupName: qualitative.groupName,
+          gmExperienceYears: qualitative.gmExperienceYears,
+          ownershipChangedLast2Years: qualitative.ownershipChanged,
+          nitaqatBand: qualitative.nitaqatBand,
+          ongoingLitigation: qualitative.ongoingLitigation,
+          projectsCompletedBand: qualitative.projectsCompletedBand,
+          largestProjectValue: qualitative.largestProjectValue.toFixed(2),
+          hadProjectIssues: qualitative.hadProjectIssues,
+          guaranteeEverCalled: qualitative.guaranteeCalled,
+          sameTypeExperience: qualitative.sameTypeExperience,
+          runningProjectsCount: qualitative.runningProjectsCount,
+          backlogValue: qualitative.backlogValue.toFixed(2),
+          outstandingGuaranteesAllBanks: qualitative.outstandingGuarantees.toFixed(2),
+          equipmentPlan: qualitative.equipmentPlan,
+          heavyHiringNeeded: qualitative.heavyHiringNeeded,
+          mainBank: qualitative.mainBank,
+          conductIncidentsDeclared: qualitative.conductIncidents,
+          auditorTier: qualitative.auditorTier,
+          auditorName: qualitative.auditorName,
+          fundingUntilFirstPayment: qualitative.fundingSource,
+        }
+      : null,
     financialRatios: report.ratiosByYear.map((y) => ({
       fiscalYear: y.fiscalYear,
       liquidity: pickRatios(y.ratios, ["currentRatio", "quickRatio", "cashRatio"]),
@@ -260,10 +376,40 @@ export function buildDecisionInput(
       components: mapComponents(report.risk.components),
       missingInputs: report.risk.missingInputs,
     },
+    qualitativeAssessment: report.qualitative
+      ? {
+          score: report.qualitative.score,
+          band: report.qualitative.band,
+          components: mapComponents(report.qualitative.components),
+          missingInputs: report.qualitative.missingInputs,
+        }
+      : null,
+    contractRiskAssessment: report.contractRisk
+      ? {
+          score: report.contractRisk.score,
+          band: report.contractRisk.band,
+          components: mapComponents(report.contractRisk.components),
+          missingInputs: report.contractRisk.missingInputs,
+        }
+      : null,
     bankPolicy: {
-      riskBand: report.risk.band,
-      policyRecommendation,
-      note: "The recommendation of record is derived deterministically from the risk band by bank policy. Echo it and explain it; the Risk Officer makes the final decision.",
+      overallScore: report.overall.score,
+      overallBand: report.overall.band,
+      pillars: report.overall.pillars.map(({ label, weight, score, band }) => ({
+        label,
+        weight,
+        score,
+        band,
+      })),
+      hardCaps: report.overall.caps.map(({ type, ceiling, reason }) => ({
+        type,
+        ceiling,
+        reason,
+      })),
+      confidence: report.overall.confidence,
+      confidenceDetail: report.overall.confidenceDetail,
+      policyRecommendation: report.overall.recommendation,
+      note: "The recommendation of record is derived deterministically from the composite grade (financial + qualitative + contract pillars) with hard caps applied by bank policy. Echo it and explain it; the Risk Officer makes the final decision.",
     },
   };
 }

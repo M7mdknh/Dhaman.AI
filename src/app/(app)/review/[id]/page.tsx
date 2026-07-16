@@ -5,11 +5,18 @@ import { ArrowLeft, Download, FileCheck2, Hourglass } from "lucide-react";
 
 import { FinancialIntelligencePanel } from "@/components/analysis/financial-intelligence-panel";
 import { AssessmentUnavailable, ValidationReport } from "@/components/analysis/validation-report";
+import { AdminDeleteCaseDialog } from "@/components/review/admin-delete-case-dialog";
+import { AdminEditContractDialog } from "@/components/review/admin-edit-contract-dialog";
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
 import { StatusBadge } from "@/components/cases/status-badge";
-import { CompanySummary, ContractSummary } from "@/components/cases/summary-sections";
+import {
+  CompanySummary,
+  ContractSummary,
+  QualitativeSummary,
+} from "@/components/cases/summary-sections";
 import { DecisionSection } from "@/components/decision/decision-section";
 import { DecisionForm } from "@/components/review/decision-form";
+import { decisionOptionLabel } from "@/components/review/decision-options";
 import {
   DecisionHistory,
   officerDecisionLabel,
@@ -23,6 +30,7 @@ import { PriorityBadge } from "@/components/review/priority-badge";
 import {
   RmAssessmentPanel,
   type MemoRevisionView,
+  type RmSuggestedDecisionView,
 } from "@/components/review/rm-assessment-panel";
 import { RmReviewForm } from "@/components/review/rm-review-form";
 import {
@@ -30,10 +38,10 @@ import {
   StartReviewButton,
 } from "@/components/review/review-lifecycle-buttons";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getSession } from "@/lib/auth/session";
 import { guaranteeTypeLabel } from "@/lib/case-constants";
-import { toCompanyInput, toContractInput } from "@/lib/case-view";
+import { toCompanyInput, toContractInput, toQualitativeInput } from "@/lib/case-view";
 import { buildValidationReport } from "@/lib/finance/confidence";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { derivePriority } from "@/lib/review";
@@ -184,6 +192,8 @@ export default async function ReviewCasePage({
     reviewCase.financialStatements,
     contract,
     toIdentityInputs(reviewCase.company.name, reviewCase.documents),
+    reviewCase.qualitative,
+    reviewCase.company.sector,
   );
   // The same pure check the engine gates on — read here to TELL the officer how
   // far the assessment can be trusted. Never re-judges it.
@@ -193,7 +203,7 @@ export default async function ReviewCasePage({
   // never produced, so the workflow must not pretend one is coming.
   const validationBlocked = reviewCase.financialStatements.length > 0 && report === null;
   const priority = derivePriority(
-    report?.risk.band ?? null,
+    report?.overall.band ?? null,
     contract?.guaranteeAmount ?? null,
   );
   const memo = reviewCase.decisionIntelligence[0] ?? null;
@@ -212,6 +222,16 @@ export default async function ReviewCasePage({
         relationshipContext: latestRevision.relationshipContext,
         author: latestRevision.author?.fullName ?? "Former staff member",
         createdAt: latestRevision.createdAt.toISOString(),
+      }
+    : null;
+  const suggestedDecision = reviewCase.rmSuggestedDecisions[0] ?? null;
+  const suggestedDecisionView: RmSuggestedDecisionView | null = suggestedDecision
+    ? {
+        decision: suggestedDecision.decision,
+        reason: suggestedDecision.reason,
+        conditions: suggestedDecision.conditions,
+        rm: suggestedDecision.rm.fullName,
+        createdAt: suggestedDecision.createdAt.toISOString(),
       }
     : null;
 
@@ -255,12 +275,26 @@ export default async function ReviewCasePage({
           <ArrowLeft className="size-3.5" aria-hidden />
           Review Queue
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {reviewCase.reference}
-          </h1>
-          <StatusBadge status={status} />
-          <PriorityBadge priority={priority} />
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              {reviewCase.reference}
+            </h1>
+            <StatusBadge status={status} />
+            <PriorityBadge priority={priority} />
+          </div>
+          {session.role === "ADMIN" && (
+            <div className="flex items-center gap-2">
+              {contract && (
+                <AdminEditContractDialog
+                  caseId={id}
+                  reference={reviewCase.reference}
+                  defaults={toContractInput(contract)}
+                />
+              )}
+              <AdminDeleteCaseDialog caseId={id} reference={reviewCase.reference} />
+            </div>
+          )}
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {reviewCase.company.name}
@@ -304,6 +338,7 @@ export default async function ReviewCasePage({
               revisionCount={reviewCase.memoRevisions.length}
               routedBy={reviewCase.rmReviewer?.fullName ?? null}
               routedAt={reviewCase.rmSubmittedAt?.toISOString() ?? null}
+              suggestedDecision={suggestedDecisionView}
             />
           )}
 
@@ -316,9 +351,20 @@ export default async function ReviewCasePage({
           />
 
           <section aria-label="Financial intelligence">
-            <h2 className="mb-3 text-sm font-semibold text-foreground">
-              Financial Intelligence
-            </h2>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-foreground">
+                Financial Intelligence
+              </h2>
+              {report && (
+                <a
+                  href={`/api/cases/${id}/analysis-pdf`}
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                >
+                  <Download className="size-3.5" aria-hidden />
+                  Export PDF
+                </a>
+              )}
+            </div>
             {report ? (
               <FinancialIntelligencePanel report={report} integrity={integrity} />
             ) : validationBlocked ? (
@@ -343,6 +389,14 @@ export default async function ReviewCasePage({
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Company Overview</CardTitle>
+                <CardAction>
+                  <Link
+                    href={`/companies/${reviewCase.companyId}`}
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                  >
+                    History with the bank
+                  </Link>
+                </CardAction>
               </CardHeader>
               <CardContent>
                 <CompanySummary company={toCompanyInput(reviewCase.company)} />
@@ -361,6 +415,24 @@ export default async function ReviewCasePage({
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Profile & Track Record (KYC)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {reviewCase.qualitative ? (
+                <QualitativeSummary
+                  qualitative={toQualitativeInput(reviewCase.qualitative)!}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This case predates the KYC questionnaire — the qualitative pillar is
+                  excluded from its grade.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
@@ -507,6 +579,21 @@ export default async function ReviewCasePage({
                 </>
               )}
 
+              {suggestedDecisionView &&
+                (status === "UNDER_REVIEW" || status === "INFO_REQUESTED") && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <p className="text-[13px] font-medium text-foreground">
+                      RM suggested: {decisionOptionLabel(suggestedDecisionView.decision)}
+                    </p>
+                    <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                      {suggestedDecisionView.reason}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      — {suggestedDecisionView.rm}, a recommendation only.
+                    </p>
+                  </div>
+                )}
+
               {status === "UNDER_REVIEW" && (
                 <DecisionForm caseId={id} reference={reviewCase.reference} />
               )}
@@ -588,15 +675,14 @@ export default async function ReviewCasePage({
           </Card>
 
           <NotesPanel caseId={id} notes={notes} />
-
-          {report && (
-            <InsightChat
-              caseId={id}
-              initialBubbles={buildInsightBubbles(report)}
-            />
-          )}
         </div>
       </div>
+
+      {/* Rendered outside the staggered-entrance rail: InsightChat is a fixed
+          floating widget, and an ancestor with an in-flight CSS animation
+          would briefly become its containing block (transform side effect),
+          pinning it to the rail instead of the viewport for a moment. */}
+      {report && <InsightChat caseId={id} initialBubbles={buildInsightBubbles(report)} />}
     </div>
   );
 }

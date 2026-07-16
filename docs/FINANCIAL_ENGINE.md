@@ -376,6 +376,54 @@ The dashboard presents **Underwriting Capacity as the primary KPI**; the
 Risk Score is secondary. Both are displayed with their full component
 breakdowns — the breakdown IS the explanation.
 
+## Composite Grade: qualitative + contract pillars (2026-07-16)
+
+The grade of record is no longer the financial risk score alone. Three
+deterministic pillars combine (weights in `PILLARS`):
+
+```
+overall = 50% financial risk score (above)
+        + 30% company qualitative  (qualitative-score-service — KYC answers)
+        + 20% contract risk        (contract-risk-service — structured terms)
+```
+
+All three publish the same convention (0–100, higher = riskier, safety
+sub-scores × weights, missing inputs excluded + renormalized). A case with
+no KYC/structured-contract data (anything submitted before the five-step
+wizard) renormalizes to the financial pillar alone — **legacy cases grade
+exactly as before**.
+
+- **Qualitative components** (weights in `QUALITATIVE`): operating age
+  (derived from the CR issue date), track-record depth, same-type experience,
+  GM experience, management stability, Nitaqat, capacity headroom
+  (*computed*: (backlog + this contract) / latest revenue), equipment plan,
+  hiring need, declared conduct, auditor tier. Computed factors can't be
+  gamed by band-picking; binary capability proofs weigh heavy.
+- **Contract-risk components** (weights in `CONTRACT_RISK`): jump ratio
+  (*computed*: contract / largest completed project), contractor role,
+  beneficiary history, cash-gap coverage (*computed*: advance vs the
+  pre-payment burn window), margin buffer, margin realism (*computed*:
+  declared vs audited gross margin), award method, bond call terms, LD
+  exposure.
+- **Hard caps** (`HARD_CAPS`) are non-dilutable policy overrides: a called
+  guarantee, declared conduct incidents, or Nitaqat Red cap the
+  recommendation of record at MANUAL_REVIEW; a >3× scale jump caps it at
+  APPROVE_WITH_CONDITIONS. Caps never change a score and never force REJECT
+  — a points-only system would let killer signals be averaged away by good
+  ratios.
+- **Confidence, not points:** each statement's declared reliability
+  (Audited / Reviewed / Management) sets the grade's confidence label via
+  the WEAKEST statement in the window (`RELIABILITY_CONFIDENCE`). It never
+  moves a score — the auditor-tier component already prices auditor quality.
+- The KYC and contract flags are kept OUT of the financial trend component's
+  flag penalty (same principle as the identity flags): they already shape
+  their own pillars; feeding them back would double-count.
+
+`report.overall` drives the headline, review-queue ranking, priority, and
+the memo's `bankPolicy` input (prompt v5). Full display: the "Underwriting
+Grade" section of the analysis panel (pillar cards + cap banner + component
+breakdowns).
+
 ## Testing
 
 `tests/finance/` — hand-computed unit tests for the ratio, trend, flag,

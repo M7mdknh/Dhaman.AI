@@ -15,6 +15,13 @@ const MAX_FAILURES_PER_IP = 30;
 const REGISTER_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const MAX_REGISTRATIONS_PER_IP = 10;
 
+// Insight Chat is the one uncapped LLM egress: each message is a billed
+// OpenAI call. Bank staff use it interactively, so the budget is generous —
+// it exists to stop a runaway loop or a stolen session, not to throttle
+// normal use. Counted against the per-message audit event the route records.
+const CHAT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_CHATS_PER_USER = 20;
+
 function countAudits(action: string, since: Date, key: "email" | "ip", value: string) {
   return prisma.auditLog.count({
     where: { action, createdAt: { gt: since }, detail: { path: [key], equals: value } },
@@ -37,4 +44,16 @@ export async function isRegisterRateLimited(ip: string | null): Promise<boolean>
   const since = new Date(Date.now() - REGISTER_WINDOW_MS);
   const count = await countAudits("auth.registered", since, "ip", ip);
   return count >= MAX_REGISTRATIONS_PER_IP;
+}
+
+/** True when this user has exceeded the recent Insight Chat message budget.
+ * Keyed on the actor (a bank user), counted from the per-message audit event
+ * the chat route records — shared across serverless instances, like the auth
+ * limiters, with no extra infrastructure. */
+export async function isChatRateLimited(userId: string): Promise<boolean> {
+  const since = new Date(Date.now() - CHAT_WINDOW_MS);
+  const count = await prisma.auditLog.count({
+    where: { action: "officer.insight_queried", actorId: userId, createdAt: { gt: since } },
+  });
+  return count >= MAX_CHATS_PER_USER;
 }

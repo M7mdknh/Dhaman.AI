@@ -37,6 +37,7 @@ export function DecisionStatusCard({
   guarantee: ContractorGuaranteeView | null;
 }) {
   const relevant =
+    status === "RM_REVIEWED" ||
     status === "UNDER_REVIEW" ||
     status === "INFO_REQUESTED" ||
     status === "APPROVED" ||
@@ -53,6 +54,14 @@ export function DecisionStatusCard({
         <CardTitle className="text-sm">Bank Decision</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {status === "RM_REVIEWED" && (
+          <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
+            <SearchCheck className="mt-0.5 size-4 shrink-0 text-sky-600" aria-hidden />
+            Your Relationship Manager has completed the review and sent your
+            case to the Risk Officer for the final decision.
+          </p>
+        )}
+
         {status === "UNDER_REVIEW" && (
           <p className="flex items-start gap-2 text-[13px] text-muted-foreground">
             <SearchCheck className="mt-0.5 size-4 shrink-0 text-sky-600" aria-hidden />

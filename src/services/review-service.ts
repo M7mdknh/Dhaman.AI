@@ -13,7 +13,7 @@ import { canDecide, canResumeReview, canStartReview, decisionTargetStatus } from
 import { recordAudit } from "@/services/audit-service";
 import { getOfficerUser } from "@/services/officer-case-service";
 
-import type { OfficerDecisionType } from "@/generated/prisma/enums";
+import type { CaseStatus, OfficerDecisionType } from "@/generated/prisma/enums";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -52,14 +52,23 @@ export async function startReview(officerUserId: string, caseId: string): Promis
     };
   }
 
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
+  // Conditional write is the race guard: the status read above can go stale
+  // between here and now (a concurrent start or decision). Only transition a
+  // case STILL in a startable status — count === 0 means it moved under us.
+  const moved = await prisma.underwritingCase.updateMany({
+    where: { id: caseId, status: { in: ["ANALYSIS_READY", "RM_REVIEWED"] } },
     data: {
       status: "UNDER_REVIEW",
       reviewStartedAt: new Date(),
       assignedOfficerId: underwritingCase.assignedOfficerId ?? officerUserId,
     },
   });
+  if (moved.count === 0) {
+    return {
+      ok: false,
+      error: "This case's status changed before the review could start. Refresh and try again.",
+    };
+  }
   await recordAudit({
     action: "officer.review_started",
     actorId: officerUserId,
@@ -83,10 +92,17 @@ export async function resumeReview(officerUserId: string, caseId: string): Promi
     return { ok: false, error: "Only cases awaiting requested information can be resumed." };
   }
 
-  await prisma.underwritingCase.update({
-    where: { id: caseId },
+  // Conditional write (race guard): only resume a case STILL awaiting info.
+  const moved = await prisma.underwritingCase.updateMany({
+    where: { id: caseId, status: "INFO_REQUESTED" },
     data: { status: "UNDER_REVIEW" },
   });
+  if (moved.count === 0) {
+    return {
+      ok: false,
+      error: "This case's status changed before it could be resumed. Refresh and try again.",
+    };
+  }
   await recordAudit({
     action: "officer.review_resumed",
     actorId: officerUserId,
@@ -139,9 +155,26 @@ export async function recordDecision(
 
   const targetStatus = decisionTargetStatus(input.decision);
   const isTerminal = targetStatus !== "INFO_REQUESTED";
+  // The statuses this decision may legally move FROM — mirrors canDecide, and
+  // used below as the race guard so a stale read cannot double-record.
+  const allowedSources: CaseStatus[] =
+    input.decision === "REQUEST_INFO" ? ["UNDER_REVIEW"] : ["UNDER_REVIEW", "INFO_REQUESTED"];
 
-  await prisma.$transaction([
-    prisma.officerDecision.create({
+  // Move the case FIRST, conditionally: the update only fires while the case
+  // is still in a decidable status. count === 0 means another actor already
+  // decided it between the read above and now — abort so we never write a
+  // second decision (or a second status flip) for the same review.
+  const committed = await prisma.$transaction(async (tx) => {
+    const moved = await tx.underwritingCase.updateMany({
+      where: { id: caseId, status: { in: allowedSources } },
+      data: {
+        status: targetStatus,
+        decidedAt: isTerminal ? new Date() : null,
+        assignedOfficerId: underwritingCase.assignedOfficerId ?? officerUserId,
+      },
+    });
+    if (moved.count === 0) return false;
+    await tx.officerDecision.create({
       data: {
         caseId,
         officerId: officerUserId,
@@ -150,16 +183,15 @@ export async function recordDecision(
         conditions: input.decision === "APPROVE_WITH_CONDITIONS" ? conditions : null,
         decisionIntelligenceId: underwritingCase.decisionIntelligence[0]?.id ?? null,
       },
-    }),
-    prisma.underwritingCase.update({
-      where: { id: caseId },
-      data: {
-        status: targetStatus,
-        decidedAt: isTerminal ? new Date() : null,
-        assignedOfficerId: underwritingCase.assignedOfficerId ?? officerUserId,
-      },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!committed) {
+    return {
+      ok: false,
+      error: "This case's status changed before the decision was recorded. Refresh and try again.",
+    };
+  }
 
   await recordAudit({
     action: "officer.decided",

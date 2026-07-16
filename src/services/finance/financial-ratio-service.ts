@@ -25,6 +25,20 @@ export function derivedGrossProfit(y: YearFinancials): Money | null {
   return y.grossProfit ?? sub(y.revenue, y.cogs);
 }
 
+/** EBITDA is used only when literally printed — but a statement almost never
+ * prints it (it is a non-IFRS metric), so without a derived fallback the
+ * coverage ratios (DSCR, EBITDA coverage) would be null for nearly every
+ * case. Standard derivation: operating income + D&A add-back — but ONLY
+ * when D&A is actually known. Falling back to operating income alone when
+ * D&A is missing would silently understate EBITDA (that's EBIT, a
+ * materially different figure) and produce a falsely pessimistic coverage
+ * ratio with no indication anything was approximated — worse than null. */
+export function derivedEbitda(y: YearFinancials): Money | null {
+  if (y.ebitda != null) return y.ebitda;
+  if (y.operatingIncome == null || y.depreciationAmortization == null) return null;
+  return y.operatingIncome.add(y.depreciationAmortization);
+}
+
 export function derivedTotalDebt(y: YearFinancials): Money | null {
   return y.totalDebt ?? sumPresent(y.shortTermDebt, y.longTermDebt);
 }
@@ -42,6 +56,7 @@ export function computeYearRatios(y: YearFinancials): YearRatios {
   const grossProfit = derivedGrossProfit(y);
   const totalDebt = derivedTotalDebt(y);
   const debtService = derivedDebtService(y);
+  const ebitda = derivedEbitda(y);
   const equityPositive = y.totalEquity != null && y.totalEquity.gt(0) ? y.totalEquity : null;
 
   const ratios: Record<RatioKey, number | null> = {
@@ -60,7 +75,7 @@ export function computeYearRatios(y: YearFinancials): YearRatios {
     netMargin: ratio(y.netIncome, y.revenue),
     returnOnAssets: ratio(y.netIncome, y.totalAssets),
     returnOnEquity: ratio(y.netIncome, equityPositive),
-    ebitdaMargin: ratio(y.ebitda, y.revenue),
+    ebitdaMargin: ratio(ebitda, y.revenue),
     // Efficiency
     assetTurnover: ratio(y.revenue, y.totalAssets),
     inventoryTurnover: ratio(y.cogs, y.inventory),
@@ -68,8 +83,8 @@ export function computeYearRatios(y: YearFinancials): YearRatios {
     // Cash flow
     operatingCashFlowRatio: ratio(y.operatingCashFlow, y.currentLiabilities),
     // Coverage
-    dscr: ratio(y.ebitda, debtService),
-    ebitdaCoverage: ratio(y.ebitda, y.interestExpense),
+    dscr: ratio(ebitda, debtService),
+    ebitdaCoverage: ratio(ebitda, y.interestExpense),
   };
 
   return {
