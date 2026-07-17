@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-16.**
+> of any session. **Last updated: 2026-07-17.**
 
 ## Product framing
 
@@ -34,6 +34,33 @@ below. All work is committed on `main`.
   Same first-success orchestration, plus the OCR fallback for unreadable scans
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
+
+### Post-MVP — Historical statements never block Express Underwriting (2026-07-17)
+
+A workflow audit against the Express philosophy ("only the latest audited
+statement is required; historical years are optional trend inputs") found and
+fixed three violations:
+
+- **Currency check no longer sinks the case.** `CURRENCY_INCONSISTENT` used to
+  reject EVERY fiscal year — a mis-read currency on an optional historical
+  statement drove the whole case to PROCESSING_FAILED. The latest year now
+  anchors the currency; only differing (historical) years are withheld.
+- **Latest-statement gate.** The inverse rule is now enforced too: if the
+  NEWEST uploaded fiscal year failed extraction while only older years
+  succeeded, the case stops honestly instead of presenting a stale year as the
+  current financial position (`case-processing-service`).
+- **Honest Medium confidence for unread historical statements.** A historical
+  document that failed extraction never reached the validator, so the officer
+  saw "High Confidence". `assessmentConfidence`/`buildValidationReport` now
+  take `unreadYears` (failed FINANCIAL_STATEMENT docs whose year no other
+  document covered): confidence caps at 🟡 Medium, the Validation Report gains
+  a "A historical statement could not be read" issue, and the review page,
+  underwriting package, analysis-panel Trends section, and contractor partial
+  banner all explain that trend analysis is limited — never as a product
+  failure. The assessment, capacity, risk score, and memo are unaffected.
+
+Everything else already conformed (first-success readiness, partial
+assessments, per-document retry, single-year trends messaging).
 
 ### Post-MVP — KYC questionnaire, structured contracts, composite grade, company history (2026-07-16)
 

@@ -170,14 +170,20 @@ export function validateFinancialIntegrity(statements: FinancialStatement[]): In
 
   // ---- Case-level: one currency --------------------------------------------
   // Ratios and trends compare years against each other; two currencies in one
-  // series compares quantities that are not the same kind of thing.
+  // series compares quantities that are not the same kind of thing. The LATEST
+  // year anchors the series: historical statements are optional inputs that
+  // enrich trends, so a mis-read currency on an older year withholds THAT year
+  // — it must never take the current assessment down with it.
   const currencies = [...new Set(statements.map((s) => s.currency))];
   if (currencies.length > 1) {
+    const anchorYear = Math.max(...statements.map((s) => s.fiscalYear));
+    const anchorCurrency = statements.find((s) => s.fiscalYear === anchorYear)!.currency;
     for (const row of statements) {
+      if (row.currency === anchorCurrency) continue;
       reject(
         row.fiscalYear,
         "CURRENCY_INCONSISTENT",
-        `The statements mix currencies (${currencies.join(", ")}) — figures from different currencies cannot be compared or trended.`,
+        `FY${row.fiscalYear} reads as ${row.currency} while the latest statement (FY${anchorYear}) is in ${anchorCurrency} — figures in different currencies cannot be compared or trended, so FY${row.fiscalYear} was set aside.`,
       );
     }
   }

@@ -198,7 +198,20 @@ export default async function ReviewCasePage({
   // The same pure check the engine gates on — read here to TELL the officer how
   // far the assessment can be trusted. Never re-judges it.
   const integrity = validateFinancialIntegrity(reviewCase.financialStatements);
-  const validation = buildValidationReport(integrity);
+  // Statements that FAILED extraction never reached the validator; they cap
+  // confidence at Medium and explain the limited trend analysis honestly.
+  // A year still covered by another document's comparative column is not unread.
+  const unreadYears = reviewCase.documents
+    .filter(
+      (d) =>
+        d.docType === "FINANCIAL_STATEMENT" &&
+        d.processingStatus === "FAILED" &&
+        d.fiscalYear !== null &&
+        !reviewCase.financialStatements.some((s) => s.fiscalYear === d.fiscalYear),
+    )
+    .map((d) => d.fiscalYear!)
+    .sort((a, b) => b - a);
+  const validation = buildValidationReport(integrity, unreadYears);
   // Statements exist but nothing survived validation: the recommendation was
   // never produced, so the workflow must not pretend one is coming.
   const validationBlocked = reviewCase.financialStatements.length > 0 && report === null;
@@ -366,7 +379,11 @@ export default async function ReviewCasePage({
               )}
             </div>
             {report ? (
-              <FinancialIntelligencePanel report={report} integrity={integrity} />
+              <FinancialIntelligencePanel
+                report={report}
+                integrity={integrity}
+                unreadYears={unreadYears}
+              />
             ) : validationBlocked ? (
               // Statements were read but not trusted. The verdict slot states
               // that plainly rather than sitting empty — a missing verdict must

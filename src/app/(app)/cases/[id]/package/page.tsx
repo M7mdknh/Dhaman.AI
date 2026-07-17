@@ -102,7 +102,19 @@ export default async function UnderwritingPackagePage({
   );
   if (!report) redirect(`/cases/${id}`);
   const integrity = validateFinancialIntegrity(underwritingCase.financialStatements);
-  const validation = buildValidationReport(integrity);
+  // Statements that FAILED extraction never reached the validator; they cap
+  // confidence at Medium and explain the limited trend analysis honestly.
+  const unreadYears = underwritingCase.documents
+    .filter(
+      (d) =>
+        d.docType === "FINANCIAL_STATEMENT" &&
+        d.processingStatus === "FAILED" &&
+        d.fiscalYear !== null &&
+        !underwritingCase.financialStatements.some((s) => s.fiscalYear === d.fiscalYear),
+    )
+    .map((d) => d.fiscalYear!)
+    .sort((a, b) => b - a);
+  const validation = buildValidationReport(integrity, unreadYears);
 
   const latestRatios = report.ratiosByYear.at(-1)!;
   const revenueGrowth = report.growthPeriods.at(-1)?.growth.revenueGrowth ?? null;
@@ -272,6 +284,13 @@ export default async function UnderwritingPackagePage({
       <ReportSection title="Financial Trends" provenance="computed">
         {trendLines.length > 0 ? (
           <BulletList items={trendLines} />
+        ) : unreadYears.length > 0 ? (
+          <p className="text-[13px] text-muted-foreground">
+            Trend analysis is unavailable — the{" "}
+            {unreadYears.map((y) => `FY${y}`).join(", ")} statement
+            {unreadYears.length === 1 ? "" : "s"} could not be verified, so the
+            assessment rests on the verified latest year alone.
+          </p>
         ) : (
           <p className="text-[13px] text-muted-foreground">
             Year-over-year trends need at least two fiscal years.

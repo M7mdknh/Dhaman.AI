@@ -12,7 +12,8 @@
  * own independent lifecycle, and the FIRST document whose statements persist
  * flips the case to ANALYSIS_READY immediately — the remaining documents keep
  * extracting in the background and only ever ENRICH the analysis. A case fails
- * only when NO document yields usable figures.
+ * only when the LATEST audited statement yields nothing usable — historical
+ * statements are optional trend inputs and never block underwriting.
  *
  * The job row (`CaseProcessing`) is the durable, observable, retryable record
  * of that work. A failure never loses the case: the row keeps the reason and
@@ -243,16 +244,33 @@ export async function runCaseProcessing(caseId: string): Promise<void> {
     // settle it now so the paths below know whether the case is already live.
     const flippedEarly = readyFlip ? await readyFlip : false;
 
-    // One failed document never fails the case: as long as at least one
+    // A failed HISTORICAL document never fails the case: as long as the latest
     // statement was verified, underwriting continues on what exists (a
-    // PARTIAL assessment — the failed documents keep their own FAILED status
-    // + per-document retry). Only a case with NOTHING usable fails.
+    // PARTIAL assessment with limited trend analysis — the failed documents
+    // keep their own FAILED status + per-document retry). Only a case whose
+    // LATEST statement yields nothing usable fails.
     if (pipeline.statements.length === 0) {
       await statusPromise; // ensure PROCESSING landed before PROCESSING_FAILED
       const reason =
         pipeline.failures.map((f) => `${f.fileName}: ${f.message}`).join(" ") ||
         "No usable financial figures could be extracted from the uploaded statements.";
       await failJob(caseId, "EXTRACTING_DATA", reason);
+      return;
+    }
+    // Express requires the LATEST audited statement. When the newest uploaded
+    // year failed but an older one extracted, continuing would silently present
+    // a stale year as the current financial position — stop honestly instead.
+    const newestExtracted = Math.max(...pipeline.statements.map((s) => s.fiscalYear));
+    const newerFailure = pipeline.failures.find(
+      (f) => f.fiscalYear !== null && f.fiscalYear > newestExtracted,
+    );
+    if (newerFailure) {
+      await statusPromise;
+      await failJob(
+        caseId,
+        "EXTRACTING_DATA",
+        `The latest audited financial statement (FY${newerFailure.fiscalYear}, ${newerFailure.fileName}) could not be read: ${newerFailure.message} Underwriting requires the latest statement — older years alone cannot describe the current financial position. Retry processing, or upload the standalone audited statements issued by the auditor.`,
+      );
       return;
     }
     const partial = pipeline.failures.length > 0;

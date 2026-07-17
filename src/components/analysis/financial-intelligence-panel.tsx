@@ -46,6 +46,7 @@ function chartedTrendKeys(report: FinancialIntelligenceReport): string[] {
 export function FinancialIntelligencePanel({
   report,
   integrity,
+  unreadYears = [],
 }: {
   report: FinancialIntelligenceReport;
   /**
@@ -55,10 +56,16 @@ export function FinancialIntelligencePanel({
    * confidence is exactly what this feature exists to prevent.
    */
   integrity?: IntegrityReport | null;
+  /**
+   * Fiscal years whose uploaded statement failed extraction and so contributed
+   * nothing to this report. Historical statements are optional — an unread one
+   * limits trend analysis (confidence: Medium) but never blocks the verdict.
+   */
+  unreadYears?: number[];
 }) {
   const headline = deriveHeadline(report);
-  const validation = integrity ? buildValidationReport(integrity) : null;
-  const showReport = integrity ? needsValidationReport(integrity) : false;
+  const validation = integrity ? buildValidationReport(integrity, unreadYears) : null;
+  const showReport = integrity ? needsValidationReport(integrity, unreadYears) : false;
 
   // @container: the panel is shared by the wide contractor analysis page and
   // the narrower officer review column — its internal grids (KPIs, drivers,
@@ -100,12 +107,18 @@ export function FinancialIntelligencePanel({
 
       <section aria-label="Financial trends" className="scroll-reveal">
         <h2 className="mb-3 text-sm font-semibold text-foreground">Trends</h2>
-        {report.years.length < 2 && (
+        {unreadYears.length > 0 ? (
+          <p className="mb-3 text-xs text-muted-foreground">
+            Trend analysis is limited — the {unreadYears.map((y) => `FY${y}`).join(", ")}{" "}
+            statement{unreadYears.length === 1 ? "" : "s"} could not be verified, so the
+            charts cover the verified years only.
+          </p>
+        ) : report.years.length < 2 ? (
           <p className="mb-3 text-xs text-muted-foreground">
             Only one fiscal year is available — year-over-year comparisons
             need at least two.
           </p>
-        )}
+        ) : null}
         <div className="grid gap-4 @lg:grid-cols-2 @4xl:grid-cols-3">
           {chartedTrendKeys(report).map((key) => {
             const trend = report.trends.find((t) => t.key === key);

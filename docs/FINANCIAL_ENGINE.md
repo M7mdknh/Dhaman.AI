@@ -117,6 +117,9 @@ when *no* year survives does the engine receive nothing and the case stop as
 - `SUBTOTAL_EXCEEDS_TOTAL` — current assets > total assets, current liabilities
   > total liabilities, or cash > current assets.
 - `CURRENCY_INCONSISTENT` — years in different currencies cannot be trended.
+  The LATEST year anchors the series; only the years whose currency differs
+  from it are withheld (a mis-read historical currency never blocks the
+  current assessment).
 - `DUPLICATE_FISCAL_YEAR` — one period, two contradictory truths. (The DB's
   `unique(caseId, fiscalYear)` already forbids this; checked anyway because the
   validator also runs on in-memory rows.)

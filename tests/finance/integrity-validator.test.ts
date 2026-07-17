@@ -200,14 +200,19 @@ describe("impossible figures are blocked", () => {
     ).toContain("SUBTOTAL_EXCEEDS_TOTAL");
   });
 
-  it("rejects mixed currencies across years", () => {
+  /** The latest year anchors the currency: a mis-read HISTORICAL currency
+   * withholds that year only — it never blocks the current assessment. */
+  it("withholds only the years whose currency differs from the latest", () => {
     const rows = [
       statement({ fiscalYear: 2025, currency: "SAR" }),
       statement({ fiscalYear: 2024, currency: "USD" }),
     ];
     const report = validateFinancialIntegrity(rows);
-    expect(report.ok).toBe(false);
-    expect(report.findings.some((f) => f.code === "CURRENCY_INCONSISTENT")).toBe(true);
+    expect(report.ok).toBe(true);
+    expect(report.usableYears).toEqual([2025]);
+    expect(report.rejectedYears).toEqual([2024]);
+    const finding = report.findings.find((f) => f.code === "CURRENCY_INCONSISTENT");
+    expect(finding?.fiscalYear).toBe(2024);
   });
 
   it("rejects a duplicate fiscal year", () => {

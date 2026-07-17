@@ -66,10 +66,16 @@ lifecycle. The moment the FIRST document's statements persist, the orchestrator
 flips the case to **ANALYSIS_READY** — the remaining documents keep extracting
 in the background and only ever ENRICH the analysis (the incremental
 `FinancialStatement` rebuild re-sorts newest-first, so the final state never
-depends on completion order). A failed document never blocks a sibling, never
-blocks the case, and never blocks Financial Intelligence; the case fails only
-when NO document yields usable figures. A fault after readiness fails the JOB
-(retryable) but never takes ANALYSIS_READY away from the case.
+depends on completion order). A failed HISTORICAL document never blocks a
+sibling, never blocks the case, and never blocks Financial Intelligence — the
+assessment continues on the verified years, the Validation Report drops to
+**Medium confidence** and explains honestly that trend analysis is limited
+(`unreadYears` in `confidence.ts`). The case fails only when the LATEST
+audited statement yields nothing usable: either no document produced figures,
+or the newest uploaded fiscal year failed while only older years extracted
+(Express requires the latest statement; stale years must never pose as the
+current financial position). A fault after readiness fails the JOB (retryable)
+but never takes ANALYSIS_READY away from the case.
 
 **Underwriting mode** (`UNDERWRITING_MODE`, default `express`) changes two things
 only — the deterministic engines are identical: express fails a scanned document

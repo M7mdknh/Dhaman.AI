@@ -57,6 +57,15 @@ describe("confidence level", () => {
     expect(assessmentConfidence(r)).toBe("LOW");
   });
 
+  /** A historical statement that failed extraction never reaches the
+   * validator, so the report alone would claim HIGH — the unread years cap
+   * confidence at MEDIUM without ever blocking the assessment. */
+  it("is MEDIUM when a historical statement could not be read", () => {
+    const r = report({ usableYears: [2025] });
+    expect(assessmentConfidence(r, [2024])).toBe("MEDIUM");
+    expect(needsValidationReport(r, [2024])).toBe(true);
+  });
+
   /** Context is not doubt: a single-year case is fully validated. */
   it("stays HIGH when only INFO findings exist", () => {
     const r = report({
@@ -100,6 +109,23 @@ describe("validation report", () => {
     expect(view.issues[0].title).toBe("Required figures are missing from this statement");
     expect(view.issues[0].detail).toContain("Net Income"); // which figures
     expect(view.recommendedAction).toContain("FY2024"); // what to do
+  });
+
+  /** The unread-statement story: honest about the limit, never a failure. */
+  it("explains limited trend analysis for an unread historical statement", () => {
+    const view = buildValidationReport(report({ usableYears: [2025] }), [2024]);
+
+    expect(view.confidence.level).toBe("MEDIUM");
+    expect(view.summary).toContain("FY2024");
+    expect(view.summary).toMatch(/trend analysis/i);
+    expect(view.summary).toMatch(/assessment itself is complete/i);
+    expect(view.affectedYears).toEqual([2024]);
+    expect(view.excludedYears).toEqual([]); // unread ≠ rejected by validation
+    expect(view.assessedYears).toEqual([2025]);
+    const issue = view.issues.find((i) => i.title === "A historical statement could not be read");
+    expect(issue?.fiscalYear).toBe(2024);
+    expect(issue?.detail).toMatch(/unaffected/i);
+    expect(view.recommendedAction).toMatch(/retry/i);
   });
 
   it("says plainly that no recommendation was produced when confidence is LOW", () => {
@@ -153,6 +179,7 @@ describe("validation report", () => {
       "SINGLE_YEAR_ONLY",
       "FISCAL_YEAR_GAP",
       "PARTIAL_YEARS_WITHHELD",
+      "HISTORICAL_STATEMENT_UNREAD",
     ];
     for (const code of codes) {
       const view = buildValidationReport(report({ findings: [finding({ code, severity: "WARNING" })] }));

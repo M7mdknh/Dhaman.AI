@@ -60,20 +60,34 @@ export const CONFIDENCE_META: Record<ConfidenceLevel, ConfidenceMeta> = {
 /**
  * Confidence follows the validator's verdict, never a re-judgement of it:
  *   LOW    — nothing survived validation (the engine produced no assessment).
- *   MEDIUM — an assessment exists but a year was withheld or a check warned.
+ *   MEDIUM — an assessment exists but a year was withheld, a check warned, or
+ *            a historical statement could not be read at all (`unreadYears`).
  *   HIGH   — everything validated.
  * INFO findings (single year, year gap) are context, not doubt, so they do not
  * lower confidence — they are still listed in the report.
+ *
+ * `unreadYears` are fiscal years whose uploaded statement FAILED extraction and
+ * so never reached the validator. They are invisible to the IntegrityReport —
+ * without them a case with an unread historical statement would read as "High
+ * Confidence", which is not what happened.
  */
-export function assessmentConfidence(report: IntegrityReport): ConfidenceLevel {
+export function assessmentConfidence(
+  report: IntegrityReport,
+  unreadYears: number[] = [],
+): ConfidenceLevel {
   if (!report.ok) return "LOW";
   const warned = report.findings.some((f) => f.severity === "WARNING");
-  return warned || report.rejectedYears.length > 0 ? "MEDIUM" : "HIGH";
+  return warned || report.rejectedYears.length > 0 || unreadYears.length > 0
+    ? "MEDIUM"
+    : "HIGH";
 }
 
 /** A Validation Report is only worth showing when something needs saying. */
-export function needsValidationReport(report: IntegrityReport): boolean {
-  return report.findings.some((f) => f.severity !== "INFO");
+export function needsValidationReport(
+  report: IntegrityReport,
+  unreadYears: number[] = [],
+): boolean {
+  return unreadYears.length > 0 || report.findings.some((f) => f.severity !== "INFO");
 }
 
 export interface ValidationIssueView {
@@ -120,6 +134,7 @@ const ISSUE_TITLE: Record<string, string> = {
   SINGLE_YEAR_ONLY: "Only one financial year is available",
   FISCAL_YEAR_GAP: "The financial years are not consecutive",
   PARTIAL_YEARS_WITHHELD: "Part of the assessment was set aside",
+  HISTORICAL_STATEMENT_UNREAD: "A historical statement could not be read",
 };
 
 const SEVERITY_TONE: Record<IntegrityFinding["severity"], Tone> = {
@@ -141,7 +156,11 @@ const SEVERITY_ORDER: Record<IntegrityFinding["severity"], number> = {
   INFO: 2,
 };
 
-function summaryFor(report: IntegrityReport, level: ConfidenceLevel): string {
+function summaryFor(
+  report: IntegrityReport,
+  level: ConfidenceLevel,
+  unreadYears: number[],
+): string {
   const excluded = report.rejectedYears;
   const assessed = report.usableYears;
   if (level === "LOW") {
@@ -152,18 +171,28 @@ function summaryFor(report: IntegrityReport, level: ConfidenceLevel): string {
   if (level === "MEDIUM" && excluded.length > 0) {
     return `${listYears(excluded)} could not be confirmed as printed and ${excluded.length === 1 ? "was" : "were"} excluded. The assessment below is built only on ${listYears(assessed)} — every figure, ratio and score reflects ${assessed.length === 1 ? "that year" : "those years"} alone.`;
   }
+  if (level === "MEDIUM" && unreadYears.length > 0) {
+    return `The ${listYears(unreadYears)} statement${unreadYears.length === 1 ? "" : "s"} could not be verified, so trend analysis and year-over-year comparisons are limited to ${listYears(assessed)}. The assessment itself is complete — it is built entirely on the verified latest figures.`;
+  }
   if (level === "MEDIUM") {
     return `The assessment covers ${listYears(assessed)}, but some checks could not be fully confirmed. The figures below are usable; the points listed here are worth verifying against the statement before relying on them.`;
   }
   return `Every required figure for ${listYears(assessed)} was validated against the audited statements.`;
 }
 
-function actionFor(report: IntegrityReport, level: ConfidenceLevel): string {
+function actionFor(
+  report: IntegrityReport,
+  level: ConfidenceLevel,
+  unreadYears: number[],
+): string {
   if (level === "LOW") {
     return "Ask the applicant to re-upload the standalone audited financial statements issued by their auditor. A full-page annual report or a scanned copy is often read less reliably than the auditor's own statements. Processing can then be retried from the case page.";
   }
   if (report.rejectedYears.length > 0) {
     return `Treat the assessment as covering ${listYears(report.usableYears)} only. If the excluded ${report.rejectedYears.length === 1 ? "year is" : "years are"} material to your decision, request the audited statements for ${listYears(report.rejectedYears)} and retry processing.`;
+  }
+  if (unreadYears.length > 0) {
+    return `The assessment stands on ${listYears(report.usableYears)}. If historical trends are material to your decision, retry the unread ${unreadYears.length === 1 ? "statement" : "statements"} for ${listYears(unreadYears)} from the case page — verified years are never re-processed.`;
   }
   return "Verify the points above against the uploaded statement before relying on the affected figures. The deterministic analysis is otherwise complete.";
 }
@@ -175,10 +204,25 @@ function listYears(years: number[]): string {
   return `${labelled.slice(0, -1).join(", ")} and ${labelled.at(-1)}`;
 }
 
-/** The whole Validation Report, assembled from the validator's own findings. */
-export function buildValidationReport(report: IntegrityReport): ValidationReportView {
-  const level = assessmentConfidence(report);
-  const issues = [...report.findings]
+/**
+ * The whole Validation Report, assembled from the validator's own findings.
+ * `unreadYears` — fiscal years whose statement failed extraction entirely
+ * (they never produced figures for the validator to judge) — appear as their
+ * own issue: the reader learns trends are limited and why, never that the
+ * product failed.
+ */
+export function buildValidationReport(
+  report: IntegrityReport,
+  unreadYears: number[] = [],
+): ValidationReportView {
+  const level = assessmentConfidence(report, unreadYears);
+  const unreadFindings: IntegrityFinding[] = unreadYears.map((fiscalYear) => ({
+    code: "HISTORICAL_STATEMENT_UNREAD",
+    severity: "WARNING",
+    fiscalYear,
+    message: `The FY${fiscalYear} statement could not be verified, so it is not part of the assessment. Trend analysis and year-over-year comparisons are limited to the verified years; every figure, ratio and score below is unaffected.`,
+  }));
+  const issues = [...report.findings, ...unreadFindings]
     .sort(
       (a, b) =>
         SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] ||
@@ -193,17 +237,20 @@ export function buildValidationReport(report: IntegrityReport): ValidationReport
     }));
 
   const affected = [
-    ...new Set(report.findings.map((f) => f.fiscalYear).filter((y): y is number => y !== null)),
+    ...new Set([
+      ...report.findings.map((f) => f.fiscalYear).filter((y): y is number => y !== null),
+      ...unreadYears,
+    ]),
   ].sort((a, b) => b - a);
 
   return {
     confidence: CONFIDENCE_META[level],
-    summary: summaryFor(report, level),
+    summary: summaryFor(report, level, unreadYears),
     affectedYears: affected,
     excludedYears: report.rejectedYears,
     assessedYears: report.usableYears,
     issues,
-    recommendedAction: actionFor(report, level),
+    recommendedAction: actionFor(report, level, unreadYears),
   };
 }
 

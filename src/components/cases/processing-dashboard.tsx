@@ -452,8 +452,9 @@ export function ProcessingDashboard({
             <AlertTitle>This assessment uses the statements we could verify</AlertTitle>
             <AlertDescription>
               The analysis above is based on {documentsDone} of {documents.length} uploaded
-              statements. Retry the unread document below to include it — verified statements
-              are never reprocessed.
+              statements — historical trend analysis is limited until every year is verified,
+              but the assessment itself is complete. Retry the unread document below to
+              include it; verified statements are never reprocessed.
             </AlertDescription>
           </Alert>
         )}
