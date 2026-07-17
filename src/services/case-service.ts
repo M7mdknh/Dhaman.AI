@@ -186,26 +186,16 @@ export async function saveCaseQualitative(
     return { ok: false, error: "Submitted cases can no longer be edited." };
   }
 
-  const classification =
-    !input.contractorClassification || input.contractorClassification === "NONE"
-      ? null
-      : input.contractorClassification;
-
   const data = {
     crIssueDate: new Date(input.crIssueDate),
-    crActivities: input.crActivities,
-    contractorClassification: classification,
     partOfGroup: yes(input.partOfGroup),
     groupName: yes(input.partOfGroup) ? noteOrNull(input.groupName) : null,
-    gmName: input.gmName,
-    gmExperienceYears: Number(input.gmExperienceYears),
     ownershipChanged: yes(input.ownershipChanged),
     ownershipChangeNote: yes(input.ownershipChanged) ? noteOrNull(input.ownershipChangeNote) : null,
     nitaqatBand: input.nitaqatBand,
     ongoingLitigation: yes(input.ongoingLitigation),
     litigationNote: yes(input.ongoingLitigation) ? noteOrNull(input.litigationNote) : null,
     projectsCompletedBand: input.projectsCompletedBand,
-    largestProjectValue: input.largestProjectValue,
     hadProjectIssues: yes(input.hadProjectIssues),
     projectIssuesNote: yes(input.hadProjectIssues) ? noteOrNull(input.projectIssuesNote) : null,
     guaranteeCalled: yes(input.guaranteeCalled),
@@ -215,7 +205,6 @@ export async function saveCaseQualitative(
     runningProjectsCount: Number(input.runningProjectsCount),
     backlogValue: input.backlogValue,
     outstandingGuarantees: input.outstandingGuarantees,
-    equipmentPlan: input.equipmentPlan,
     heavyHiringNeeded: yes(input.heavyHiringNeeded),
     mainBank: input.mainBank,
     conductIncidents: yes(input.conductIncidents),

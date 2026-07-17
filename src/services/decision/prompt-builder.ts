@@ -16,7 +16,7 @@ import type {
 import type { Recommendation } from "@/lib/validation/decision";
 import type { CaseQualitative, Company, ContractDetails } from "@/generated/prisma/client";
 
-export const PROMPT_VERSION = "v5";
+export const PROMPT_VERSION = "v6";
 
 export const SYSTEM_PROMPT = `You are a Senior Corporate Credit Underwriter working for Alinma Bank.
 
@@ -115,23 +115,18 @@ export interface DecisionInput {
    * separately in qualitativeAssessment. */
   companyProfile: {
     crIssueDate: string;
-    crActivities: string;
-    contractorClassification: string | null;
     partOfGroup: boolean;
     groupName: string | null;
-    gmExperienceYears: number;
     ownershipChangedLast2Years: boolean;
     nitaqatBand: string;
     ongoingLitigation: boolean;
     projectsCompletedBand: string;
-    largestProjectValue: string;
     hadProjectIssues: boolean;
     guaranteeEverCalled: boolean;
     sameTypeExperience: boolean;
     runningProjectsCount: number;
     backlogValue: string;
     outstandingGuaranteesAllBanks: string;
-    equipmentPlan: string;
     heavyHiringNeeded: boolean;
     mainBank: string;
     conductIncidentsDeclared: boolean;
@@ -297,23 +292,18 @@ export function buildDecisionInput(
     companyProfile: qualitative
       ? {
           crIssueDate: isoDate(qualitative.crIssueDate),
-          crActivities: qualitative.crActivities,
-          contractorClassification: qualitative.contractorClassification,
           partOfGroup: qualitative.partOfGroup,
           groupName: qualitative.groupName,
-          gmExperienceYears: qualitative.gmExperienceYears,
           ownershipChangedLast2Years: qualitative.ownershipChanged,
           nitaqatBand: qualitative.nitaqatBand,
           ongoingLitigation: qualitative.ongoingLitigation,
           projectsCompletedBand: qualitative.projectsCompletedBand,
-          largestProjectValue: qualitative.largestProjectValue.toFixed(2),
           hadProjectIssues: qualitative.hadProjectIssues,
           guaranteeEverCalled: qualitative.guaranteeCalled,
           sameTypeExperience: qualitative.sameTypeExperience,
           runningProjectsCount: qualitative.runningProjectsCount,
           backlogValue: qualitative.backlogValue.toFixed(2),
           outstandingGuaranteesAllBanks: qualitative.outstandingGuarantees.toFixed(2),
-          equipmentPlan: qualitative.equipmentPlan,
           heavyHiringNeeded: qualitative.heavyHiringNeeded,
           mainBank: qualitative.mainBank,
           conductIncidentsDeclared: qualitative.conductIncidents,

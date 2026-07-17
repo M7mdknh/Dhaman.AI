@@ -1,6 +1,6 @@
 /**
  * QualitativeScoreService — deterministic scoring of the KYC questionnaire
- * (the qualitative pillar of the composite grade). Eleven weighted
+ * (the qualitative pillar of the composite grade). Nine weighted
  * components; each maps an answer (or a COMPUTED ratio — computed factors
  * can't be gamed by band-picking) to a 0–1 SAFETY sub-score. The published
  * score is (1 − weighted safety) × 100, so HIGHER = RISKIER, matching the
@@ -86,15 +86,6 @@ export function assessQualitative(
       : "No prior experience with this type of work",
   });
 
-  const gm = QUALITATIVE.gmExperience;
-  components.push({
-    key: "gmExperience",
-    label: "Management experience",
-    weight: weights.gmExperience,
-    score: Math.max(gm.floorScore, clampScore(q.gmExperienceYears, gm.floorYears, gm.ceilYears)),
-    detail: `GM has ${q.gmExperienceYears} years in this field`,
-  });
-
   components.push({
     key: "managementStability",
     label: "Ownership & management stability",
@@ -124,19 +115,6 @@ export function assessQualitative(
       headroom === null
         ? "Latest revenue unavailable — commitment load cannot be sized"
         : `Backlog + this contract = ${headroom.toFixed(2)}× latest revenue (${q.runningProjectsCount} running projects)`,
-  });
-
-  components.push({
-    key: "equipment",
-    label: "Equipment plan",
-    weight: weights.equipment,
-    score: QUALITATIVE.equipment[q.equipmentPlan],
-    detail:
-      q.equipmentPlan === "OWNED"
-        ? "Equipment owned"
-        : q.equipmentPlan === "RENT"
-          ? "Equipment will be rented (mobilization opex)"
-          : "Equipment will be purchased (mobilization capex)",
   });
 
   components.push({
@@ -327,7 +305,7 @@ export function detectQualitativeFlags(
     flags.push({
       type: "SECTOR_MISMATCH",
       severity: "MEDIUM",
-      explanation: `The contract is classified "${contract.sector}" while the company's registered sector is "${q.companySector}" — verify the scope sits within the applicant's registered activities and classification grade.`,
+      explanation: `The contract is classified "${contract.sector}" while the company's registered sector is "${q.companySector}" — verify the contract scope sits within the applicant's registered line of business.`,
       affectedYears: [],
       evidence: [],
     });

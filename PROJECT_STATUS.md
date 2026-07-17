@@ -44,12 +44,15 @@ SIMAH-dependent items were dropped/deferred; **no pre-filling anywhere** by
 explicit decision). 232/232 tests, typecheck + lint + prod build clean.
 
 - **Five-step wizard.** New Step 2 "Profile & Track Record" (KYC): company
-  profile (CR issue date — age is derived, never self-banded — activities,
-  classification, group, GM, ownership change, Nitaqat, litigation), track
-  record (projects band, largest project, terminations, guarantee-ever-called,
+  profile (CR issue date — age is derived, never self-banded — group,
+  ownership change, Nitaqat, litigation), track
+  record (projects band, terminations, guarantee-ever-called,
   same-type experience), workload (running projects, backlog, outstanding
-  guarantees across banks, equipment, hiring), conduct (main bank, incidents,
-  auditor tier, funding source). Stored per case in `CaseQualitative` (1:1) —
+  guarantees across banks, hiring), conduct (main bank, incidents,
+  auditor tier, funding source). *(2026-07-17: contractor classification, CR
+  activities, GM name/experience, largest completed project, and equipment
+  plan were removed from the flow; qualitative and contract-risk weights
+  were rebalanced proportionally and the jump-risk factor/cap retired.)* Stored per case in `CaseQualitative` (1:1) —
   answers are versioned by construction; drift between a company's cases is
   itself a signal.
 - **Structured contract terms** on `ContractDetails` (all nullable for legacy

@@ -130,39 +130,32 @@ export const RISK = {
 export const QUALITATIVE = {
   weights: {
     /** Survival is the strongest single contractor-default predictor. */
-    operatingAge: 15,
+    operatingAge: 17,
     /** Track depth; diminishing returns above 25 completed projects. */
-    projectsCompleted: 10,
+    projectsCompleted: 11,
     /** Execution risk is discipline-specific — binary proof of capability. */
-    sameTypeExperience: 10,
-    /** Who actually runs delivery. */
-    gmExperience: 6,
+    sameTypeExperience: 11,
     /** A recent change invalidates the track record earned before it. */
-    managementStability: 4,
+    managementStability: 5,
     /** RED freezes visas → labor-dependent projects stall (also a cap). */
-    nitaqat: 10,
+    nitaqat: 11,
     /** Computed: (backlog + this contract) / latest revenue. */
-    capacityHeadroom: 15,
-    /** Rent/purchase stacks capex onto mobilization cash needs. */
-    equipment: 5,
+    capacityHeadroom: 17,
     /** Mobilization staffing risk. */
-    hiring: 5,
+    hiring: 6,
     /** Clean declared conduct; any incident zeroes it AND hard-caps. */
-    conduct: 10,
+    conduct: 11,
     /** Trust in the numbers every ratio is computed from. */
-    auditor: 10,
+    auditor: 11,
   },
   /** Operating age (years since CR issuance): ≥10 → 1, linear to 0 at 2
    * (banks' own 2–3-year minimum sits at the floor). */
   operatingAge: { floorYears: 2, ceilYears: 10 },
   projectsCompleted: { OVER_25: 1, FROM_10_TO_25: 0.7, FROM_5_TO_10: 0.4, UNDER_5: 0.1 },
-  /** GM years in this field: ≥10 → 1, linear to 0.15 at 0 (never negative). */
-  gmExperience: { floorYears: 0, ceilYears: 10, floorScore: 0.15 },
   nitaqat: { PLATINUM: 1, GREEN: 0.7, YELLOW: 0.3, RED: 0 },
   /** (backlog + contract) / revenue: ≤1.5× → 1, ≥4× → 0. An over-committed
    * contractor delays everything at once. */
   capacityHeadroom: { ceil: 1.5, floor: 4.0 },
-  equipment: { OWNED: 1, RENT: 0.6, PURCHASE: 0.2 },
   bands: { low: 15, moderate: 35, high: 55, critical: 75 },
 } as const;
 
@@ -172,30 +165,26 @@ export const QUALITATIVE = {
  */
 export const CONTRACT_RISK = {
   weights: {
-    /** Contract / largest completed project — the classic failure mode. */
-    jumpRisk: 20,
     /** Back-to-back subcontracting = paid only if someone we did not
      * underwrite performs. */
-    role: 12,
+    role: 15,
     /** Repeat awards prove performance AND the beneficiary's payment
      * behavior. */
-    beneficiaryHistory: 10,
+    beneficiaryHistory: 13,
     /** Advance coverage of the pre-revenue burn window — the real driver
      * of mid-project distress. */
-    cashGap: 18,
+    cashGap: 22,
     /** Thin margin leaves nothing for delay or cost inflation. */
-    marginBuffer: 12,
+    marginBuffer: 15,
     /** Declared margin must survive contact with audited history. */
-    marginRealism: 8,
+    marginRealism: 10,
     /** Public tenders are won on price. */
-    awardMethod: 6,
+    awardMethod: 8,
     /** Extend-or-pay lets the beneficiary hold the bond hostage. */
-    bondTerms: 9,
+    bondTerms: 11,
     /** LD cap bounds the worst-case call size. */
-    ldExposure: 5,
+    ldExposure: 6,
   },
-  /** contract / largest completed: ≤1× → 1, ≥3× → 0 (>3× also hard-caps). */
-  jumpRatio: { ceil: 1.0, floor: 3.0 },
   role: { main: 1, subBackToBack: 0.17, subDirect: 0.58 },
   /** Prior contracts with this beneficiary: ≥3 → 1, 1–2 → 0.7, none → 0.3. */
   beneficiaryHistory: { repeat: 3, repeatScore: 1, someScore: 0.7, noneScore: 0.3 },
@@ -233,8 +222,6 @@ export const HARD_CAPS = {
   conductIncidents: { ceiling: "MANUAL_REVIEW" },
   /** Visa freeze can stall any labor-dependent project mid-execution. */
   nitaqatRed: { ceiling: "MANUAL_REVIEW" },
-  /** Execution capability unproven at this scale, whatever the ratios say. */
-  jumpRisk: { triggerRatio: 3.0, ceiling: "APPROVE_WITH_CONDITIONS" },
 } as const;
 
 /**

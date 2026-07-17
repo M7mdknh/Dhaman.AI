@@ -25,8 +25,6 @@ import {
 import { Separator } from "@/components/ui/separator";
 import {
   AUDITOR_TIER_OPTIONS,
-  CONTRACTOR_CLASSIFICATION_OPTIONS,
-  EQUIPMENT_PLAN_OPTIONS,
   FUNDING_SOURCE_OPTIONS,
   NITAQAT_OPTIONS,
   PROJECTS_COMPLETED_OPTIONS,
@@ -40,14 +38,9 @@ import type { CaseActionState } from "@/app/(app)/cases/actions";
 
 const EMPTY_DEFAULTS: DefaultValues<CaseQualitativeInput> = {
   crIssueDate: "",
-  crActivities: "",
-  contractorClassification: "",
   groupName: "",
-  gmName: "",
-  gmExperienceYears: "",
   ownershipChangeNote: "",
   litigationNote: "",
-  largestProjectValue: "",
   projectIssuesNote: "",
   guaranteeCalledNote: "",
   sameTypeExperienceNote: "",
@@ -62,19 +55,16 @@ const EMPTY_DEFAULTS: DefaultValues<CaseQualitativeInput> = {
  * ids carry the `kyc-` prefix so ids stay unique across the CSS-hidden
  * steps; error focusing maps field names back through here. */
 const PREFIXED_FIELDS = new Set([
-  "contractorClassification",
   "partOfGroup",
   "ownershipChanged",
   "nitaqatBand",
   "ongoingLitigation",
   "projectsCompletedBand",
-  "largestProjectValue",
   "hadProjectIssues",
   "guaranteeCalled",
   "sameTypeExperience",
   "backlogValue",
   "outstandingGuarantees",
-  "equipmentPlan",
   "heavyHiringNeeded",
   "mainBank",
   "conductIncidents",
@@ -155,7 +145,7 @@ export function KycStep({ defaults, onBack, onSave }: KycStepProps) {
   );
 
   const moneyField = (
-    name: "largestProjectValue" | "backlogValue" | "outstandingGuarantees",
+    name: "backlogValue" | "outstandingGuarantees",
     label: string,
     hint: string,
   ) => (
@@ -213,34 +203,6 @@ export function KycStep({ defaults, onBack, onSave }: KycStepProps) {
             {...register("crIssueDate")}
             errors={fieldErrors(formState.errors.crIssueDate)}
           />
-          {selectField(
-            "contractorClassification",
-            "Contractor Classification",
-            CONTRACTOR_CLASSIFICATION_OPTIONS,
-            "If classified",
-          )}
-          <div className="sm:col-span-2">
-            <TextareaField
-              label="Registered CR Activities"
-              rows={2}
-              placeholder="Activities as printed on the Commercial Registration"
-              {...register("crActivities")}
-              error={formState.errors.crActivities?.message}
-            />
-          </div>
-          <FormField
-            label="General Manager"
-            placeholder="Full name"
-            {...register("gmName")}
-            errors={fieldErrors(formState.errors.gmName)}
-          />
-          <FormField
-            label="GM Experience in This Field (years)"
-            inputMode="numeric"
-            placeholder="e.g. 12"
-            {...register("gmExperienceYears")}
-            errors={fieldErrors(formState.errors.gmExperienceYears)}
-          />
           {selectField("partOfGroup", "Part of a Group?", YES_NO_OPTIONS, "Yes or no")}
           {partOfGroup === "YES" && (
             <FormField
@@ -274,11 +236,6 @@ export function KycStep({ defaults, onBack, onSave }: KycStepProps) {
             "Projects Completed to Date",
             PROJECTS_COMPLETED_OPTIONS,
             "Select the range",
-          )}
-          {moneyField(
-            "largestProjectValue",
-            "Largest Single Completed Project",
-            "The engine compares this against the new contract's value.",
           )}
           {selectField(
             "hadProjectIssues",
@@ -323,12 +280,6 @@ export function KycStep({ defaults, onBack, onSave }: KycStepProps) {
             "outstandingGuarantees",
             "Outstanding Guarantees With All Banks",
             "Total live guarantee exposure across every bank, including this one.",
-          )}
-          {selectField(
-            "equipmentPlan",
-            "Equipment for This Project",
-            EQUIPMENT_PLAN_OPTIONS,
-            "Owned, rented, or purchased",
           )}
           {selectField(
             "heavyHiringNeeded",

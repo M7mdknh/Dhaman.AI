@@ -11,7 +11,6 @@ import type {
   CaseStatus,
   ContractorRole,
   DocumentProcessingStatus,
-  EquipmentPlan,
   FundingSource,
   GuaranteeType,
   NitaqatBand,
@@ -102,12 +101,6 @@ export const PROJECTS_COMPLETED_OPTIONS: Option<ProjectsCompletedBand>[] = [
   { value: "OVER_25", label: "More than 25" },
 ];
 
-export const EQUIPMENT_PLAN_OPTIONS: Option<EquipmentPlan>[] = [
-  { value: "OWNED", label: "Owned" },
-  { value: "RENT", label: "Will rent" },
-  { value: "PURCHASE", label: "Will purchase" },
-];
-
 export const AUDITOR_TIER_OPTIONS: Option<AuditorTier>[] = [
   { value: "BIG_FOUR", label: "Big-4 firm (PwC, EY, KPMG, Deloitte)" },
   { value: "ACCREDITED_LOCAL", label: "SOCPA-accredited local firm" },
@@ -120,17 +113,6 @@ export const FUNDING_SOURCE_OPTIONS: Option<FundingSource>[] = [
   { value: "THIS_BANK", label: "Financing from this bank" },
   { value: "OTHER_BANK", label: "Financing from another bank" },
   { value: "SUPPLIER_CREDIT", label: "Supplier credit" },
-];
-
-/** Saudi contractor classification (Momtaz is the top grade, then 1–5). */
-export const CONTRACTOR_CLASSIFICATION_OPTIONS: Option[] = [
-  { value: "MOMTAZ", label: "Momtaz (ممتاز)" },
-  { value: "GRADE_1", label: "Grade 1" },
-  { value: "GRADE_2", label: "Grade 2" },
-  { value: "GRADE_3", label: "Grade 3" },
-  { value: "GRADE_4", label: "Grade 4" },
-  { value: "GRADE_5", label: "Grade 5" },
-  { value: "NONE", label: "Not classified" },
 ];
 
 /** Main operating banks offered in the KYC conduct section. */

@@ -120,20 +120,14 @@ export function toQualitativeInput(row: CaseQualitative | null): CaseQualitative
   if (!row) return null;
   return {
     crIssueDate: isoDate(row.crIssueDate),
-    crActivities: row.crActivities,
-    contractorClassification: (row.contractorClassification ??
-      "NONE") as CaseQualitativeInput["contractorClassification"],
     partOfGroup: yesNoView(row.partOfGroup) as "YES" | "NO",
     groupName: row.groupName ?? "",
-    gmName: row.gmName,
-    gmExperienceYears: row.gmExperienceYears.toString(),
     ownershipChanged: yesNoView(row.ownershipChanged) as "YES" | "NO",
     ownershipChangeNote: row.ownershipChangeNote ?? "",
     nitaqatBand: row.nitaqatBand,
     ongoingLitigation: yesNoView(row.ongoingLitigation) as "YES" | "NO",
     litigationNote: row.litigationNote ?? "",
     projectsCompletedBand: row.projectsCompletedBand,
-    largestProjectValue: row.largestProjectValue.toString(),
     hadProjectIssues: yesNoView(row.hadProjectIssues) as "YES" | "NO",
     projectIssuesNote: row.projectIssuesNote ?? "",
     guaranteeCalled: yesNoView(row.guaranteeCalled) as "YES" | "NO",
@@ -143,7 +137,6 @@ export function toQualitativeInput(row: CaseQualitative | null): CaseQualitative
     runningProjectsCount: row.runningProjectsCount.toString(),
     backlogValue: row.backlogValue.toString(),
     outstandingGuarantees: row.outstandingGuarantees.toString(),
-    equipmentPlan: row.equipmentPlan,
     heavyHiringNeeded: yesNoView(row.heavyHiringNeeded) as "YES" | "NO",
     mainBank: row.mainBank,
     conductIncidents: yesNoView(row.conductIncidents) as "YES" | "NO",

@@ -1,44 +1,29 @@
 /**
  * ContractRiskService — deterministic scoring of the guaranteed contract's
- * structure (the contract-risk pillar of the composite grade). Nine
- * weighted components mapping the structured Step-3 fields — plus two
- * COMPUTED cross-checks against the KYC answers and the audited history
- * (jump ratio, margin realism) — to 0–1 SAFETY sub-scores. Published score
- * is (1 − weighted safety) × 100, HIGHER = RISKIER. Missing inputs (cases
- * predating the detailed wizard) are excluded and weights renormalized.
+ * structure (the contract-risk pillar of the composite grade). Eight
+ * weighted components mapping the structured Step-3 fields — plus a
+ * COMPUTED cross-check against the audited history (margin realism) — to
+ * 0–1 SAFETY sub-scores. Published score is (1 − weighted safety) × 100,
+ * HIGHER = RISKIER. Missing inputs (cases predating the detailed wizard)
+ * are excluded and weights renormalized.
  *
  * Weights and mappings: lib/finance/thresholds.ts (CONTRACT_RISK) only.
  * No ML, no LLM — the same contract always produces the same score.
  */
-import { clampScore, ratio } from "@/lib/finance/decimal";
-import { CONTRACT_RISK, HARD_CAPS } from "@/lib/finance/thresholds";
+import { clampScore } from "@/lib/finance/decimal";
+import { CONTRACT_RISK } from "@/lib/finance/thresholds";
 import { computeYearRatios } from "@/services/finance/financial-ratio-service";
 import { riskBandFor } from "@/services/finance/risk-score-service";
 
 import type {
   ContractInputs,
-  HardCap,
   PillarAssessment,
-  QualitativeInputs,
   RiskFlag,
   ScoreComponent,
   YearFinancials,
 } from "@/lib/finance/types";
 
 const WEEKS_PER_MONTH = 4.345;
-
-/** Contract value / largest completed project (null without KYC data). */
-export function jumpRatio(
-  contract: ContractInputs,
-  qualitative: QualitativeInputs | null,
-): number | null {
-  if (!qualitative) return null;
-  if (qualitative.largestProjectValue.lte(0)) {
-    // No completed project of any size — every contract is an infinite jump.
-    return Number.POSITIVE_INFINITY;
-  }
-  return ratio(contract.contractValue, qualitative.largestProjectValue);
-}
 
 /**
  * Months of spend before the first payment lands: mobilization + one
@@ -87,30 +72,10 @@ function historicalGrossMargin(latest: YearFinancials | null): number | null {
 
 export function assessContractRisk(
   contract: ContractInputs,
-  qualitative: QualitativeInputs | null,
   latest: YearFinancials | null,
 ): PillarAssessment {
   const { weights } = CONTRACT_RISK;
   const components: ScoreComponent[] = [];
-
-  const jump = jumpRatio(contract, qualitative);
-  components.push({
-    key: "jumpRisk",
-    label: "Scale jump vs largest completed project",
-    weight: weights.jumpRisk,
-    score:
-      jump === null
-        ? null
-        : jump === Number.POSITIVE_INFINITY
-          ? 0
-          : clampScore(jump, CONTRACT_RISK.jumpRatio.floor, CONTRACT_RISK.jumpRatio.ceil),
-    detail:
-      jump === null
-        ? "KYC track record unavailable"
-        : jump === Number.POSITIVE_INFINITY
-          ? "No completed project declared — scale entirely unproven"
-          : `Contract is ${jump.toFixed(2)}× the largest completed project`,
-  });
 
   components.push({
     key: "role",
@@ -273,47 +238,12 @@ export function assessContractRisk(
   };
 }
 
-/** Hard caps raised by the contract's structure. */
-export function detectContractCaps(
-  contract: ContractInputs,
-  qualitative: QualitativeInputs | null,
-): HardCap[] {
-  const caps: HardCap[] = [];
-  const jump = jumpRatio(contract, qualitative);
-  if (jump !== null && jump > HARD_CAPS.jumpRisk.triggerRatio) {
-    caps.push({
-      type: "JUMP_RISK",
-      ceiling: HARD_CAPS.jumpRisk.ceiling,
-      reason:
-        jump === Number.POSITIVE_INFINITY
-          ? "No completed project was declared — execution at this scale is entirely unproven."
-          : `This contract is ${jump.toFixed(1)}× the largest project the applicant has ever completed — execution capability is unproven at this scale, whatever the ratios say.`,
-    });
-  }
-  return caps;
-}
-
 /** Deterministic contract-structure flags for the officer + memo. */
 export function detectContractRiskFlags(
   contract: ContractInputs,
-  qualitative: QualitativeInputs | null,
   latest: YearFinancials | null,
 ): RiskFlag[] {
   const flags: RiskFlag[] = [];
-
-  const jump = jumpRatio(contract, qualitative);
-  if (jump !== null && jump > 2) {
-    flags.push({
-      type: "JUMP_RISK",
-      severity: jump > HARD_CAPS.jumpRisk.triggerRatio ? "HIGH" : "MEDIUM",
-      explanation:
-        jump === Number.POSITIVE_INFINITY
-          ? "No completed project was declared — this contract would be the applicant's first at any scale."
-          : `This contract is ${jump.toFixed(1)}× the largest project the applicant has completed — scale jumps are the classic contractor failure mode.`,
-      affectedYears: [],
-      evidence: [],
-    });
-  }
 
   const coverage = cashGapCoverage(contract);
   if (coverage !== null && coverage < CONTRACT_RISK.cashGap.flagBelow) {

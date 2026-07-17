@@ -163,22 +163,17 @@ export interface ContractInputs {
  */
 export interface QualitativeInputs {
   crIssueDate: Date;
-  crActivities: string;
-  contractorClassification: string | null;
   partOfGroup: boolean;
-  gmExperienceYears: number;
   ownershipChanged: boolean;
   nitaqatBand: "PLATINUM" | "GREEN" | "YELLOW" | "RED";
   ongoingLitigation: boolean;
   projectsCompletedBand: "UNDER_5" | "FROM_5_TO_10" | "FROM_10_TO_25" | "OVER_25";
-  largestProjectValue: Money;
   hadProjectIssues: boolean;
   guaranteeCalled: boolean;
   sameTypeExperience: boolean;
   runningProjectsCount: number;
   backlogValue: Money;
   outstandingGuarantees: Money;
-  equipmentPlan: "OWNED" | "RENT" | "PURCHASE";
   heavyHiringNeeded: boolean;
   conductIncidents: boolean;
   auditorTier: "BIG_FOUR" | "ACCREDITED_LOCAL" | "OTHER_FIRM" | "UNAUDITED";

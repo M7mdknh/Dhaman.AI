@@ -114,13 +114,6 @@ enum ProjectsCompletedBand {
   OVER_25
 }
 
-// How the equipment for the guaranteed project is sourced (KYC 1C).
-enum EquipmentPlan {
-  OWNED
-  RENT
-  PURCHASE
-}
-
 // Who audits the applicant's financials (KYC 1D) — governs how much the
 // ratio engine's inputs can be trusted.
 enum AuditorTier {
@@ -283,15 +276,8 @@ model CaseQualitative {
   // ---- 1A. Company profile
   // CR issuance date — operating age is DERIVED from it (never self-banded).
   crIssueDate DateTime @map("cr_issue_date") @db.Date
-  // Registered CR activities (free text from the certificate) — feeds the
-  // scope-vs-capability check against the contract sector.
-  crActivities             String  @map("cr_activities")
-  // Contractor classification (Momtaz / 1–5), when the applicant holds one.
-  contractorClassification String? @map("contractor_classification")
-  partOfGroup              Boolean @map("part_of_group")
-  groupName                String? @map("group_name")
-  gmName                   String  @map("gm_name")
-  gmExperienceYears        Int     @map("gm_experience_years")
+  partOfGroup Boolean  @map("part_of_group")
+  groupName   String?  @map("group_name")
   // Ownership or management change in the last 2 years — invalidates the
   // track record earned before it.
   ownershipChanged     Boolean     @map("ownership_changed")
@@ -302,8 +288,6 @@ model CaseQualitative {
 
   // ---- 1B. Track record & experience
   projectsCompletedBand ProjectsCompletedBand @map("projects_completed_band")
-  // Largest single completed project — the jump-risk denominator.
-  largestProjectValue Decimal @map("largest_project_value") @db.Decimal(18, 2)
   // Any project terminated / withdrawn / hit by major delay or penalty.
   hadProjectIssues  Boolean @map("had_project_issues")
   projectIssuesNote String? @map("project_issues_note")
@@ -319,9 +303,8 @@ model CaseQualitative {
   backlogValue Decimal @map("backlog_value") @db.Decimal(18, 2)
   // Self-declared outstanding guarantees across ALL banks (no SIMAH
   // cross-check in this phase — declaration only).
-  outstandingGuarantees Decimal       @map("outstanding_guarantees") @db.Decimal(18, 2)
-  equipmentPlan         EquipmentPlan @map("equipment_plan")
-  heavyHiringNeeded     Boolean       @map("heavy_hiring_needed")
+  outstandingGuarantees Decimal @map("outstanding_guarantees") @db.Decimal(18, 2)
+  heavyHiringNeeded     Boolean @map("heavy_hiring_needed")
 
   // ---- 1D. Financial conduct
   mainBank String @map("main_bank")

@@ -88,19 +88,8 @@ export const caseQualitativeSchema = z
   .object({
     // 1A — company profile
     crIssueDate: z.iso.date("Enter the CR issuance date"),
-    crActivities: z
-      .string()
-      .trim()
-      .min(3, "List the activities registered on the CR")
-      .max(500),
-    contractorClassification: z
-      .enum(["MOMTAZ", "GRADE_1", "GRADE_2", "GRADE_3", "GRADE_4", "GRADE_5", "NONE"], "Select the classification")
-      .optional()
-      .or(z.literal("")),
     partOfGroup: yesNo,
     groupName: optionalNote(160),
-    gmName: z.string().trim().min(2, "Enter the general manager's name").max(120),
-    gmExperienceYears: intString("GM years of experience", 60),
     ownershipChanged: yesNo,
     ownershipChangeNote: optionalNote(),
     nitaqatBand: z.enum(["PLATINUM", "GREEN", "YELLOW", "RED"], "Select the Nitaqat band"),
@@ -111,7 +100,6 @@ export const caseQualitativeSchema = z
       ["UNDER_5", "FROM_5_TO_10", "FROM_10_TO_25", "OVER_25"],
       "Select the number of completed projects",
     ),
-    largestProjectValue: nonNegativeMoneyString("Largest completed project value"),
     hadProjectIssues: yesNo,
     projectIssuesNote: optionalNote(),
     guaranteeCalled: yesNo,
@@ -122,7 +110,6 @@ export const caseQualitativeSchema = z
     runningProjectsCount: intString("Running projects", 500),
     backlogValue: nonNegativeMoneyString("Remaining value of running projects"),
     outstandingGuarantees: nonNegativeMoneyString("Outstanding guarantees"),
-    equipmentPlan: z.enum(["OWNED", "RENT", "PURCHASE"], "Select the equipment plan"),
     heavyHiringNeeded: yesNo,
     // 1D — financial conduct
     mainBank: z.string().trim().min(2, "Select the main operating bank").max(80),

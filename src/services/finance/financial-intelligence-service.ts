@@ -9,7 +9,6 @@
  */
 import {
   assessContractRisk,
-  detectContractCaps,
   detectContractRiskFlags,
 } from "@/services/finance/contract-risk-service";
 import { assessExecutionCapacity } from "@/services/finance/execution-capacity-service";
@@ -152,22 +151,17 @@ export function toQualitativeInputs(
 ): QualitativeInputs {
   return {
     crIssueDate: row.crIssueDate,
-    crActivities: row.crActivities,
-    contractorClassification: row.contractorClassification,
     partOfGroup: row.partOfGroup,
-    gmExperienceYears: row.gmExperienceYears,
     ownershipChanged: row.ownershipChanged,
     nitaqatBand: row.nitaqatBand,
     ongoingLitigation: row.ongoingLitigation,
     projectsCompletedBand: row.projectsCompletedBand,
-    largestProjectValue: row.largestProjectValue,
     hadProjectIssues: row.hadProjectIssues,
     guaranteeCalled: row.guaranteeCalled,
     sameTypeExperience: row.sameTypeExperience,
     runningProjectsCount: row.runningProjectsCount,
     backlogValue: row.backlogValue,
     outstandingGuarantees: row.outstandingGuarantees,
-    equipmentPlan: row.equipmentPlan,
     heavyHiringNeeded: row.heavyHiringNeeded,
     conductIncidents: row.conductIncidents,
     auditorTier: row.auditorTier,
@@ -225,7 +219,7 @@ export function buildFinancialIntelligence(
     ? detectQualitativeFlags(qualitativeInputs, contractInputs, latest)
     : [];
   const contractFlags = contractInputs
-    ? detectContractRiskFlags(contractInputs, qualitativeInputs, latest)
+    ? detectContractRiskFlags(contractInputs, latest)
     : [];
 
   // ---- The three deterministic pillars + hard caps → grade of record.
@@ -234,13 +228,10 @@ export function buildFinancialIntelligence(
     ? assessQualitative(qualitativeInputs, contractInputs, latest)
     : null;
   const contractRisk =
-    contractInputs && (qualitativeInputs || hasStructuredFields(contractInputs))
-      ? assessContractRisk(contractInputs, qualitativeInputs, latest)
+    contractInputs && hasStructuredFields(contractInputs)
+      ? assessContractRisk(contractInputs, latest)
       : null;
-  const caps = [
-    ...(qualitativeInputs ? detectQualitativeCaps(qualitativeInputs) : []),
-    ...(contractInputs ? detectContractCaps(contractInputs, qualitativeInputs) : []),
-  ];
+  const caps = qualitativeInputs ? detectQualitativeCaps(qualitativeInputs) : [];
   const overall = composeOverallGrade(
     risk,
     qualitative,

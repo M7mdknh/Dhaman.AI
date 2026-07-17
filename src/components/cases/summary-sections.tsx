@@ -11,10 +11,8 @@ import {
   AWARD_METHOD_OPTIONS,
   beneficiaryTypeLabel,
   BILLING_CYCLE_OPTIONS,
-  CONTRACTOR_CLASSIFICATION_OPTIONS,
   CONTRACTOR_ROLE_OPTIONS,
   DOCUMENT_STATUS_META,
-  EQUIPMENT_PLAN_OPTIONS,
   FUNDING_SOURCE_OPTIONS,
   guaranteeTypeLabel,
   NITAQAT_OPTIONS,
@@ -203,17 +201,6 @@ export function QualitativeSummary({ qualitative }: { qualitative: CaseQualitati
     <DetailGrid>
       <DetailItem label="CR Issued" value={formatDate(qualitative.crIssueDate)} />
       <DetailItem
-        label="Classification"
-        value={optionLabel(CONTRACTOR_CLASSIFICATION_OPTIONS, qualitative.contractorClassification)}
-      />
-      <DetailItem label="Registered Activities" value={qualitative.crActivities} wide />
-      <DetailItem label="General Manager" value={qualitative.gmName} />
-      <DetailItem
-        label="GM Experience"
-        value={`${qualitative.gmExperienceYears} years`}
-        numeric
-      />
-      <DetailItem
         label="Part of a Group"
         value={yesWithNote(qualitative.partOfGroup, qualitative.groupName)}
       />
@@ -232,11 +219,6 @@ export function QualitativeSummary({ qualitative }: { qualitative: CaseQualitati
       <DetailItem
         label="Projects Completed"
         value={optionLabel(PROJECTS_COMPLETED_OPTIONS, qualitative.projectsCompletedBand)}
-      />
-      <DetailItem
-        label="Largest Completed Project"
-        value={formatMoney(qualitative.largestProjectValue, "SAR")}
-        numeric
       />
       <DetailItem
         label="Project Terminations / Penalties"
@@ -264,10 +246,6 @@ export function QualitativeSummary({ qualitative }: { qualitative: CaseQualitati
         label="Outstanding Guarantees (All Banks)"
         value={formatMoney(qualitative.outstandingGuarantees, "SAR")}
         numeric
-      />
-      <DetailItem
-        label="Equipment"
-        value={optionLabel(EQUIPMENT_PLAN_OPTIONS, qualitative.equipmentPlan)}
       />
       <DetailItem label="Heavy Hiring Needed" value={yesNoLabel(qualitative.heavyHiringNeeded)} />
       <DetailItem label="Main Bank" value={qualitative.mainBank} />

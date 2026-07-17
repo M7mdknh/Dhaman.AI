@@ -395,22 +395,20 @@ exactly as before**.
 
 - **Qualitative components** (weights in `QUALITATIVE`): operating age
   (derived from the CR issue date), track-record depth, same-type experience,
-  GM experience, management stability, Nitaqat, capacity headroom
-  (*computed*: (backlog + this contract) / latest revenue), equipment plan,
+  management stability, Nitaqat, capacity headroom
+  (*computed*: (backlog + this contract) / latest revenue),
   hiring need, declared conduct, auditor tier. Computed factors can't be
   gamed by band-picking; binary capability proofs weigh heavy.
-- **Contract-risk components** (weights in `CONTRACT_RISK`): jump ratio
-  (*computed*: contract / largest completed project), contractor role,
+- **Contract-risk components** (weights in `CONTRACT_RISK`): contractor role,
   beneficiary history, cash-gap coverage (*computed*: advance vs the
   pre-payment burn window), margin buffer, margin realism (*computed*:
   declared vs audited gross margin), award method, bond call terms, LD
   exposure.
 - **Hard caps** (`HARD_CAPS`) are non-dilutable policy overrides: a called
   guarantee, declared conduct incidents, or Nitaqat Red cap the
-  recommendation of record at MANUAL_REVIEW; a >3× scale jump caps it at
-  APPROVE_WITH_CONDITIONS. Caps never change a score and never force REJECT
-  — a points-only system would let killer signals be averaged away by good
-  ratios.
+  recommendation of record at MANUAL_REVIEW. Caps never change a score and
+  never force REJECT — a points-only system would let killer signals be
+  averaged away by good ratios.
 - **Confidence, not points:** each statement's declared reliability
   (Audited / Reviewed / Management) sets the grade's confidence label via
   the WEAKEST statement in the window (`RELIABILITY_CONFIDENCE`). It never

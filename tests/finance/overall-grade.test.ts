@@ -47,9 +47,9 @@ describe("composeOverallGrade", () => {
 
   it("never lets a cap improve a recommendation already less favorable", () => {
     const cap: HardCap = {
-      type: "JUMP_RISK",
-      ceiling: "APPROVE_WITH_CONDITIONS",
-      reason: "Scale jump.",
+      type: "NITAQAT_RED",
+      ceiling: "MANUAL_REVIEW",
+      reason: "Nitaqat band is Red.",
     };
     const grade = composeOverallGrade(pillar(80), null, null, [cap], ["AUDITED"]);
     expect(grade.recommendation).toBe("REJECT"); // CRITICAL band wins

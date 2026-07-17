@@ -32,9 +32,9 @@ const LATEST = { ...EMPTY_YEAR, revenue: D(160_000_000), totalEquity: D(40_000_0
 
 describe("qualitative score engine (hand-computed)", () => {
   it("scores a clean, established contractor as excellent", () => {
-    // age 12y→1×15 · projects OVER_25→1×10 · same-type→1×10 · GM 15y→1×6 ·
-    // stable→1×4 · GREEN→0.7×10 · headroom (20+60)/160=0.5→1×15 · owned→1×5 ·
-    // no hiring→1×5 · clean conduct→1×10 · Big-4→1×10 ⇒ safety 97/100 ⇒ 3.
+    // age 12y→1×17 · projects OVER_25→1×11 · same-type→1×11 · stable→1×5 ·
+    // GREEN→0.7×11=7.7 · headroom (20+60)/160=0.5→1×17 · no hiring→1×6 ·
+    // clean conduct→1×11 · Big-4→1×11 ⇒ safety 96.7/100 ⇒ 3.
     const result = assessQualitative(qualitativeInputs(), CONTRACT, LATEST);
     expect(result.score).toBe(3);
     expect(result.band).toBe("EXCELLENT");
@@ -43,8 +43,8 @@ describe("qualitative score engine (hand-computed)", () => {
 
   it("excludes capacity headroom (and renormalizes) when revenue is missing", () => {
     const result = assessQualitative(qualitativeInputs(), CONTRACT, EMPTY_YEAR);
-    // Same components minus headroom: safety (97−15)/(100−15) = 82/85.
-    expect(result.score).toBe(Math.round((1 - 82 / 85) * 100));
+    // Same components minus headroom: safety (96.7−17)/(100−17) = 79.7/83.
+    expect(result.score).toBe(Math.round((1 - 79.7 / 83) * 100));
     expect(result.missingInputs).toEqual(["Capacity headroom (computed)"]);
   });
 
@@ -54,20 +54,18 @@ describe("qualitative score engine (hand-computed)", () => {
         crIssueDate: crIssuedYearsAgo(2),
         projectsCompletedBand: "UNDER_5",
         sameTypeExperience: false,
-        gmExperienceYears: 2,
         ownershipChanged: true,
         nitaqatBand: "YELLOW",
         backlogValue: D(600_000_000),
-        equipmentPlan: "PURCHASE",
         heavyHiringNeeded: true,
         auditorTier: "UNAUDITED",
       }),
       CONTRACT,
       LATEST,
     );
-    // age 2y→0 · UNDER_5→0.1×10=1 · no same-type→0 · GM 2y→0.2×6=1.2 ·
-    // changed→0 · YELLOW→3 · headroom 4.125×→0 · purchase→1 · hiring→1 ·
-    // clean conduct→10 · unaudited→0 ⇒ safety 17.2/100 ⇒ 83 CRITICAL.
+    // age 2y→0 · UNDER_5→0.1×11=1.1 · no same-type→0 · changed→0 ·
+    // YELLOW→0.3×11=3.3 · headroom 4.125×→0 · hiring 0.2×6=1.2 ·
+    // clean conduct→11 · unaudited→0 ⇒ safety 16.6/100 ⇒ 83 CRITICAL.
     expect(result.score).toBe(83);
     expect(result.band).toBe("CRITICAL");
   });
