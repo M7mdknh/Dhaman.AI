@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -56,6 +57,9 @@ export function CaseWizard(props: CaseWizardProps) {
   const [qualitative, setQualitative] = useState(props.qualitative);
   const [contract, setContract] = useState(props.contract);
   const [documents, setDocuments] = useState(props.documents);
+  // Tracks the last successful autosave so the wizard can reassure the
+  // applicant their progress is kept without them having to press anything.
+  const [savedTick, setSavedTick] = useState(false);
 
   const statements = documents.filter((d) => d.docType === "FINANCIAL_STATEMENT");
   const contractDocument = documents.find((d) => d.docType === "CONTRACT") ?? null;
@@ -84,6 +88,7 @@ export function CaseWizard(props: CaseWizardProps) {
       : await saveCompanyAction(props.caseId!, values);
     if (result.ok) {
       setCompany(values);
+      setSavedTick(true);
       toast.success(isNew ? "Draft case created" : "Draft saved");
       if (isNew && result.caseId) {
         router.push(`/cases/${result.caseId}/edit?step=2`);
@@ -98,6 +103,7 @@ export function CaseWizard(props: CaseWizardProps) {
     const result = await saveQualitativeAction(props.caseId!, values);
     if (result.ok) {
       setQualitative(values);
+      setSavedTick(true);
       toast.success("Draft saved");
       setStep(3);
     }
@@ -115,6 +121,7 @@ export function CaseWizard(props: CaseWizardProps) {
         100
       ).toFixed(2);
       setContract({ ...values, guaranteeAmount: derivedAmount });
+      setSavedTick(true);
       toast.success("Draft saved");
       setStep(4);
     }
@@ -139,8 +146,21 @@ export function CaseWizard(props: CaseWizardProps) {
     return result;
   }
 
+  const showSaved = !isNew || savedTick;
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Complete each step — your progress saves automatically as you go.
+        </p>
+        {showSaved && (
+          <span className="rise-in inline-flex items-center gap-1.5 rounded-full border border-emerald-600/25 bg-emerald-600/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+            <Check className="size-3" strokeWidth={3} aria-hidden />
+            Draft saved
+          </span>
+        )}
+      </div>
       <Stepper
         steps={STEPS}
         current={step}

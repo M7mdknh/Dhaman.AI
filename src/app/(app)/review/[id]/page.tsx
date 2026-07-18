@@ -43,6 +43,7 @@ import { getSession } from "@/lib/auth/session";
 import { guaranteeTypeLabel } from "@/lib/case-constants";
 import { toCompanyInput, toContractInput, toQualitativeInput } from "@/lib/case-view";
 import { buildValidationReport } from "@/lib/finance/confidence";
+import { buildRatioEvidence } from "@/lib/finance/ratio-evidence";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { derivePriority } from "@/lib/review";
 import { cn } from "@/lib/utils";
@@ -106,13 +107,17 @@ function buildInsightBubbles(report: FinancialIntelligenceReport): string[] {
 }
 
 /** Every lifecycle event the bank cares about; future events append as they happen. */
-function buildTimeline(reviewCase: ReviewCase): TimelineEntry[] {
+/** `analysisComplete` must be the VALIDATED-report flag (report !== null) —
+ * statement rows alone can exist yet fail integrity validation, and a green
+ * "Financial Analysis" check above a red "assessment could not be completed"
+ * verdict would contradict the page. */
+function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): TimelineEntry[] {
+  const analysisReady = analysisComplete;
   const memo = reviewCase.decisionIntelligence[0] ?? null;
   const terminalDecision = reviewCase.officerDecisions.find(
     (d) => d.decision !== "REQUEST_INFO",
   );
   const extractionDone = reviewCase.documents.some((d) => d.processingStatus === "COMPLETED");
-  const analysisReady = reviewCase.financialStatements.length > 0;
 
   return [
     {
@@ -195,6 +200,9 @@ export default async function ReviewCasePage({
     reviewCase.qualitative,
     reviewCase.company.sector,
   );
+  // The exact numerator/denominator behind every ratio, so the officer can
+  // click any figure and see which statement lines produced it.
+  const ratioEvidence = report ? buildRatioEvidence(reviewCase.financialStatements) : undefined;
   // The same pure check the engine gates on — read here to TELL the officer how
   // far the assessment can be trusted. Never re-judges it.
   const integrity = validateFinancialIntegrity(reviewCase.financialStatements);
@@ -290,7 +298,7 @@ export default async function ReviewCasePage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
               {reviewCase.reference}
             </h1>
             <StatusBadge status={status} />
@@ -383,6 +391,7 @@ export default async function ReviewCasePage({
                 report={report}
                 integrity={integrity}
                 unreadYears={unreadYears}
+                ratioEvidence={ratioEvidence}
               />
             ) : validationBlocked ? (
               // Statements were read but not trusted. The verdict slot states
@@ -473,7 +482,12 @@ export default async function ReviewCasePage({
         </div>
 
         {/* ---- Sticky decision rail: decision (or RM review), timeline, notes */}
-        <div className="rise-in-stagger space-y-6 xl:sticky xl:top-6 xl:self-start">
+        {/* The rail is regularly TALLER than the viewport (form + timeline +
+            notes). A plain sticky rail pins its top and buries everything
+            below the fold until the reader reaches the bottom of the much
+            longer analysis column — so the rail scrolls INDEPENDENTLY,
+            capped at viewport height. */}
+        <div className="rise-in-stagger space-y-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain xl:pr-1">
           {isRm ? (
             <Card>
               <CardHeader>
@@ -687,11 +701,11 @@ export default async function ReviewCasePage({
               <CardTitle className="text-sm">Timeline</CardTitle>
             </CardHeader>
             <CardContent>
-              <CaseTimeline entries={buildTimeline(reviewCase)} />
+              <CaseTimeline entries={buildTimeline(reviewCase, analysisReady)} />
             </CardContent>
           </Card>
 
-          <NotesPanel caseId={id} notes={notes} />
+          <NotesPanel caseId={id} notes={notes} authorName={session.fullName} />
         </div>
       </div>
 

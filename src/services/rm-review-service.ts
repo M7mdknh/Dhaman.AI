@@ -33,7 +33,9 @@ export async function saveMemoRevision(
   input: { summary: string; relationshipContext?: string },
 ): Promise<ActionResult> {
   const rm = await getRmUser(rmUserId);
-  if (!rm) return { ok: false, error: "Only Relationship Managers can refine the memo." };
+  if (!rm) {
+    return { ok: false, error: "Only Relationship Managers or administrators can refine the memo." };
+  }
 
   const summary = input.summary.trim();
   if (!summary) return { ok: false, error: "The executive summary cannot be empty." };
@@ -90,7 +92,9 @@ export async function submitToRiskOfficer(
   input: { decision: OfficerDecisionType; reason: string; conditions?: string },
 ): Promise<ActionResult> {
   const rm = await getRmUser(rmUserId);
-  if (!rm) return { ok: false, error: "Only Relationship Managers can route cases." };
+  if (!rm) {
+    return { ok: false, error: "Only Relationship Managers or administrators can route cases." };
+  }
 
   const reason = input.reason.trim();
   if (!reason) return { ok: false, error: "A reason is required for the suggested decision." };
@@ -118,8 +122,18 @@ export async function submitToRiskOfficer(
     };
   }
 
-  await prisma.$transaction([
-    prisma.rmSuggestedDecision.create({
+  // Conditional write is the race guard (same pattern as review-service): the
+  // status read above can go stale — a concurrent routing or an officer
+  // starting the review. Move the case FIRST, only while still routable;
+  // count === 0 means it moved under us, so no duplicate suggestion is ever
+  // written and an in-progress officer review is never yanked back.
+  const committed = await prisma.$transaction(async (tx) => {
+    const moved = await tx.underwritingCase.updateMany({
+      where: { id: caseId, status: "ANALYSIS_READY" },
+      data: { status: "RM_REVIEWED", rmReviewerId: rmUserId, rmSubmittedAt: new Date() },
+    });
+    if (moved.count === 0) return false;
+    await tx.rmSuggestedDecision.create({
       data: {
         caseId,
         rmId: rmUserId,
@@ -128,12 +142,15 @@ export async function submitToRiskOfficer(
         conditions: input.decision === "APPROVE_WITH_CONDITIONS" ? conditions : null,
         decisionIntelligenceId: underwritingCase.decisionIntelligence[0]?.id ?? null,
       },
-    }),
-    prisma.underwritingCase.update({
-      where: { id: caseId },
-      data: { status: "RM_REVIEWED", rmReviewerId: rmUserId, rmSubmittedAt: new Date() },
-    }),
-  ]);
+    });
+    return true;
+  });
+  if (!committed) {
+    return {
+      ok: false,
+      error: "This case's status changed before it could be routed. Refresh and try again.",
+    };
+  }
   await recordAudit({
     action: "rm.submitted_to_risk_officer",
     actorId: rmUserId,

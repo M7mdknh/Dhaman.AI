@@ -275,6 +275,19 @@ export const contractDetailsSchema = z
         message: "Bond validity must extend to the project end date or beyond",
       });
     }
+    // An LD rate above the cap means the cap binds inside the FIRST week of
+    // delay — a contradictory clause that is far more likely a typo.
+    if (
+      d.ldRatePctPerWeek &&
+      d.ldCapPct &&
+      Number(d.ldRatePctPerWeek) > Number(d.ldCapPct)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ldRatePctPerWeek"],
+        message: "The weekly LD rate cannot exceed the total LD cap",
+      });
+    }
   });
 
 export const statementYearSchema = z.coerce

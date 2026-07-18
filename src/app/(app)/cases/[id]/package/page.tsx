@@ -179,7 +179,7 @@ export default async function UnderwritingPackagePage({
             <ArrowLeft className="size-3.5" aria-hidden />
             {underwritingCase.reference}
           </Link>
-          <h1 className="mt-2 text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="font-display mt-2 text-2xl font-light tracking-tight text-foreground sm:text-3xl">
             Underwriting Package
           </h1>
         </div>

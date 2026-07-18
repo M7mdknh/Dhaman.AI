@@ -23,7 +23,7 @@ export default function Error({
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+      <h1 className="font-display text-3xl font-light tracking-tight text-foreground">
         Something went wrong
       </h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">

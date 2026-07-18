@@ -25,6 +25,32 @@ interface Message {
   streaming?: boolean;
 }
 
+/**
+ * Minimal, dependency-free markdown for chat responses: **bold**, `###`
+ * headings (rendered as bold lines), and `- ` bullets. Anything else passes
+ * through as text — the raw asterisks the model emits must never reach the
+ * reader. Safe by construction: output is React nodes, never injected HTML.
+ */
+function renderLightMarkdown(text: string): React.ReactNode {
+  const bold = (line: string, keyBase: string): React.ReactNode[] =>
+    line.split(/\*\*(.+?)\*\*/g).map((part, i) =>
+      i % 2 === 1 ? <strong key={`${keyBase}-${i}`}>{part}</strong> : part,
+    );
+
+  return text.split("\n").map((rawLine, li) => {
+    const heading = rawLine.match(/^#{1,4}\s+(.*)$/);
+    const bullet = rawLine.match(/^\s*[-*]\s+(.*)$/);
+    const line = heading ? heading[1] : bullet ? bullet[1] : rawLine;
+    const content = bold(line, `l${li}`);
+    return (
+      <span key={li} className={heading ? "font-semibold" : undefined}>
+        {li > 0 && "\n"}
+        {bullet ? <>&bull; {content}</> : content}
+      </span>
+    );
+  });
+}
+
 export interface InsightChatProps {
   caseId: string;
   /** Data-derived suggestion bubbles computed by the server from engine output. */
@@ -257,7 +283,7 @@ export function InsightChat({ caseId, initialBubbles }: InsightChatProps) {
                       </span>
                     ) : (
                       <span className="whitespace-pre-wrap">
-                        {msg.content}
+                        {renderLightMarkdown(msg.content)}
                         {msg.streaming && (
                           <span
                             className="ml-0.5 inline-block h-[13px] w-[1.5px] animate-pulse bg-primary align-text-bottom"

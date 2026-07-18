@@ -62,8 +62,12 @@ export async function issueGuarantee(
         currency: contract.currency,
         beneficiary: contract.beneficiary,
         issueDate,
-        // The guarantee follows the guaranteed contract's end date.
-        expiryDate: contract.projectEndDate,
+        // The instrument must satisfy the contract's own bond requirement:
+        // validation guarantees bondValidityDate ≥ projectEndDate, so issuing
+        // to project end alone would hand the beneficiary a bond that expires
+        // EARLIER than the contract demands. Legacy rows (no bond validity
+        // recorded) fall back to the project end date.
+        expiryDate: contract.bondValidityDate ?? contract.projectEndDate,
       },
     });
     const issued = await tx.guarantee.update({

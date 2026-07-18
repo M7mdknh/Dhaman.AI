@@ -1,16 +1,28 @@
-import { ShieldCheck } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 
-export function Logo({ className }: { className?: string }) {
+/**
+ * Text-only wordmark: the display serif with a primary-colored full stop.
+ * The period is the brand mark — a quiet nod to finality ("the Risk Officer
+ * decides."). No icon.
+ */
+export function Logo({
+  className,
+  inverse = false,
+}: {
+  className?: string;
+  /** Light-on-dark variant for the deep-emerald brand surfaces. */
+  inverse?: boolean;
+}) {
   return (
-    <span className={cn("flex items-center gap-2.5", className)}>
-      <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-        <ShieldCheck className="size-4.5" aria-hidden />
-      </span>
-      <span className="text-[15px] font-semibold tracking-tight text-foreground">
-        Daman
-      </span>
+    <span
+      className={cn(
+        "font-display text-2xl font-normal leading-none tracking-tight",
+        inverse ? "text-white" : "text-foreground",
+        className,
+      )}
+    >
+      Daman
+      <span className={inverse ? "text-emerald-300" : "text-primary"}>.</span>
     </span>
   );
 }

@@ -81,6 +81,84 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+interface SnapshotItem {
+  label: string;
+  value: string;
+}
+
+const AVG_DAYS_PER_MONTH = 30.44;
+const num = (v: string | undefined) => {
+  const n = Number(v);
+  return v && Number.isFinite(n) ? n : null;
+};
+
+/** Live arithmetic preview of the deal as the contractor fills the form. */
+function buildSnapshot(input: {
+  contractValue: string | undefined;
+  guaranteePercentage: string | undefined;
+  advancePaymentPct: string | undefined;
+  ldCapPct: string | undefined;
+  projectStartDate: string | undefined;
+  projectEndDate: string | undefined;
+  currency: string;
+}): SnapshotItem[] {
+  const value = num(input.contractValue);
+  const items: SnapshotItem[] = [];
+  const money = (n: number) => formatMoney(n, input.currency);
+
+  const gPct = num(input.guaranteePercentage);
+  if (value !== null && gPct !== null) {
+    items.push({ label: "Requested guarantee", value: money((value * gPct) / 100) });
+  }
+
+  const start = input.projectStartDate ? new Date(input.projectStartDate) : null;
+  const end = input.projectEndDate ? new Date(input.projectEndDate) : null;
+  if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    const months = Math.round(
+      (end.getTime() - start.getTime()) / (AVG_DAYS_PER_MONTH * 24 * 60 * 60 * 1000),
+    );
+    if (months > 0) items.push({ label: "Project duration", value: `${months} months` });
+  }
+
+  const advPct = num(input.advancePaymentPct);
+  if (value !== null && advPct !== null && advPct > 0) {
+    items.push({ label: "Advance received", value: money((value * advPct) / 100) });
+  }
+
+  const ldCap = num(input.ldCapPct);
+  if (value !== null && ldCap !== null && ldCap > 0) {
+    items.push({ label: "Max LD exposure", value: money((value * ldCap) / 100) });
+  }
+
+  return items;
+}
+
+/** The sticky live snapshot: a compact, animated read of the deal forming. */
+function ContractSnapshot({ items }: { items: SnapshotItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-primary/80">
+        Contract snapshot
+      </p>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        {items.map((item) => (
+          <div key={item.label} className="rise-in min-w-0">
+            <dt className="truncate text-[11px] text-muted-foreground">{item.label}</dt>
+            <dd className="font-display mt-0.5 truncate text-lg font-light tabular-nums text-foreground">
+              {item.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+        A live preview as you fill the form — the deterministic engine computes
+        the authoritative figures once your statements are analyzed.
+      </p>
+    </div>
+  );
+}
+
 interface ContractStepProps {
   caseId: string | null;
   defaults: ContractDetailsInput | null;
@@ -170,6 +248,10 @@ export function ContractStep({
   const contractorRole = useWatch({ control, name: "contractorRole" });
   const keySuppliersIdentified = useWatch({ control, name: "keySuppliersIdentified" });
   const requiredBondPct = useWatch({ control, name: "requiredBondPct" });
+  const projectStartDate = useWatch({ control, name: "projectStartDate" });
+  const projectEndDate = useWatch({ control, name: "projectEndDate" });
+  const advancePaymentPct = useWatch({ control, name: "advancePaymentPct" });
+  const ldCapPct = useWatch({ control, name: "ldCapPct" });
   const previewAmount = (() => {
     const value = Number(contractValue);
     const percentage = Number(guaranteePercentage);
@@ -186,6 +268,18 @@ export function ContractStep({
     /^\d{1,3}(\.\d{1,2})?$/.test(requiredBondPct ?? "") &&
     /^\d{1,3}(\.\d{1,2})?$/.test(guaranteePercentage ?? "") &&
     compareDecimalStrings(requiredBondPct!, guaranteePercentage!) !== 0;
+
+  // Live "deal shape" the applicant watches form as they type — every figure
+  // is a plain arithmetic preview (display only; the engine is authoritative).
+  const snapshot = buildSnapshot({
+    contractValue,
+    guaranteePercentage,
+    advancePaymentPct,
+    ldCapPct,
+    projectStartDate,
+    projectEndDate,
+    currency: currency || "SAR",
+  });
 
   const submit = handleSubmit(
     async (values) => {
@@ -276,6 +370,11 @@ export function ContractStep({
             the deterministic contract-risk assessment. Progress is saved as a draft.
           </CardDescription>
         </CardHeader>
+        {snapshot.length > 0 && (
+          <div className="px-6 pb-1">
+            <ContractSnapshot items={snapshot} />
+          </div>
+        )}
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <SectionLabel>Beneficiary</SectionLabel>
           <FormField

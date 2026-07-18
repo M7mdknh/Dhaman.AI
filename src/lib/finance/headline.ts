@@ -18,7 +18,10 @@ export interface UnderwritingHeadline {
   capacityBand: CapacityBand | null;
   /** Credit-style letter rating derived from the risk score (AAA…CCC). */
   rating: string;
-  /** Financial Health, 0-100 = inverse of the risk score. */
+  /** Financial Health, 0-100 = inverse of the FINANCIAL risk pillar.
+   * Deliberately NOT the inverse of the composite `riskScore`: the two hero
+   * figures would otherwise be the same number in opposite polarity, and the
+   * "Financial Health" label would silently include KYC + contract risk. */
   healthScore: number;
   /** Risk score, 0-100 (higher = riskier). */
   riskScore: number;
@@ -51,7 +54,7 @@ export function deriveHeadline(report: FinancialIntelligenceReport): Underwritin
     capacityScore: report.capacity ? Math.round(report.capacity.score) : null,
     capacityBand: report.capacity?.band ?? null,
     rating: deriveRating(report.overall.score),
-    healthScore: Math.max(0, Math.min(100, Math.round(100 - report.overall.score))),
+    healthScore: Math.max(0, Math.min(100, Math.round(100 - report.risk.score))),
     riskScore,
     riskBand: report.overall.band,
     recommendation: report.overall.recommendation,

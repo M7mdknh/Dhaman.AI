@@ -71,7 +71,7 @@ async function OfficerDashboard({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
           Welcome, {fullName.split(" ")[0]}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -129,7 +129,7 @@ export default async function DashboardPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
             Welcome, {session.fullName.split(" ")[0]}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -145,7 +145,10 @@ export default async function DashboardPage({
       <div className="rise-in-stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Draft Cases" value={stats.draft} icon={FilePen} />
         <StatCard label="Submitted" value={stats.submitted} icon={Send} />
-        <StatCard label="Under Review" value={stats.underReview} icon={SearchCheck} />
+        {/* "In Progress", not "Under Review": the bucket spans every
+            in-flight status including PROCESSING_FAILED, which needs the
+            CONTRACTOR's retry — calling that "under review" misleads. */}
+        <StatCard label="In Progress" value={stats.underReview} icon={SearchCheck} />
         <StatCard label="Approved" value={stats.approved} icon={CheckCircle2} />
       </div>
 

@@ -1,4 +1,4 @@
-import { LayoutDashboard, type LucideIcon } from "lucide-react";
+import { FilePlus2, LayoutDashboard, type LucideIcon } from "lucide-react";
 
 import type { Role } from "@/lib/auth/token";
 
@@ -15,6 +15,7 @@ const ALL_ROLES: Role[] = ["CONTRACTOR", "RELATIONSHIP_MANAGER", "RISK_OFFICER",
 // officers see the review queue. Case and review flows are reached from there.
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ALL_ROLES },
+  { href: "/cases/new", label: "New Case", icon: FilePlus2, roles: ["CONTRACTOR"] },
 ];
 
 export function navItemsForRole(role: Role): NavItem[] {

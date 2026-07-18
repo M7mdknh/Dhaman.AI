@@ -50,13 +50,13 @@ export function VerdictHero({
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Can the bank issue this guarantee?
           </p>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="reveal-stamp mt-3 flex items-center gap-3">
             <span className={cn("shrink-0", TEXT_TONE[verdict.tone])}>
               <Icon className="size-8 sm:size-9" aria-hidden />
             </span>
             <h1
               className={cn(
-                "text-3xl font-semibold leading-none tracking-tight sm:text-4xl",
+                "font-display text-4xl font-light leading-none tracking-tight sm:text-5xl",
                 TEXT_TONE[verdict.tone],
               )}
             >
@@ -97,7 +97,7 @@ export function VerdictHero({
             </p>
             <p
               className={cn(
-                "text-4xl font-bold tabular-nums leading-none sm:text-5xl",
+                "reveal-stamp-right font-display text-5xl font-light tabular-nums leading-none sm:text-6xl",
                 TEXT_TONE[verdict.tone],
               )}
             >

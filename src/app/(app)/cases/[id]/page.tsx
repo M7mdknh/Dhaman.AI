@@ -40,9 +40,17 @@ export const metadata: Metadata = { title: "Underwriting Case" };
  */
 function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
   const submitted = underwritingCase.submittedAt;
-  const analysisReady =
-    underwritingCase.financialStatements.length > 0 &&
-    underwritingCase.status !== "DRAFT";
+  // Statement rows can exist yet fail integrity validation (PROCESSING_FAILED)
+  // — the analysis step is only "complete" once the case actually reached
+  // ANALYSIS_READY or beyond, so the timeline never contradicts a failure
+  // banner shown on the same page.
+  const analysisReady = ![
+    "DRAFT",
+    "SUBMITTED",
+    "PROCESSING",
+    "PARSING",
+    "PROCESSING_FAILED",
+  ].includes(underwritingCase.status);
   const terminal =
     underwritingCase.officerDecisions.find((d) => d.decision !== "REQUEST_INFO") ?? null;
   const decisionLabel =
@@ -57,11 +65,18 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
       timestamp: formatDateTime(underwritingCase.createdAt),
       state: "complete",
     },
-    {
-      label: "Draft Saved",
-      timestamp: formatDateTime(underwritingCase.updatedAt),
-      state: "complete",
-    },
+    // "Draft Saved" only exists while the case IS a draft: `updatedAt` moves
+    // on every later mutation (retries, status flips), so after submission it
+    // would show a save time LATER than the submission itself.
+    ...(submitted
+      ? []
+      : [
+          {
+            label: "Draft Saved",
+            timestamp: formatDateTime(underwritingCase.updatedAt),
+            state: "complete" as const,
+          },
+        ]),
     {
       label: "Submitted",
       timestamp: submitted ? formatDateTime(submitted) : undefined,
@@ -150,7 +165,7 @@ export default async function CaseDetailsPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
               {underwritingCase.reference}
             </h1>
             <StatusBadge status={underwritingCase.status} />
@@ -260,7 +275,7 @@ export default async function CaseDetailsPage({
           />
         </div>
 
-        <div className="xl:sticky xl:top-6 xl:self-start">
+        <div className="xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:self-start xl:overflow-y-auto xl:overscroll-contain">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Timeline</CardTitle>

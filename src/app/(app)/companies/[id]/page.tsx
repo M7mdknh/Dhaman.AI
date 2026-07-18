@@ -38,7 +38,7 @@ function StatTile({ label, value, hint }: { label: string; value: string; hint?:
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {label}
         </p>
-        <p className="mt-1 text-xl font-semibold tabular-nums text-foreground">{value}</p>
+        <p className="font-display mt-1 text-2xl font-light tabular-nums text-foreground">{value}</p>
         {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
@@ -75,7 +75,7 @@ export default async function CompanyHistoryPage({
             <Building2 className="size-5" aria-hidden />
           </span>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
               {company.name}
             </h1>
             <p className="text-sm text-muted-foreground">

@@ -1,7 +1,10 @@
+"use client";
+
 import { ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { BADGE_TONE, BAR_TONE, RISK_META } from "@/lib/finance/display";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +13,13 @@ import type {
   PillarAssessment,
   ScoreComponent,
 } from "@/lib/finance/types";
+
+/** A 0–100 safety meter (higher = safer): green→amber→red by band. */
+function safetyTone(score: number): "emerald" | "amber" | "red" {
+  if (score >= 70) return "emerald";
+  if (score >= 40) return "amber";
+  return "red";
+}
 
 function PillarCard({
   label,
@@ -38,7 +48,7 @@ function PillarCard({
           </Badge>
         </div>
         <div className="mt-4 flex items-baseline gap-1">
-          <span className="text-2xl font-semibold tabular-nums text-foreground">
+          <span className="font-display text-3xl font-light tabular-nums text-foreground">
             {score === null ? "—" : score}
           </span>
           {score !== null && <span className="text-xs text-muted-foreground">/ 100 risk</span>}
@@ -59,20 +69,64 @@ function PillarCard({
   );
 }
 
-function ComponentRows({ components }: { components: ScoreComponent[] }) {
+function ComponentRow({ component }: { component: ScoreComponent }) {
+  const pct = component.score === null ? null : Math.round(component.score * 100);
+  const tone = pct === null ? "neutral" : safetyTone(pct);
+
   return (
-    <ul className="divide-y divide-border">
-      {components.map((component) => (
-        <li key={component.key} className="flex items-center justify-between gap-3 py-2">
+    <li>
+      <Popover>
+        <PopoverTrigger
+          className={cn(
+            "-mx-2 flex w-[calc(100%+1rem)] cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-2 text-left transition-colors",
+            "hover:bg-accent data-popup-open:bg-accent",
+          )}
+        >
           <div className="min-w-0">
             <p className="text-xs font-medium text-foreground">{component.label}</p>
             <p className="truncate text-xs text-muted-foreground">{component.detail}</p>
           </div>
           <span className="shrink-0 text-xs font-medium tabular-nums text-muted-foreground">
-            {component.score === null ? "n/a" : `${Math.round(component.score * 100)} / 100`}
+            {pct === null ? "n/a" : `${pct} / 100`}
             <span className="ml-1 text-muted-foreground/70">· w{component.weight}</span>
           </span>
-        </li>
+        </PopoverTrigger>
+        <PopoverContent align="end" side="bottom">
+          <div className="space-y-2.5">
+            <p className="text-[13px] font-semibold text-foreground">{component.label}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">{component.detail}</p>
+            {pct !== null && (
+              <div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    Sub-score (safety)
+                  </span>
+                  <span className="text-xs font-medium tabular-nums text-foreground">{pct} / 100</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn("h-full rounded-full", BAR_TONE[tone])}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            <p className="border-t border-border pt-2 text-[11px] text-muted-foreground">
+              Weight {component.weight}% of this pillar.{" "}
+              {pct === null && "Excluded — input missing; remaining weights renormalized."}
+            </p>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </li>
+  );
+}
+
+function ComponentRows({ components }: { components: ScoreComponent[] }) {
+  return (
+    <ul className="divide-y divide-border">
+      {components.map((component) => (
+        <ComponentRow key={component.key} component={component} />
       ))}
     </ul>
   );

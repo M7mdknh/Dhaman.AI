@@ -46,13 +46,13 @@ function KpiCard({
 
         {score === null ? (
           <div className="mt-4 flex flex-1 flex-col justify-end">
-            <p className="text-3xl font-semibold text-muted-foreground">—</p>
+            <p className="font-display text-3xl font-light text-muted-foreground">—</p>
             <p className="mt-2 text-xs text-muted-foreground">{emptyHint ?? caption}</p>
           </div>
         ) : (
           <>
             <div className="mt-5 flex items-baseline gap-1.5">
-              <span className="text-5xl font-semibold tabular-nums tracking-tight text-foreground">
+              <span className="font-display text-6xl font-light tabular-nums tracking-tight text-foreground">
                 <AnimatedNumber value={score} />
               </span>
               <span className="text-sm text-muted-foreground">/ 100</span>

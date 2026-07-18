@@ -1,9 +1,7 @@
-import { LogOut } from "lucide-react";
-
-import { logoutAction } from "@/app/(auth)/actions";
+import { CommandPalette } from "@/components/layout/command-palette";
 import { Logo } from "@/components/brand/logo";
+import { SignOutButton } from "@/components/layout/sign-out-button";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 import type { SessionPayload } from "@/lib/auth/token";
 
@@ -18,13 +16,23 @@ const ROLE_LABELS: Record<SessionPayload["role"], string> = {
 const BANK_NAME = "Alinma Bank";
 
 export function Topbar({ session }: { session: SessionPayload }) {
+  const isBankStaff = session.role !== "CONTRACTOR";
   return (
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/90 px-4 backdrop-blur-sm md:px-6">
       {/* Brand shows here on mobile where the sidebar is hidden. */}
       <div className="md:hidden">
         <Logo />
       </div>
-      <div className="hidden md:block" />
+      {/* Bank staff get the ⌘K command palette; contractors get the section
+          label (their world is a handful of their own cases, reached from the
+          dashboard — a search palette would be empty theatre). */}
+      {isBankStaff ? (
+        <CommandPalette />
+      ) : (
+        <p className="hidden text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground md:block">
+          Corporate Underwriting
+        </p>
+      )}
 
       <div className="flex items-center gap-3">
         <div className="hidden text-right sm:block">
@@ -36,12 +44,7 @@ export function Topbar({ session }: { session: SessionPayload }) {
           </p>
         </div>
         <Badge variant="secondary">{ROLE_LABELS[session.role]}</Badge>
-        <form action={logoutAction}>
-          <Button type="submit" variant="ghost" size="sm" aria-label="Sign out">
-            <LogOut className="size-4" aria-hidden />
-            <span className="hidden sm:inline">Sign out</span>
-          </Button>
-        </form>
+        <SignOutButton />
       </div>
     </header>
   );

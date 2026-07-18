@@ -39,6 +39,7 @@ Rules:
 - Respond with a single JSON object and nothing else. No Markdown, no code fences, no commentary.
 - Never calculate, estimate, or adjust financial ratios or figures — quote the provided values verbatim.
 - Never invent financial information, company history, or market context that is not in the input.
+- Every specific claim must be traceable to a field in the JSON. Do not assert classifications, grades, largest-project values, or any figure that does not appear in the input — if a fact is not provided, omit it or list it under missingInformation instead.
 - Write in clear professional banking English, suitable for an internal credit memo.
 
 Return exactly this JSON shape:

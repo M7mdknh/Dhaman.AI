@@ -20,7 +20,7 @@ export function StatCard({ label, value, icon: Icon, hint }: StatCardProps) {
         </span>
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-muted-foreground">{label}</p>
-          <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground">
+          <p className="font-display text-2xl font-light tabular-nums tracking-tight text-foreground">
             {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
           </p>
           {hint && <p className="truncate text-[11px] text-muted-foreground">{hint}</p>}

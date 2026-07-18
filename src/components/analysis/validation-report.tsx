@@ -185,11 +185,11 @@ export function AssessmentUnavailable() {
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         Can the bank issue this guarantee?
       </p>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="reveal-stamp mt-3 flex items-center gap-3">
         <ShieldAlert className={cn("size-8 shrink-0 sm:size-9", TEXT_TONE.red)} aria-hidden />
         <h1
           className={cn(
-            "text-3xl font-semibold leading-none tracking-tight sm:text-4xl",
+            "font-display text-3xl font-light leading-tight tracking-tight sm:text-4xl",
             TEXT_TONE.red,
           )}
         >

@@ -21,9 +21,6 @@ export function Sidebar({ role }: { role: Role }) {
         </Link>
       </div>
       <nav className="flex-1 space-y-0.5 p-3" aria-label="Main navigation">
-        <p className="px-2 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Overview
-        </p>
         {items.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (

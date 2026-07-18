@@ -154,8 +154,9 @@ export const QUALITATIVE = {
   projectsCompleted: { OVER_25: 1, FROM_10_TO_25: 0.7, FROM_5_TO_10: 0.4, UNDER_5: 0.1 },
   nitaqat: { PLATINUM: 1, GREEN: 0.7, YELLOW: 0.3, RED: 0 },
   /** (backlog + contract) / revenue: ≤1.5× → 1, ≥4× → 0. An over-committed
-   * contractor delays everything at once. */
-  capacityHeadroom: { ceil: 1.5, floor: 4.0 },
+   * contractor delays everything at once. `warn` raises the MEDIUM
+   * capacity-strain flag before the HIGH one fires at `floor`. */
+  capacityHeadroom: { ceil: 1.5, floor: 4.0, warn: 2.5 },
   bands: { low: 15, moderate: 35, high: 55, critical: 75 },
 } as const;
 

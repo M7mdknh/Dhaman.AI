@@ -1,7 +1,6 @@
 "use server";
 
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 
 import { createSession, destroySession, getSession } from "@/lib/auth/session";
 import { loginSchema, registerSchema } from "@/lib/validation/auth";
@@ -39,7 +38,9 @@ export async function loginAction(
   }
 
   await createSession(outcome.session);
-  redirect("/dashboard");
+  // No redirect() here — the client performs a full navigation once the
+  // cookie is set (see AuthFormState.success for the cross-browser why).
+  return { error: null, fieldErrors: {}, success: true };
 }
 
 export async function registerAction(
@@ -57,12 +58,13 @@ export async function registerAction(
   }
 
   await createSession(result.session);
-  redirect("/dashboard");
+  return { error: null, fieldErrors: {}, success: true };
 }
 
 export async function logoutAction(): Promise<void> {
   const session = await getSession();
   if (session) await recordLogout(session.userId);
   await destroySession();
-  redirect("/login");
+  // The client navigates after this resolves (same cross-browser rule as
+  // login: cookie changes must not ride a same-fetch redirect chain).
 }

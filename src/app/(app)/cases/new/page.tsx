@@ -23,7 +23,7 @@ export default async function NewCasePage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+        <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
           New Underwriting Case
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">

@@ -1,20 +1,17 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 
-import { StatusBadge } from "@/components/cases/status-badge";
-import { PriorityBadge } from "@/components/review/priority-badge";
+import { QueueRow } from "@/components/review/queue-row";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate, formatMoneyWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import type { QueueResult, QueueTab } from "@/services/officer-case-service";
@@ -99,7 +96,7 @@ export function QueueTable({
                   <TableHead>Company</TableHead>
                   <TableHead>Contract</TableHead>
                   <TableHead className="text-right">Guarantee</TableHead>
-                  <TableHead className="text-right">Capacity</TableHead>
+                  <TableHead className="hidden text-right 2xl:table-cell">Capacity</TableHead>
                   <TableHead className="text-right">Risk</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
@@ -109,47 +106,7 @@ export function QueueTable({
               </TableHeader>
               <TableBody>
                 {result.rows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Link
-                        href={`/review/${row.id}`}
-                        className="font-medium text-foreground underline-offset-4 hover:underline"
-                      >
-                        {row.reference}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="max-w-44 truncate">{row.companyName}</TableCell>
-                    <TableCell className="max-w-56 truncate text-muted-foreground">
-                      {row.contractTitle ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.guaranteeAmount
-                        ? formatMoneyWhole(row.guaranteeAmount, row.currency)
-                        : "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.capacityScore ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {row.riskScore !== null ? (
-                        <span title={row.riskBand ?? undefined}>{row.riskScore}</span>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <PriorityBadge priority={row.priority} />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={row.status} />
-                    </TableCell>
-                    <TableCell className="hidden max-w-36 truncate text-muted-foreground 2xl:table-cell">
-                      {row.assignedOfficer ?? "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {row.submittedAt ? formatDate(row.submittedAt) : "—"}
-                    </TableCell>
-                  </TableRow>
+                  <QueueRow key={row.id} row={row} />
                 ))}
               </TableBody>
             </Table>

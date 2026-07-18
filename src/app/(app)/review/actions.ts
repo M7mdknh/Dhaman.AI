@@ -44,9 +44,9 @@ function revalidateReview(caseId: string) {
   revalidatePath("/dashboard");
   revalidatePath(`/review/${caseId}`);
   // Officer/RM actions change status fields (e.g. INFO_REQUESTED) that the
-  // contractor's own case page and list render — without this, a contractor
-  // with the page already open keeps seeing the stale prior status.
-  revalidatePath("/cases");
+  // contractor's own case page renders — without this, a contractor with the
+  // page already open keeps seeing the stale prior status. (The contractor's
+  // case LIST lives on /dashboard, revalidated above — /cases has no index.)
   revalidatePath(`/cases/${caseId}`);
 }
 

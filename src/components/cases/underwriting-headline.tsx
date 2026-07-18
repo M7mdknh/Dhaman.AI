@@ -48,7 +48,7 @@ function ScoreTile({ label, score, tone }: { label: string; score: number | null
         <p className="mt-1 text-sm text-muted-foreground">—</p>
       ) : (
         <>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+          <p className="font-display mt-1 text-3xl font-light tabular-nums text-foreground">
             {score}
             <span className="text-sm font-normal text-muted-foreground">/100</span>
           </p>
@@ -94,7 +94,7 @@ export function UnderwritingHeadlineCard({ headline }: { headline: UnderwritingH
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Rating</p>
           <p
             className={cn(
-              "mt-1 text-2xl font-bold tabular-nums",
+              "font-display mt-1 text-3xl font-light tabular-nums",
               ratingTone(headline.rating) === "emerald" && "text-emerald-600 dark:text-emerald-400",
               ratingTone(headline.rating) === "amber" && "text-amber-600 dark:text-amber-400",
               ratingTone(headline.rating) === "red" && "text-red-600 dark:text-red-400",

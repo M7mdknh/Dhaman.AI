@@ -348,17 +348,24 @@ export async function submitCase(userId: string, caseId: string): Promise<Action
   }
 
   // One fast, atomic write: the case is saved and processing is armed together.
-  await prisma.$transaction(async (tx) => {
-    await tx.underwritingCase.update({
-      where: { id: caseId },
+  // Conditional on status (race guard): a double-click or second tab must not
+  // submit twice — only the writer that actually flips DRAFT proceeds.
+  const committed = await prisma.$transaction(async (tx) => {
+    const moved = await tx.underwritingCase.updateMany({
+      where: { id: caseId, status: "DRAFT" },
       data: { status: "PROCESSING", submittedAt: new Date() },
     });
+    if (moved.count === 0) return false;
     await tx.document.updateMany({
       where: { caseId, docType: "FINANCIAL_STATEMENT" },
       data: { processingStatus: "QUEUED" },
     });
     await enqueueProcessing(tx, caseId);
+    return true;
   });
+  if (!committed) {
+    return { ok: false, error: "This case has already been submitted." };
+  }
 
   await recordAudit({
     action: "case.submitted",

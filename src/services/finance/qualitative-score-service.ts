@@ -323,7 +323,7 @@ export function detectQualitativeFlags(
         ? [{ label: "Latest revenue", fiscalYear: latest.fiscalYear, value: latest.revenue.toFixed(2) }]
         : [],
     });
-  } else if (headroom !== null && headroom >= 2.5) {
+  } else if (headroom !== null && headroom >= QUALITATIVE.capacityHeadroom.warn) {
     flags.push({
       type: "CAPACITY_STRAIN",
       severity: "MEDIUM",

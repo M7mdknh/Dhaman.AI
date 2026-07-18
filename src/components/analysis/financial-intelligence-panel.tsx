@@ -9,6 +9,7 @@ import { VerdictHero } from "@/components/analysis/verdict-hero";
 import { buildValidationReport, needsValidationReport } from "@/lib/finance/confidence";
 import { deriveHeadline } from "@/lib/finance/headline";
 
+import type { RatioEvidenceByYear } from "@/lib/finance/ratio-evidence";
 import type { FinancialIntelligenceReport } from "@/lib/finance/types";
 import type { IntegrityReport } from "@/services/finance/financial-integrity-validator";
 
@@ -47,8 +48,11 @@ export function FinancialIntelligencePanel({
   report,
   integrity,
   unreadYears = [],
+  ratioEvidence,
 }: {
   report: FinancialIntelligenceReport;
+  /** Numerator/denominator behind each ratio — makes the ratio cells clickable. */
+  ratioEvidence?: RatioEvidenceByYear;
   /**
    * The Financial Integrity Validator's verdict on the statements behind this
    * report. Optional only so hosts without it still render; every host that
@@ -146,6 +150,7 @@ export function FinancialIntelligencePanel({
           ratiosByYear={report.ratiosByYear}
           currency={report.currency}
           orderOfLiquidity={report.disclosures.orderOfLiquidity}
+          evidence={ratioEvidence}
         />
         <GrowthTable periods={report.growthPeriods} />
       </section>

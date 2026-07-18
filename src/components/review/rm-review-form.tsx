@@ -162,7 +162,17 @@ export function RmReviewForm({
               A recommendation for the Risk Officer — never binding. The Officer reviews it
               alongside the case and makes the final call.
             </p>
-            {DECISION_OPTIONS.map((option) => (
+            {DECISION_OPTIONS.map((rawOption) => {
+              // The officer's REQUEST_INFO hint describes an ACTION ("pause
+              // the review") — as a suggestion nothing pauses, so reword it.
+              const option =
+                rawOption.value === "REQUEST_INFO"
+                  ? {
+                      ...rawOption,
+                      hint: "Suggest asking the applicant for more information first.",
+                    }
+                  : rawOption;
+              return (
               <label
                 key={option.value}
                 className={cn(
@@ -188,7 +198,8 @@ export function RmReviewForm({
                   <span className="block text-xs text-muted-foreground">{option.hint}</span>
                 </span>
               </label>
-            ))}
+              );
+            })}
           </fieldset>
 
           <div className="space-y-1.5">

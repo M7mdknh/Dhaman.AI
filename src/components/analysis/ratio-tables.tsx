@@ -1,4 +1,7 @@
+"use client";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -8,7 +11,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoneyWhole, formatPercent, formatRatio } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
+import type { RatioEvidence, RatioEvidenceByYear } from "@/lib/finance/ratio-evidence";
 import type { GrowthKey, GrowthPeriod, RatioKey, YearRatios } from "@/lib/finance/types";
 
 type Display = "ratio" | "percent";
@@ -85,16 +90,118 @@ const ORDER_OF_LIQUIDITY_CASH_FLOW_NOTE =
   "Operating Cash Flow Ratio is not disclosed — it needs current liabilities, and this balance sheet is " +
   "presented in order of liquidity, without a current/non-current split. DSCR and EBITDA Coverage are unaffected.";
 
+/** The popover body: formula + the exact statement lines behind the number. */
+function EvidenceBody({
+  label,
+  fiscalYear,
+  display,
+  value,
+  currency,
+  evidence,
+}: {
+  label: string;
+  fiscalYear: number;
+  display: Display;
+  value: number | null;
+  currency: string;
+  evidence: RatioEvidence;
+}) {
+  const part = (p: RatioEvidence["numerator"]) =>
+    p.value === null ? "—" : formatMoneyWhole(p.value, currency);
+  return (
+    <div className="space-y-2.5">
+      <div>
+        <p className="text-[13px] font-semibold text-foreground">{label}</p>
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">FY{fiscalYear}</p>
+      </div>
+      <p className="rounded-md bg-muted px-2 py-1.5 text-xs text-muted-foreground">
+        {evidence.formula}
+      </p>
+      <dl className="space-y-1">
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-xs text-muted-foreground">{evidence.numerator.label}</dt>
+          <dd className="text-xs font-medium tabular-nums text-foreground">
+            {part(evidence.numerator)}
+          </dd>
+        </div>
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-xs text-muted-foreground">{evidence.denominator.label}</dt>
+          <dd className="text-xs font-medium tabular-nums text-foreground">
+            {part(evidence.denominator)}
+          </dd>
+        </div>
+      </dl>
+      <div className="flex items-baseline justify-between gap-4 border-t border-border pt-2">
+        <span className="text-xs text-muted-foreground">Result</span>
+        <span className="font-display text-lg font-light tabular-nums text-foreground">
+          {format(display, value)}
+        </span>
+      </div>
+      {evidence.note && <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">{evidence.note}</p>}
+    </div>
+  );
+}
+
+/** A single ratio value: interactive (opens its evidence) when computable. */
+function RatioCell({
+  label,
+  fiscalYear,
+  display,
+  value,
+  currency,
+  evidence,
+}: {
+  label: string;
+  fiscalYear: number;
+  display: Display;
+  value: number | null;
+  currency: string;
+  evidence?: RatioEvidence;
+}) {
+  const text = format(display, value);
+  if (!evidence || value === null) {
+    return <TableCell className="text-right tabular-nums">{text}</TableCell>;
+  }
+  return (
+    <TableCell className="p-0 text-right tabular-nums">
+      <Popover>
+        <PopoverTrigger
+          className={cn(
+            "w-full cursor-pointer px-3 py-2 text-right tabular-nums underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 transition-colors",
+            "hover:bg-accent hover:text-foreground data-popup-open:bg-accent",
+          )}
+          aria-label={`${label} FY${fiscalYear}: ${text} — show the figures behind it`}
+        >
+          {text}
+        </PopoverTrigger>
+        <PopoverContent align="end">
+          <EvidenceBody
+            label={label}
+            fiscalYear={fiscalYear}
+            display={display}
+            value={value}
+            currency={currency}
+            evidence={evidence}
+          />
+        </PopoverContent>
+      </Popover>
+    </TableCell>
+  );
+}
+
 /** Per-category ratio tables, one column per fiscal year (ascending). */
 export function RatioTables({
   ratiosByYear,
   currency,
   orderOfLiquidity = false,
+  evidence,
 }: {
   ratiosByYear: YearRatios[];
   currency: string;
   /** True when the balance sheet publishes no current/non-current split. */
   orderOfLiquidity?: boolean;
+  /** Per-year numerator/denominator behind each ratio — makes cells clickable. */
+  evidence?: RatioEvidenceByYear;
 }) {
   const years = ratiosByYear.map((y) => y.fiscalYear);
 
@@ -123,9 +230,15 @@ export function RatioTables({
                     {/* Labels may wrap — the year columns must never be pushed out of view. */}
                     <TableCell className="whitespace-normal text-muted-foreground">{row.label}</TableCell>
                     {ratiosByYear.map((y) => (
-                      <TableCell key={y.fiscalYear} className="text-right tabular-nums">
-                        {format(row.display, y.ratios[row.key])}
-                      </TableCell>
+                      <RatioCell
+                        key={y.fiscalYear}
+                        label={row.label}
+                        fiscalYear={y.fiscalYear}
+                        display={row.display}
+                        value={y.ratios[row.key]}
+                        currency={currency}
+                        evidence={evidence?.[y.fiscalYear]?.[row.key]}
+                      />
                     ))}
                   </TableRow>
                 ))}

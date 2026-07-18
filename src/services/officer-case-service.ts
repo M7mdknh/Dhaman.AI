@@ -322,6 +322,56 @@ export async function getProcessingSla(officerUserId: string): Promise<Processin
   return { averageSeconds: totalMs / jobs.length / 1000, count: jobs.length };
 }
 
+/** One lightweight hit for the ⌘K command palette (no engine recompute). */
+export interface PaletteHit {
+  id: string;
+  reference: string;
+  company: string;
+  status: CaseStatus;
+}
+
+/**
+ * Fast, minimal case search for the command palette — reference / company /
+ * contract, over every post-submission case. Gated to bank staff. Bounded to
+ * a small page: the palette is a jump-to, not a report.
+ */
+export async function searchCasesForPalette(
+  userId: string,
+  query: string,
+): Promise<PaletteHit[]> {
+  const staff = await getBankUser(userId);
+  if (!staff) return [];
+
+  const q = query.trim();
+  const where: Prisma.UnderwritingCaseWhereInput = {
+    status: { not: "DRAFT" },
+    ...(q
+      ? {
+          OR: [
+            { reference: { contains: q, mode: "insensitive" } },
+            { company: { name: { contains: q, mode: "insensitive" } } },
+            { contractDetails: { contractTitle: { contains: q, mode: "insensitive" } } },
+            { contractDetails: { beneficiary: { contains: q, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
+
+  const cases = await prisma.underwritingCase.findMany({
+    where,
+    select: { id: true, reference: true, status: true, company: { select: { name: true } } },
+    orderBy: { updatedAt: "desc" },
+    take: 8,
+  });
+
+  return cases.map((c) => ({
+    id: c.id,
+    reference: c.reference,
+    company: c.company.name,
+    status: c.status,
+  }));
+}
+
 export async function getQueueStats(officerUserId: string): Promise<QueueStats | null> {
   const officer = await getBankUser(officerUserId);
   if (!officer) return null;
