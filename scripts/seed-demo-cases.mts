@@ -45,17 +45,17 @@ const APPLICANTS: Record<
 > = {
   strong: {
     crNumber: "1010111111", // Rawabi Contracting Co.
-    email: "contractor@daman.local",
+    email: "contractor@dhaman.local",
     fullName: "Abdulrahman Yaghmour",
   },
   moderate: {
     crNumber: "2050222222", // Nimah Construction & Trading
-    email: "contractor.nimah@daman.local",
+    email: "contractor.nimah@dhaman.local",
     fullName: "Mona Al-Zahrani",
   },
   weak: {
     crNumber: "4030333333", // Faisal Trading & Contracting Est.
-    email: "contractor.faisal@daman.local",
+    email: "contractor.faisal@dhaman.local",
     fullName: "Faisal Al-Dossary",
   },
 };
@@ -281,7 +281,7 @@ async function ensureApplicant(applicant: {
   const company = await prisma.company.findUniqueOrThrow({
     where: { crNumber: applicant.crNumber },
   });
-  const passwordHash = await bcrypt.hash(process.env.SEED_PASSWORD ?? "Daman!2026", 12);
+  const passwordHash = await bcrypt.hash(process.env.SEED_PASSWORD ?? "Dhaman!2026", 12);
   return prisma.user.upsert({
     where: { email: applicant.email },
     update: { fullName: applicant.fullName, companyId: company.id },

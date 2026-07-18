@@ -15,7 +15,7 @@ const prisma = new PrismaClient({
 // The demo password is a DEVELOPMENT convenience only. Never let it reach a
 // production database — override with SEED_PASSWORD if this seed is ever run
 // against a non-dev environment on purpose.
-const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
+const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Dhaman!2026";
 
 // The Risk Officer's working login is retired for now: the RM absorbs the
 // full review workflow and records a SUGGESTED decision instead (see
@@ -23,10 +23,10 @@ const DEMO_PASSWORD = process.env.SEED_PASSWORD ?? "Daman!2026";
 // and services, but has no seeded account to log in with. Both bank-side
 // demo accounts are RELATIONSHIP_MANAGER; the person and email are kept.
 const USERS: { email: string; fullName: string; role: UserRole }[] = [
-  { email: "admin@daman.local", fullName: "Nawaf Alharthi", role: "ADMIN" },
-  { email: "rm@daman.local", fullName: "Salman Alghamdi", role: "RELATIONSHIP_MANAGER" },
-  { email: "officer@daman.local", fullName: "Omar Alkaltham", role: "RELATIONSHIP_MANAGER" },
-  { email: "contractor@daman.local", fullName: "Abdulrahman Yaghmour", role: "CONTRACTOR" },
+  { email: "admin@dhaman.local", fullName: "Nawaf Alharthi", role: "ADMIN" },
+  { email: "rm@dhaman.local", fullName: "Salman Alghamdi", role: "RELATIONSHIP_MANAGER" },
+  { email: "officer@dhaman.local", fullName: "Omar Alkaltham", role: "RELATIONSHIP_MANAGER" },
+  { email: "contractor@dhaman.local", fullName: "Abdulrahman Yaghmour", role: "CONTRACTOR" },
 ];
 
 const COMPANIES = [
@@ -36,7 +36,7 @@ const COMPANIES = [
     sector: "General Construction",
     city: "Riyadh",
     contactPerson: "Abdulrahman Yaghmour",
-    contactEmail: "contractor@daman.local",
+    contactEmail: "contractor@dhaman.local",
     phone: "+966 50 111 1111",
   },
   {
@@ -72,6 +72,18 @@ async function main() {
   }
 
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 12);
+
+  // Daman → Dhaman rebrand (2026-07): rename any pre-rebrand demo accounts in
+  // place so their cases and history stay attached, and move them onto the
+  // rebranded password. Without this the upserts below would create duplicate
+  // users next to the old ones.
+  for (const user of USERS) {
+    const legacyEmail = user.email.replace("@dhaman.local", "@daman.local");
+    await prisma.user.updateMany({
+      where: { email: legacyEmail },
+      data: { email: user.email, passwordHash },
+    });
+  }
 
   // Companies first — the demo contractor belongs to one.
   const companies = [];

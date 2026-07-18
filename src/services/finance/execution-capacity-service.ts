@@ -1,5 +1,5 @@
 /**
- * ExecutionCapacityService — Daman's core question: can this company
+ * ExecutionCapacityService — Dhaman's core question: can this company
  * financially execute THIS contract?
  *
  * Deterministic weighted scoring, 0–100. Ten components (financial health

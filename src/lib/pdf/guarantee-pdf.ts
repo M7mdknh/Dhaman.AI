@@ -68,7 +68,7 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
 export async function renderGuaranteePdf(data: GuaranteePdfData): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setTitle(`Letter of Guarantee ${data.reference}`);
-  doc.setAuthor("Daman — Corporate Underwriting");
+  doc.setAuthor("Dhaman — Corporate Underwriting");
 
   const page = doc.addPage([PAGE.width, PAGE.height]);
   const regular = await doc.embedFont(StandardFonts.Helvetica);
@@ -85,7 +85,7 @@ export async function renderGuaranteePdf(data: GuaranteePdfData): Promise<Uint8A
     });
 
   // ---- Letterhead
-  page.drawText("DAMAN", { x: MARGIN, y: y - 14, size: 20, font: bold, color: ACCENT });
+  page.drawText("DHAMAN", { x: MARGIN, y: y - 14, size: 20, font: bold, color: ACCENT });
   page.drawText("Corporate Underwriting", {
     x: MARGIN,
     y: y - 28,
@@ -137,7 +137,7 @@ export async function renderGuaranteePdf(data: GuaranteePdfData): Promise<Uint8A
   const paragraphs = [
     `To: ${data.beneficiary}`,
     `At the request of ${data.companyName} (Commercial Registration No. ${data.crNumber}), ` +
-      `we, Daman — Corporate Underwriting, hereby irrevocably and unconditionally guarantee ` +
+      `we, Dhaman — Corporate Underwriting, hereby irrevocably and unconditionally guarantee ` +
       `payment to you of any amount not exceeding ${formatAmount(data.amount, data.currency)} ` +
       `(the "Guarantee Amount") in connection with the contract "${data.contractTitle}" ` +
       `(underwriting case ${data.caseReference}).`,
@@ -214,7 +214,7 @@ export async function renderGuaranteePdf(data: GuaranteePdfData): Promise<Uint8A
 
   // ---- Footer
   const footer =
-    "This Letter of Guarantee was generated electronically by the Daman underwriting platform " +
+    "This Letter of Guarantee was generated electronically by the Dhaman underwriting platform " +
     "and is valid without a handwritten signature.";
   const footerLines = wrapText(footer, regular, 7.5, contentWidth);
   let footerY = MARGIN - 6 + footerLines.length * 10;
@@ -235,7 +235,7 @@ function drawSignatureBlock(
   y: number,
   officerName: string,
 ) {
-  page.drawText("For and on behalf of Daman", {
+  page.drawText("For and on behalf of Dhaman", {
     x,
     y: y - 12,
     size: 9,

@@ -21,7 +21,7 @@ export function Logo({
         className,
       )}
     >
-      Daman
+      Dhaman
       <span className={inverse ? "text-emerald-300" : "text-primary"}>.</span>
     </span>
   );

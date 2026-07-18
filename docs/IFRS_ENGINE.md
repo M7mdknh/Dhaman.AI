@@ -88,7 +88,7 @@ a wrong figure in underwriting is worse than a missing one.
 
 ## Hybrid extraction — text-layer first, GPT-Vision for scanned
 
-Daman is an AI underwriting platform, not an OCR engine — extraction exists only
+Dhaman is an AI underwriting platform, not an OCR engine — extraction exists only
 to feed underwriting. The pipeline picks the cheapest engine that yields the
 core figures (`src/services/extraction-service.ts` → `processDocument`):
 

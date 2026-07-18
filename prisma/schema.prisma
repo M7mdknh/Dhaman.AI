@@ -1,4 +1,4 @@
-// Daman — initial schema (Sprint 0).
+// Dhaman — initial schema (Sprint 0).
 // Financial analysis is deliberately NOT persisted (decision 2026-07-06):
 // it is computed on demand from FinancialStatement rows — see
 // docs/FINANCIAL_ENGINE.md. The Sprint 4 DecisionIntelligence rows freeze

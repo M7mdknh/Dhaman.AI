@@ -16,7 +16,7 @@ export function Sidebar({ role }: { role: Role }) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
       <div className="flex h-14 items-center border-b border-sidebar-border px-4">
-        <Link href="/dashboard" aria-label="Daman home">
+        <Link href="/dashboard" aria-label="Dhaman home">
           <Logo />
         </Link>
       </div>

@@ -23,8 +23,8 @@ const newsreader = Newsreader({
 
 export const metadata: Metadata = {
   title: {
-    default: "Daman — Corporate Underwriting",
-    template: "%s · Daman",
+    default: "Dhaman — Corporate Underwriting",
+    template: "%s · Dhaman",
   },
   description:
     "AI-powered Letter of Guarantee underwriting. The AI prepares the package; the Risk Officer decides.",

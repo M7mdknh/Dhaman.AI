@@ -1,5 +1,5 @@
 /**
- * MockProvider — the no-API-key fallback that keeps Daman deployable and
+ * MockProvider — the no-API-key fallback that keeps Dhaman deployable and
  * demoable without AI. It reads the SAME structured JSON input the real
  * providers receive and assembles the memo fields from deterministic
  * template sentences. Every generated text is prefixed so nobody can

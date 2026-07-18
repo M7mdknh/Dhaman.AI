@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build, launch, and drive the Daman app to verify a change end-to-end (prod server + Playwright).
+description: Build, launch, and drive the Dhaman app to verify a change end-to-end (prod server + Playwright).
 ---
 
-# Verifying Daman changes
+# Verifying Dhaman changes
 
 Node is not on the non-interactive PATH — prefix every command:
 `export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"`
@@ -19,12 +19,12 @@ Node is not on the non-interactive PATH — prefix every command:
 - The database is remote Neon (`DATABASE_URL`) — CLI latency ≫ app latency, and
   cold connects can transiently `ETIMEDOUT`; just retry.
 
-## Demo logins (password `Daman!2026`)
+## Demo logins (password `Dhaman!2026`)
 
-- `contractor@daman.local` (Rawabi), `contractor.nimah@daman.local`,
-  `contractor.faisal@daman.local`
-- `rm@daman.local` and `officer@daman.local` (both Relationship Managers —
-  the Risk Officer login is retired; only `admin@daman.local` can record
+- `contractor@dhaman.local` (Rawabi), `contractor.nimah@dhaman.local`,
+  `contractor.faisal@dhaman.local`
+- `rm@dhaman.local` and `officer@dhaman.local` (both Relationship Managers —
+  the Risk Officer login is retired; only `admin@dhaman.local` can record
   decisions and issue guarantees)
 
 ## Creating test cases

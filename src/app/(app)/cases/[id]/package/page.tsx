@@ -202,7 +202,7 @@ export default async function UnderwritingPackagePage({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Daman — Corporate Underwriting
+              Dhaman — Corporate Underwriting
             </p>
             <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
               {underwritingCase.company.name}

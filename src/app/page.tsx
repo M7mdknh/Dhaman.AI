@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
  * Organization & typography follow the Casca (cascading.ai) register: a slim
  * announcement bar, a centered nav, an oversized light SERIF display headline
  * over sans body copy, a statement section, numbered feature rows, and a
- * closing serif CTA. Colors stay 100% on the Daman theme tokens.
+ * closing serif CTA. Colors stay 100% on the Dhaman theme tokens.
  */
 export default function LandingPage() {
   return (
@@ -62,10 +62,10 @@ export default function LandingPage() {
             AI-powered corporate underwriting for Saudi banks
           </p>
           <h1 className="font-display mx-auto mt-6 max-w-4xl text-[clamp(2.9rem,7.5vw,6rem)] font-light leading-[1.02] tracking-tight text-foreground">
-            Underwrite guarantees in <em className="text-primary">minutes</em>, not days.
+            Underwrite guarantees in <em className="text-primary">minutes</em>, not weeks.
           </h1>
           <p className="mx-auto mt-7 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-            Daman turns audited financial statements into a decision-ready underwriting
+            Dhaman turns audited financial statements into a decision-ready underwriting
             package — a deterministic financial assessment in seconds, an AI-drafted credit
             memo, and a Risk Officer who always makes the final call.
           </p>
@@ -103,7 +103,7 @@ export default function LandingPage() {
               Letter of Guarantee underwriting can be effortless.
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground">
-              Daman works the way a bank does: transparent financial engines produce every
+              Dhaman works the way a bank does: transparent financial engines produce every
               number, the AI explains the analysis in bank-grade language, and the Risk
               Officer stays the only decision maker.
             </p>
@@ -184,7 +184,7 @@ export default function LandingPage() {
         <section className="border-t border-border">
           <div className="mx-auto max-w-6xl px-6 py-20 text-center sm:py-28">
             <h2 className="font-display mx-auto max-w-2xl text-4xl font-light leading-[1.1] tracking-tight text-foreground sm:text-5xl">
-              It&apos;s time to underwrite with Daman.
+              It&apos;s time to underwrite with Dhaman.
             </h2>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link href="/register" className={cn(buttonVariants({ size: "lg" }))}>
@@ -206,7 +206,7 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 sm:flex-row">
           <Logo />
           <p className="text-xs text-muted-foreground">
-            Daman — AI-powered Corporate Underwriting Platform
+            Dhaman — AI-powered Corporate Underwriting Platform
           </p>
         </div>
       </footer>

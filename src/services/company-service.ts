@@ -1,7 +1,7 @@
 /**
  * Company profile business logic (wizard Step 1).
  *
- * A contractor user may register before their company exists in Daman, so
+ * A contractor user may register before their company exists in Dhaman, so
  * the first save creates the Company and links the user to it. Subsequent
  * saves update the same company.
  */

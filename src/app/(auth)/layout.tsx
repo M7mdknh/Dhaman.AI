@@ -20,7 +20,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           ضمان
         </span>
 
-        <Link href="/" aria-label="Daman home" className="relative">
+        <Link href="/" aria-label="Dhaman home" className="relative">
           <Logo inverse />
         </Link>
 
@@ -31,7 +31,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             years.
           </h2>
           <p className="mt-5 text-sm leading-relaxed text-white/70">
-            Daman prepares the underwriting package: deterministic financial
+            Dhaman prepares the underwriting package: deterministic financial
             intelligence, an AI-drafted memo, and a clean decision trail. Your
             Risk Officer makes the call.
           </p>
@@ -68,7 +68,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       {/* ---- Form pane */}
       <main className="flex min-h-screen flex-col px-6 py-8 sm:px-10">
         <div className="flex justify-between lg:justify-end">
-          <Link href="/" aria-label="Daman home" className="lg:hidden">
+          <Link href="/" aria-label="Dhaman home" className="lg:hidden">
             <Logo />
           </Link>
           <Link

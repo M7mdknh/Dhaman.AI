@@ -1,4 +1,4 @@
-# Daman — Architecture
+# Dhaman — Architecture
 
 ## Stack
 

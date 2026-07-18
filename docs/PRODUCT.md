@@ -1,6 +1,6 @@
-# Daman — Product Definition
+# Dhaman — Product Definition
 
-Daman is an **AI-powered corporate underwriting platform** that evaluates a
+Dhaman is an **AI-powered corporate underwriting platform** that evaluates a
 company's ability to execute a specific contract by combining IFRS financial
 analysis and contract characteristics — and, when available in the future,
 banking exposure. It prepares a complete underwriting package for a bank Risk
@@ -10,7 +10,7 @@ Document extraction is only one component. The product optimizes for
 delivering underwriting value *quickly* — during the MVP, speed and user
 experience take priority over perfect financial statement reconstruction.
 
-Daman does NOT replace the bank. The AI assists; the human decides.
+Dhaman does NOT replace the bank. The AI assists; the human decides.
 
 ---
 
@@ -24,7 +24,7 @@ and credit memos are written manually. The process takes days.
 
 The contractor submits a guarantee request with contract details and audited
 IFRS financial statements (latest year required; previous years optional).
-Daman:
+Dhaman:
 
 1. Extracts the statements into structured figures — text-layer first, then
    GPT-Vision for scanned/damaged documents (AI reads the document; it never

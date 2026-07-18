@@ -173,7 +173,7 @@ export async function renderUnderwritingPackagePdf(
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   doc.setTitle(`Underwriting Package — ${data.caseReference}`);
-  doc.setAuthor("Daman — Corporate Underwriting");
+  doc.setAuthor("Dhaman — Corporate Underwriting");
 
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -321,7 +321,7 @@ export async function renderUnderwritingPackagePdf(
       height: logoHeight,
     });
   } else {
-    page.drawText("DAMAN", { x: MARGIN, y: y - 14, size: 20, font: bold, color: ACCENT });
+    page.drawText("DHAMAN", { x: MARGIN, y: y - 14, size: 20, font: bold, color: ACCENT });
     page.drawText("Corporate Underwriting — Alinma Bank", {
       x: MARGIN,
       y: y - 28,
@@ -695,7 +695,7 @@ export async function renderUnderwritingPackagePdf(
   // ================================================================ Footer (every page)
   const pages = doc.getPages();
   const footerText =
-    "Prepared by the Daman Corporate Underwriting Platform. All ratios and scores are computed " +
+    "Prepared by the Dhaman Corporate Underwriting Platform. All ratios and scores are computed " +
     "deterministically from the audited IFRS statements; AI-drafted sections are labelled and " +
     "never alter a figure. Confidential — internal use only.";
   pages.forEach((p, index) => {

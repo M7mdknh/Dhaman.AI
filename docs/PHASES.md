@@ -1,4 +1,4 @@
-# Daman — Delivery Phases
+# Dhaman — Delivery Phases
 
 The MVP is delivered in sprints (see `TODO.md` for the task-level roadmap).
 Every sprint ends with a deployable application.

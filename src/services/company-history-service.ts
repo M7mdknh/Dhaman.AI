@@ -4,7 +4,7 @@
  * contracts, guarantees, decision outcomes, and the bank's own aggregate
  * exposure to the company. Powers the bank-side company page and the
  * Insight Chat's cross-case context ("what else does this company have
- * with us?"), and is the within-Daman replacement for the deferred SIMAH
+ * with us?"), and is the within-Dhaman replacement for the deferred SIMAH
  * over-issuance check.
  *
  * Bank staff only — a contractor sees their own cases via the dashboard.

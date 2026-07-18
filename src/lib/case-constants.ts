@@ -67,7 +67,7 @@ export const SECTOR_OPTIONS = [
   "Information Technology",
   "Manufacturing",
   // Financial companies (banks, fintech/BNPL — e.g. Tamara) can also be
-  // Daman applicants, not only construction/industrial contractors.
+  // Dhaman applicants, not only construction/industrial contractors.
   "Banking & Financial Services",
   "Fintech & Digital Payments (BNPL)",
   "Insurance",

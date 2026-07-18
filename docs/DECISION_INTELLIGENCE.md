@@ -1,6 +1,6 @@
 # Decision Intelligence Engine
 
-Sprint 4. The AI layer of Daman: it **explains** the deterministic financial
+Sprint 4. The AI layer of Dhaman: it **explains** the deterministic financial
 intelligence for the Risk Officer. It never calculates, never invents, and
 never decides — the recommendation of record is derived deterministically
 from the risk band by bank policy, and the final decision always rests with

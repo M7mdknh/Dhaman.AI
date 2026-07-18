@@ -1,4 +1,4 @@
-# Daman
+# Dhaman
 
 > AI-Powered Corporate Underwriting Platform for Saudi Banks
 
@@ -6,7 +6,7 @@
 
 ## Vision
 
-Daman is an AI-powered underwriting platform that helps banks evaluate Letter of Guarantee (LG) requests in minutes instead of days.
+Dhaman is an AI-powered underwriting platform that helps banks evaluate Letter of Guarantee (LG) requests in minutes instead of days.
 
 The platform does **not** replace the bank.
 
@@ -32,7 +32,7 @@ The process often takes several days.
 
 ## Solution
 
-Daman automates the underwriting preparation process.
+Dhaman automates the underwriting preparation process.
 
 The company submits
 
@@ -287,10 +287,10 @@ submission:
 
 | Email | Role | Password |
 | --- | --- | --- |
-| admin@daman.local | Admin | `Daman!2026` |
-| rm@daman.local | Relationship Manager | `Daman!2026` |
-| officer@daman.local | Risk Officer | `Daman!2026` |
-| contractor@daman.local | Contractor | `Daman!2026` |
+| admin@dhaman.local | Admin | `Dhaman!2026` |
+| rm@dhaman.local | Relationship Manager | `Dhaman!2026` |
+| officer@dhaman.local | Risk Officer | `Dhaman!2026` |
+| contractor@dhaman.local | Contractor | `Dhaman!2026` |
 
 ### Scripts
 
@@ -310,7 +310,7 @@ Project documentation: `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`,
 
 ## Product Philosophy
 
-Daman is an AI-powered underwriting platform, not an OCR engine — it
+Dhaman is an AI-powered underwriting platform, not an OCR engine — it
 optimizes for delivering a believable underwriting assessment quickly.
 
 Financial calculations are always deterministic. The AI is used only for

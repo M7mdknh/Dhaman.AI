@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-# Daman
+# Dhaman
 
 ## AI-Powered Corporate Underwriting Platform
 
@@ -8,7 +8,7 @@
 
 # Mission
 
-Daman is an AI-powered Corporate Underwriting Platform that assists banks in issuing Letters of Guarantee faster, more consistently and more transparently.
+Dhaman is an AI-powered Corporate Underwriting Platform that assists banks in issuing Letters of Guarantee faster, more consistently and more transparently.
 
 The platform is NOT an OCR product.
 
@@ -185,7 +185,7 @@ not architectural rewrites.
 
 # Financial Intelligence Engine
 
-The Financial Intelligence Engine is the heart of Daman.
+The Financial Intelligence Engine is the heart of Dhaman.
 
 It is ALWAYS deterministic.
 
@@ -345,7 +345,7 @@ The objective is
 
 demonstrating believable AI-powered underwriting.
 
-Judges should understand the value of Daman within the first minute.
+Judges should understand the value of Dhaman within the first minute.
 
 ---
 
@@ -591,6 +591,6 @@ Never build features that judges will never see.
 
 # North Star
 
-Daman exists to help banks issue better guarantees faster.
+Dhaman exists to help banks issue better guarantees faster.
 
 Everything else is secondary.

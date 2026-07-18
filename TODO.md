@@ -1,6 +1,6 @@
 # TODO.md
 
-# Daman Roadmap
+# Dhaman Roadmap
 
 ## AI-Powered Corporate Underwriting Platform
 
@@ -356,7 +356,7 @@ Checklist (verified 2026-07-14)
 - [x] Weak case verified (Faisal — 13 / 92 / REJECT, High priority)
 - [x] AI memo verified (all three generated live, prompt v3, consistent names —
       still valid; regenerations now use prompt v4 with the product analysis focus)
-- [x] RM flow verified live (rm@daman.local: refine memo → submit to Risk
+- [x] RM flow verified live (rm@dhaman.local: refine memo → submit to Risk
       Officer → officer sees RM Assessment + starts review; 2026-07-14)
 - [x] Letter of Credit verified live (wizard option + focus hint, full
       pipeline run to ANALYSIS_READY, officer review; 2026-07-14)

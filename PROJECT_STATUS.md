@@ -1,11 +1,11 @@
 # PROJECT STATUS
 
-> Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
+> Living snapshot of where Dhaman V2 stands. Read this + `TODO.md` at the start
 > of any session. **Last updated: 2026-07-18.**
 
 ## Product framing
 
-Daman is an **AI-powered Corporate Underwriting Platform**, not an IFRS parser
+Dhaman is an **AI-powered Corporate Underwriting Platform**, not an IFRS parser
 — document extraction is one component. The product optimizes for delivering a
 believable underwriting assessment *quickly*; during the MVP, speed and user
 experience take priority over perfect financial statement reconstruction. The
@@ -133,7 +133,7 @@ explicit decision). 232/232 tests, typecheck + lint + prod build clean.
   the recommendation of record, never any score. New deterministic
   cross-checks/flags: sector mismatch, experience gap, capacity headroom
   ((backlog + contract)/revenue), guarantee burden vs equity (the
-  within-Daman over-issuance check), cash-gap coverage, thin margin, margin
+  within-Dhaman over-issuance check), cash-gap coverage, thin margin, margin
   realism vs audited gross margin, bond-% consistency, bond tail risk.
   All thresholds in `lib/finance/thresholds.ts` (QUALITATIVE, CONTRACT_RISK,
   PILLARS, HARD_CAPS). Headline/queue/priority/memo policy now read
@@ -531,12 +531,12 @@ underwriting (not document processing). Root causes found and fixed:
 
 ### Post-MVP — Framework conformance: RM stage + Letter of Credit + SLA metric (2026-07-14)
 
-Aligns the product with the Daman framework document (except the 48h SLA — the
+Aligns the product with the Dhaman framework document (except the 48h SLA — the
 demo competes on seconds). All verified live (prod build, Playwright, real
 Neon + R2 + pipeline):
 
 - **Relationship Manager role + review stage (framework step 8).** New
-  `RELATIONSHIP_MANAGER` role (`rm@daman.local`, Salman Alghamdi) and case
+  `RELATIONSHIP_MANAGER` role (`rm@dhaman.local`, Salman Alghamdi) and case
   status `RM_REVIEWED`. The RM shares the bank read paths (queue, case detail,
   notes, memo generation) via `getBankUser`; decisions/issuance stay
   officer-only. The RM refines the AI memo through **append-only, versioned
@@ -765,7 +765,7 @@ cleanly. typecheck + lint clean.
 
 ### Post-MVP — Hybrid GPT-Vision Extraction (2026-07-08)
 
-Philosophy shift: Daman is an AI underwriting platform, not an OCR engine.
+Philosophy shift: Dhaman is an AI underwriting platform, not an OCR engine.
 Extraction now picks the cheapest engine that yields the core underwriting
 figures. No schema migration. See `docs/IFRS_ENGINE.md` → "Hybrid extraction".
 
@@ -816,7 +816,7 @@ package in <10s**. No schema migration. See `docs/ASYNC_PROCESSING.md`.
 
 ### Post-MVP — Remote-DB critical-path collapse + Express/Comprehensive modes (2026-07-08)
 
-Philosophy: Daman is an AI underwriting platform, not an OCR engine — optimize
+Philosophy: Dhaman is an AI underwriting platform, not an OCR engine — optimize
 for a believable assessment in seconds. **Measurement first** (`scripts/measure-latency.mts`,
 `scripts/drive-processing.mts`): with the demo DB on **remote Neon (us-east-1,
 ~175ms/round-trip)**, the deterministic engine is ~1ms and digital extraction
@@ -1144,13 +1144,25 @@ sprints (auth hardening → backlog).
   issue LG → download PDF; reject + request-info paths; contractor
   visibility restrictions). See `docs/UNDERWRITING_WORKSPACE.md`.
 
+### Rebrand — Daman → Dhaman (2026-07-18)
+
+- Product renamed **Daman → Dhaman** across every user-facing surface: wordmark,
+  page titles/metadata, landing + auth copy, sidebar, PDF headers/authors/
+  footers (guarantee, financial analysis, underwriting package), Insight Chat
+  persona, docs, and demo credentials (`*@dhaman.local` / `Dhaman!2026`).
+- Seed now renames pre-rebrand `@daman.local` accounts in place (cases stay
+  attached); the live demo DB was migrated the same day.
+- Deliberately NOT renamed (internal identifiers): `daman_session` cookie,
+  `daman-ifrs-ts/1` parser provenance, local Postgres role/db `daman`,
+  `daman-documents` R2 bucket.
+
 ## Demo accounts
 
 | Email | Role | Password |
 | --- | --- | --- |
-| admin@daman.local | Admin | `Daman!2026` |
-| officer@daman.local | Risk Officer | `Daman!2026` |
-| contractor@daman.local | Contractor | `Daman!2026` |
+| admin@dhaman.local | Admin | `Dhaman!2026` |
+| officer@dhaman.local | Risk Officer | `Dhaman!2026` |
+| contractor@dhaman.local | Contractor | `Dhaman!2026` |
 
 ---
 

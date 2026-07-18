@@ -44,7 +44,7 @@ async function main() {
     throw new Error("Run with UNDERWRITING_MODE=comprehensive (partial needs ≥2 documents read)");
   }
   const contractor = await prisma.user.findUniqueOrThrow({
-    where: { email: "contractor@daman.local" },
+    where: { email: "contractor@dhaman.local" },
   });
 
   const draft = await createDraftCase(contractor.id);

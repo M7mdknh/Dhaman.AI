@@ -300,7 +300,7 @@ and fixed template wording. Triggers (all in `thresholds.ts`):
 
 ## Underwriting Capacity (primary KPI)
 
-Daman's core question: **can this company financially execute THIS
+Dhaman's core question: **can this company financially execute THIS
 contract?** 0–100, weighted sum of ten components (financial health 50 +
 contract stress 50); each maps a raw value onto 0–1 by linear clamp
 (`CAPACITY` in `thresholds.ts`):

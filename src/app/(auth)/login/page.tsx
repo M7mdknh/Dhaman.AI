@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { loginAction } from "../actions";
 import { AUTH_FORM_INITIAL } from "../form-state";
 
-const DEMO_PASSWORD = "Daman!2026";
+const DEMO_PASSWORD = "Dhaman!2026";
 const DEMO_ACCOUNTS = [
-  { label: "Relationship Manager", email: "rm@daman.local" },
-  { label: "Contractor", email: "contractor@daman.local" },
-  { label: "Admin", email: "admin@daman.local" },
+  { label: "Relationship Manager", email: "rm@dhaman.local" },
+  { label: "Contractor", email: "contractor@dhaman.local" },
+  { label: "Admin", email: "admin@dhaman.local" },
 ];
 
 export default function LoginPage() {
@@ -43,7 +43,7 @@ export default function LoginPage() {
         Sign in
       </h1>
       <p className="mt-2.5 text-sm text-muted-foreground">
-        Access the Daman underwriting platform.
+        Access the Dhaman underwriting platform.
       </p>
 
       <form ref={formRef} action={formAction} className="mt-9 space-y-5" noValidate>

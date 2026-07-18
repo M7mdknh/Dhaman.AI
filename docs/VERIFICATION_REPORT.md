@@ -1,4 +1,4 @@
-# Daman — Independent Verification Report
+# Dhaman — Independent Verification Report
 
 **AI-Powered Corporate Underwriting Platform**
 Verification date: 17 July 2026 · Environment: production build (`next build`), live Neon PostgreSQL, live Cloudflare R2, live OpenAI
@@ -8,7 +8,7 @@ Method: static quality gates + 244 automated tests + scripted end-to-end walkthr
 
 ## 1. Executive Summary
 
-Every major workflow of the Daman platform was exercised against the **production build** connected to its **real infrastructure** (Neon PostgreSQL, Cloudflare R2 object storage, OpenAI). A disposable underwriting case was driven through the complete lifecycle by browser automation — created and submitted by a Contractor, processed by the live pipeline, reviewed and routed by a Relationship Manager, decided by the final authority, and closed with an issued Letter of Guarantee (`LG-2026-000013`) — with the database interrogated after every step to confirm the state machine behaved exactly as specified.
+Every major workflow of the Dhaman platform was exercised against the **production build** connected to its **real infrastructure** (Neon PostgreSQL, Cloudflare R2 object storage, OpenAI). A disposable underwriting case was driven through the complete lifecycle by browser automation — created and submitted by a Contractor, processed by the live pipeline, reviewed and routed by a Relationship Manager, decided by the final authority, and closed with an issued Letter of Guarantee (`LG-2026-000013`) — with the database interrogated after every step to confirm the state machine behaved exactly as specified.
 
 **Result: 41 of 41 verification checks passed.** All four static quality gates are green (TypeScript, ESLint, 244/244 automated tests, production build). Negative testing confirmed authorization boundaries hold (role isolation, tenant isolation, unauthenticated access), corrupted documents fail gracefully without blocking a case, and the Financial Integrity Validator catches a deliberately falsified balance sheet and refuses to produce a recommendation from it.
 
@@ -56,7 +56,7 @@ Every major workflow of the Daman platform was exercised against the **productio
 
 | # | Feature | Test | Expected | Actual | Status |
 |---|---------|------|----------|--------|:------:|
-| 20 | Login & dashboard | Sign in as `contractor@daman.local` | dashboard with case list & stats | rendered in 2.26 s | ✅ PASS |
+| 20 | Login & dashboard | Sign in as `contractor@dhaman.local` | dashboard with case list & stats | rendered in 2.26 s | ✅ PASS |
 | 21 | Case creation & submission | Draft → KYC questionnaire → contract details → statement upload → submit, all through the real service layer | case saved as `PROCESSING` with a `QUEUED` job (submission never waits for AI) | exactly that state confirmed in DB | ✅ PASS |
 | 22 | Processing to analysis | Contractor's case page polls the live server, which self-triggers the pipeline | `ANALYSIS_READY` | `ANALYSIS_READY`; pipeline completed in **3.46 s** | ✅ PASS |
 | 23 | Terminal visibility | Contractor reopens the case after the bank's decision | outcome visible | Issued status and timeline visible | ✅ PASS |
@@ -82,7 +82,7 @@ Every major workflow of the Daman platform was exercised against the **productio
 
 | # | Feature | Test | Expected | Actual | Status |
 |---|---------|------|----------|--------|:------:|
-| 31 | RM queue | Sign in as `rm@daman.local` | review queue dashboard | rendered with queue, SLA and stats | ✅ PASS |
+| 31 | RM queue | Sign in as `rm@dhaman.local` | review queue dashboard | rendered with queue, SLA and stats | ✅ PASS |
 | 32 | Memo refinement | RM edits the AI draft, adds relationship context, saves | new **version-tracked revision**; AI original untouched | 1 revision row created; original retained ("Version 1 · all retained") | ✅ PASS |
 | 33 | Routing | RM records a suggested decision (Approve + reasoning) and submits | case `RM_REVIEWED`; suggestion visible to the decision maker, never binding | `RM_REVIEWED` confirmed in DB; suggestion panel rendered | ✅ PASS |
 

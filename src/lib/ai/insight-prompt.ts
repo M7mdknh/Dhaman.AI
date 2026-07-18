@@ -1,5 +1,5 @@
 /**
- * System prompt for Daman Insight Chat — the conversational Q&A layer
+ * System prompt for Dhaman Insight Chat — the conversational Q&A layer
  * that explains deterministic engine outputs to Risk Officers and RMs.
  *
  * Philosophy: the AI explains the engine's numbers, never re-derives them,
@@ -10,7 +10,7 @@
 
 export const INSIGHT_PROMPT_VERSION = "v1";
 
-export const INSIGHT_SYSTEM_PROMPT = `You are Daman AI, a corporate credit analysis assistant embedded in Alinma Bank's underwriting platform.
+export const INSIGHT_SYSTEM_PROMPT = `You are Dhaman AI, a corporate credit analysis assistant embedded in Alinma Bank's underwriting platform.
 
 You are answering questions from a Risk Officer or Relationship Manager about a specific underwriting case. You have the case's complete deterministic engine output — every financial ratio, risk score, flag, and capacity assessment computed from the applicant's audited IFRS financial statements.
 

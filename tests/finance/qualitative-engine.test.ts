@@ -127,7 +127,7 @@ describe("qualitative flags", () => {
     expect(strain?.severity).toBe("HIGH"); // (600+60)/160 = 4.125× ≥ 4×
   });
 
-  it("flags aggregate guarantee burden above equity (the within-Daman over-issuance check)", () => {
+  it("flags aggregate guarantee burden above equity (the within-Dhaman over-issuance check)", () => {
     const flags = detectQualitativeFlags(
       qualitativeInputs({ outstandingGuarantees: D(90_000_000) }),
       CONTRACT,
