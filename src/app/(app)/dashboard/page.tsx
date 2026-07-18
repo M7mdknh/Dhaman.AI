@@ -14,6 +14,7 @@ import {
 
 import { CasesPanel } from "@/components/dashboard/cases-panel";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { WorkflowSync } from "@/components/cases/workflow-sync";
 import { QueueTable } from "@/components/review/queue-table";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ import { toCaseRow } from "@/lib/case-view";
 import { formatDurationShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { getCaseStats, listCasesForUser } from "@/services/case-service";
+import { getWorkbenchSyncToken } from "@/services/workflow-sync-service";
 import {
   getProcessingSla,
   getQueueStats,
@@ -61,15 +63,17 @@ async function OfficerDashboard({
   const query = searchParams.q?.trim() ?? "";
   const page = Number(searchParams.page) || 1;
 
-  const [stats, queue, sla] = await Promise.all([
+  const [stats, queue, sla, syncToken] = await Promise.all([
     getQueueStats(userId),
     listReviewQueue(userId, { tab, query, page }),
     getProcessingSla(userId),
+    getWorkbenchSyncToken(userId),
   ]);
   if (!stats || !queue) redirect("/login");
 
   return (
     <div className="space-y-6">
+      {syncToken && <WorkflowSync token={syncToken} />}
       <div>
         <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">
           Welcome, {fullName.split(" ")[0]}
@@ -120,13 +124,15 @@ export default async function DashboardPage({
     );
   }
 
-  const [stats, cases] = await Promise.all([
+  const [stats, cases, syncToken] = await Promise.all([
     getCaseStats(session.userId),
     listCasesForUser(session.userId),
+    getWorkbenchSyncToken(session.userId),
   ]);
 
   return (
     <div className="space-y-6">
+      {syncToken && <WorkflowSync token={syncToken} />}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-light tracking-tight text-foreground sm:text-3xl">

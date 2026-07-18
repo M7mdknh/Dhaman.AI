@@ -57,6 +57,15 @@ deliberately parked.
   from a client component fetches the RSC payload but never commits the
   navigation — URL and UI stay stale; dev server works. Avoid URL-synced
   filters until verified fixed on a newer Next.
+- **Same family, `router.refresh()`**: in the production build a refresh from a
+  client callback can fetch the full new RSC payload and even RUN the render
+  phase (render-phase ref writes observe new props) yet never commit to the
+  DOM — `startTransition` does not help, and it is intermittent. Verified
+  directly with a DOM marker attribute. `WorkflowSync` therefore treats a
+  `useEffect` on its token prop as the only proof of commit and falls back to
+  a guarded `location.reload()` after two failed soft refreshes. If a Next
+  upgrade fixes the commit bug, the fallback simply stops firing — nothing to
+  remove.
 - **Docker unavailable** → native PostgreSQL instead of docker-compose;
   `DATABASE_URL` is the single source of truth so this is transparent to code.
 - **Node lives in nvm**, not on the system PATH (`~/.nvm/versions/node/v24.18.0`).

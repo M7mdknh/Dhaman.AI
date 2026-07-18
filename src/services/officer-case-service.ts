@@ -7,8 +7,16 @@ import {
   buildFinancialIntelligence,
   toIdentityInputs,
 } from "@/services/finance/financial-intelligence-service";
+import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import { recordAudit } from "@/services/audit-service";
+import {
+  beneficiaryTypeLabel,
+  CASE_STATUS_LABELS,
+  guaranteeTypeLabel,
+} from "@/lib/case-constants";
+import { buildValidationReport } from "@/lib/finance/confidence";
 import { renderFinancialAnalysisPdf } from "@/lib/pdf/financial-analysis-pdf";
+import { renderUnderwritingPackagePdf } from "@/lib/pdf/underwriting-package-pdf";
 import { prisma } from "@/lib/prisma";
 import {
   DECIDED_STATUSES,
@@ -456,4 +464,202 @@ export async function getFinancialAnalysisPdf(
     ok: true,
     data: { fileName: `${underwritingCase.reference}-financial-analysis.pdf`, bytes },
   };
+}
+
+/**
+ * Underwriting Package PDF (bank-side export): the complete case file —
+ * company, contract, Financial Intelligence, AI memo, RM assessment, and the
+ * Risk Officer decision (explicit "Pending"/"Not completed" placeholders for
+ * stages that have not happened). One template serves every workflow stage.
+ * Rendered on demand from live rows; nothing stored, nothing recalculated by
+ * hand — the deterministic engines produce every figure.
+ */
+export async function getUnderwritingPackagePdf(
+  userId: string,
+  caseId: string,
+): Promise<
+  { ok: true; data: { fileName: string; bytes: Uint8Array } } | { ok: false; error: string }
+> {
+  const staff = await getBankUser(userId);
+  if (!staff) return { ok: false, error: "Only bank staff can export the underwriting package." };
+
+  const underwritingCase = await prisma.underwritingCase.findFirst({
+    where: { id: caseId, status: { not: "DRAFT" } },
+    include: {
+      company: true,
+      contractDetails: true,
+      qualitative: true,
+      financialStatements: { orderBy: { fiscalYear: "desc" } },
+      documents: { select: { docType: true, fiscalYear: true, processingStatus: true, extraction: { select: { companyName: true } } } },
+      decisionIntelligence: { orderBy: { createdAt: "desc" }, take: 1 },
+      memoRevisions: {
+        orderBy: { version: "desc" },
+        take: 1,
+        include: { author: { select: { fullName: true } } },
+      },
+      rmSuggestedDecisions: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { rm: { select: { fullName: true } } },
+      },
+      rmReviewer: { select: { fullName: true } },
+      officerDecisions: {
+        orderBy: { createdAt: "desc" },
+        include: { officer: { select: { fullName: true } } },
+      },
+      guarantee: true,
+    },
+  });
+  if (!underwritingCase) return { ok: false, error: "Case not found." };
+
+  const report = buildFinancialIntelligence(
+    underwritingCase.financialStatements,
+    underwritingCase.contractDetails,
+    toIdentityInputs(underwritingCase.company.name, underwritingCase.documents),
+    underwritingCase.qualitative,
+    underwritingCase.company.sector,
+  );
+  const integrity = validateFinancialIntegrity(underwritingCase.financialStatements);
+  const unreadYears = underwritingCase.documents
+    .filter(
+      (d) =>
+        d.docType === "FINANCIAL_STATEMENT" &&
+        d.processingStatus === "FAILED" &&
+        d.fiscalYear !== null &&
+        !underwritingCase.financialStatements.some((s) => s.fiscalYear === d.fiscalYear),
+    )
+    .map((d) => d.fiscalYear!)
+    .sort((a, b) => b - a);
+  const validation = buildValidationReport(integrity, unreadYears);
+
+  const memo = underwritingCase.decisionIntelligence[0] ?? null;
+  const revision = underwritingCase.memoRevisions[0] ?? null;
+  const suggested = underwritingCase.rmSuggestedDecisions[0] ?? null;
+  // The decision of record: the newest terminal decision (REQUEST_INFO pauses
+  // the review; it never decides the case).
+  const terminalDecision =
+    underwritingCase.officerDecisions.find((d) => d.decision !== "REQUEST_INFO") ?? null;
+  const contract = underwritingCase.contractDetails;
+
+  const bytes = await renderUnderwritingPackagePdf({
+    caseReference: underwritingCase.reference,
+    statusLabel: CASE_STATUS_LABELS[underwritingCase.status],
+    generatedAt: new Date(),
+    submittedAt: underwritingCase.submittedAt,
+    company: {
+      name: underwritingCase.company.name,
+      crNumber: underwritingCase.company.crNumber,
+      sector: underwritingCase.company.sector,
+      city: underwritingCase.company.city,
+      contactPerson: underwritingCase.company.contactPerson ?? "—",
+    },
+    contract: contract
+      ? {
+          title: contract.contractTitle,
+          beneficiary: contract.beneficiary,
+          beneficiaryType: beneficiaryTypeLabel(contract.beneficiaryType),
+          guaranteeType: guaranteeTypeLabel(contract.guaranteeType),
+          guaranteeAmount: contract.guaranteeAmount.toString(),
+          guaranteePercentage: contract.guaranteePercentage.toString(),
+          contractValue: contract.contractValue.toString(),
+          currency: contract.currency,
+          projectLocation: contract.projectLocation,
+          projectStartDate: contract.projectStartDate,
+          projectEndDate: contract.projectEndDate,
+        }
+      : null,
+    report,
+    validation: {
+      confidenceLabel: validation.confidence.label,
+      summary: validation.summary,
+    },
+    memo: memo
+      ? {
+          summary: memo.summary,
+          strengths: memo.companyStrengths,
+          weaknesses: memo.companyWeaknesses,
+          riskExplanation: memo.riskExplanation,
+          recommendationLabel: recommendationLabel(memo.recommendation),
+          recommendationReason: memo.recommendationReason,
+          confidenceExplanation: memo.confidenceExplanation,
+          nextSteps: memo.nextSteps,
+          aiDiverged: memo.aiDiverged,
+          aiRecommendationLabel: recommendationLabel(memo.aiRecommendation),
+          provider: memo.provider,
+          model: memo.model,
+          promptVersion: memo.promptVersion,
+          createdAt: memo.createdAt,
+        }
+      : null,
+    rm: {
+      revision: revision
+        ? {
+            version: revision.version,
+            summary: revision.summary,
+            relationshipContext: revision.relationshipContext,
+            author: revision.author?.fullName ?? "Former staff member",
+            createdAt: revision.createdAt,
+          }
+        : null,
+      suggested: suggested
+        ? {
+            decisionLabel: decisionLabel(suggested.decision),
+            reason: suggested.reason,
+            conditions: suggested.conditions,
+            rm: suggested.rm.fullName,
+            createdAt: suggested.createdAt,
+          }
+        : null,
+      routedBy: underwritingCase.rmReviewer?.fullName ?? null,
+      routedAt: underwritingCase.rmSubmittedAt,
+    },
+    decision: terminalDecision
+      ? {
+          decisionLabel: decisionLabel(terminalDecision.decision),
+          officer: terminalDecision.officer.fullName,
+          date: terminalDecision.createdAt,
+          reason: terminalDecision.reason,
+          conditions: terminalDecision.conditions,
+        }
+      : null,
+    guarantee: underwritingCase.guarantee
+      ? {
+          reference: underwritingCase.guarantee.reference,
+          issueDate: underwritingCase.guarantee.issueDate,
+          expiryDate: underwritingCase.guarantee.expiryDate,
+        }
+      : null,
+  });
+
+  await recordAudit({
+    action: "officer.package_pdf_downloaded",
+    actorId: userId,
+    caseId,
+    detail: { reference: underwritingCase.reference, status: underwritingCase.status },
+  });
+  return {
+    ok: true,
+    data: { fileName: `${underwritingCase.reference}-underwriting-package.pdf`, bytes },
+  };
+}
+
+/** Display labels for decisions/recommendations, shared with the UI vocabulary. */
+const DECISION_LABELS: Record<string, string> = {
+  APPROVE: "Approve",
+  APPROVE_WITH_CONDITIONS: "Approve with Conditions",
+  REJECT: "Reject",
+  REQUEST_INFO: "Request More Information",
+};
+function decisionLabel(value: string): string {
+  return DECISION_LABELS[value] ?? value;
+}
+
+const RECOMMENDATION_LABELS: Record<string, string> = {
+  APPROVE: "Approve",
+  APPROVE_WITH_CONDITIONS: "Approve with Conditions",
+  MANUAL_REVIEW: "Manual Review",
+  REJECT: "Reject",
+};
+function recommendationLabel(value: string): string {
+  return RECOMMENDATION_LABELS[value] ?? value;
 }

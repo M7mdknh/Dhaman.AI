@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Calculator } from "lucide-react";
+import { ArrowLeft, Calculator, Download } from "lucide-react";
 
 import { FlagList } from "@/components/analysis/flag-list";
 import { GrowthTable } from "@/components/analysis/ratio-tables";
@@ -15,12 +15,14 @@ import {
 } from "@/components/decision/recommendation-badge";
 import { PrintButton } from "@/components/decision/print-button";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfidenceBadge } from "@/components/analysis/confidence-badge";
 import { getSession } from "@/lib/auth/session";
 import { toCompanyInput, toContractInput } from "@/lib/case-view";
 import { buildValidationReport, needsValidationReport } from "@/lib/finance/confidence";
 import { formatDateTime, formatMoney, formatPercent, formatRatio } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { getCaseForReview } from "@/services/officer-case-service";
 import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import {
@@ -183,7 +185,16 @@ export default async function UnderwritingPackagePage({
             Underwriting Package
           </h1>
         </div>
-        <PrintButton />
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/cases/${id}/package-pdf`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            <Download className="size-4" aria-hidden />
+            Download PDF
+          </a>
+          <PrintButton />
+        </div>
       </div>
 
       {/* Report letterhead */}

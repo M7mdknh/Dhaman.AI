@@ -165,6 +165,22 @@ metric, 2026-07-14)
 - North-star SLA metric on the bank dashboard: average time from submission
   to completed assessment, computed live from processing jobs
 
+Delivered (Post-MVP — RM workflow polish: live sync, timeline, package PDF,
+2026-07-18)
+
+- Live cross-role workflow sync: every dashboard and case page polls a
+  role-scoped fingerprint (`/api/workflow/sync`) and refreshes itself the
+  moment the case state moves — contractor, RM, and Risk Officer always see
+  the same status without reloading
+- Enterprise case timeline: derived "current" stage with progress indicator,
+  skipped stages (declined cases, bypassed RM stage), per-stage descriptions,
+  actors, and timestamps; tinted status/priority chips with dark-mode support
+- Underwriting Package PDF: banking-grade export of the complete case file
+  (company, contract, Financial Intelligence, ratios, trends, flags,
+  validation, AI memo, RM assessment, Risk Officer decision, signature block)
+  behind an authenticated bank-staff route; one template serves every stage
+  with explicit Pending / Not completed placeholders before decisions exist
+
 Future
 
 - Deep Extraction (production-grade document AI for scanned Arabic statements)

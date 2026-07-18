@@ -57,6 +57,7 @@ const nextConfig: NextConfig = {
   // wordmark.
   outputFileTracingIncludes: {
     "/api/cases/[caseId]/analysis-pdf": ["./public/bank-logo.*"],
+    "/api/cases/[caseId]/package-pdf": ["./public/bank-logo.*"],
   },
   experimental: {
     // Every request (statement uploads included) passes through the auth

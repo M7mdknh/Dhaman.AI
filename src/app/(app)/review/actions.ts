@@ -48,6 +48,8 @@ function revalidateReview(caseId: string) {
   // page already open keeps seeing the stale prior status. (The contractor's
   // case LIST lives on /dashboard, revalidated above — /cases has no index.)
   revalidatePath(`/cases/${caseId}`);
+  // The printable underwriting package renders the same workflow state.
+  revalidatePath(`/cases/${caseId}/package`);
 }
 
 export async function startReviewAction(caseId: string): Promise<ReviewActionState> {

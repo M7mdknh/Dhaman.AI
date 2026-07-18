@@ -1,7 +1,7 @@
 # PROJECT STATUS
 
 > Living snapshot of where Daman V2 stands. Read this + `TODO.md` at the start
-> of any session. **Last updated: 2026-07-17.**
+> of any session. **Last updated: 2026-07-18.**
 
 ## Product framing
 
@@ -34,6 +34,41 @@ below. All work is committed on `main`.
   Same first-success orchestration, plus the OCR fallback for unreadable scans
   and the AI memo generated eagerly in the background. May take significantly
   longer per document.
+
+### Post-MVP — RM workflow polish: live cross-role sync, timeline UX, package PDF (2026-07-18)
+
+- **Live workflow sync (`WorkflowSync` + `/api/workflow/sync`).** The status
+  column was always consistent in the database (guarded conditional writes),
+  but a page another role already had open never learned about a transition —
+  contractor, RM, and officer could look at different statuses until someone
+  reloaded. Every workspace (both dashboards, the contractor case page, the
+  review page) now renders an invisible watcher that polls a role-scoped
+  fingerprint token (~5s, paused in hidden tabs) and refreshes the page the
+  moment the state moves. Because `router.refresh()` intermittently fails to
+  COMMIT in the Next 15.5 prod build (see TECH_DEBT), commit is verified via a
+  `useEffect` on the token prop, with a typing-safe `location.reload()`
+  fallback — convergence is guaranteed within ~10s.
+- **Enterprise timeline & status chips.** `CaseTimeline` now derives a single
+  highlighted "current" stage (pulse ring + In Progress chip), supports
+  `skipped` stages (no Letter of Guarantee on a declined case; RM stage
+  bypassed when the officer starts directly), and carries per-stage
+  descriptions and actor names. Status/priority/document chips moved to tinted
+  fills with dark-mode variants; both role timelines got clearer wording
+  ("Submitted to Bank", "Risk Officer Review", decision outcome labels).
+- **Underwriting Package PDF (`/api/cases/[caseId]/package-pdf`).** Bank-staff
+  export of the complete case file via `renderUnderwritingPackagePdf`
+  (pdf-lib, same letterhead conventions as the analysis/guarantee PDFs):
+  company + contract particulars, Financial Intelligence verdict + pillars,
+  full ratio tables, trends, risk flags, validation summary, AI executive
+  summary + recommendation, RM assessment (revision, relationship context,
+  suggested decision), Risk Officer decision, and a signature block — with
+  page numbers, running headers, and a confidential footer. One template
+  serves every stage: not-yet-reached sections print explicit "Pending" /
+  "Not completed" placeholders. Download buttons on the review page header
+  and the HTML package page; every export is audited
+  (`officer.package_pdf_downloaded`). Verified end-to-end at four stages
+  (before/after RM review, before/after decision) plus live cross-role sync
+  with Playwright.
 
 ### Post-MVP — Historical statements never block Express Underwriting (2026-07-17)
 

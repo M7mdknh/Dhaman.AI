@@ -7,6 +7,7 @@ import { DecisionStatusCard } from "@/components/cases/decision-status";
 import { DeleteDraftDialog } from "@/components/cases/delete-draft-dialog";
 import { ProcessingDashboard } from "@/components/cases/processing-dashboard";
 import { StatusBadge } from "@/components/cases/status-badge";
+import { WorkflowSync } from "@/components/cases/workflow-sync";
 import {
   CompanySummary,
   ContractSummary,
@@ -29,6 +30,7 @@ import { isProcessingActive } from "@/lib/processing";
 import { cn } from "@/lib/utils";
 import { getOwnedCase, type CaseWithRelations } from "@/services/case-service";
 import { toDocumentSnapshots, toProcessingSnapshot } from "@/services/case-processing-service";
+import { caseSyncToken } from "@/services/workflow-sync-service";
 
 import type { Metadata } from "next";
 
@@ -53,15 +55,16 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
   ].includes(underwritingCase.status);
   const terminal =
     underwritingCase.officerDecisions.find((d) => d.decision !== "REQUEST_INFO") ?? null;
+  const declined = terminal?.decision === "REJECT";
   const decisionLabel =
-    terminal === null
-      ? "Decision"
-      : terminal.decision === "REJECT"
-        ? "Decision — Declined"
-        : "Decision — Approved";
+    terminal === null ? "Decision" : declined ? "Decision — Declined" : "Decision — Approved";
+  const analysisCompletedAt =
+    analysisReady && underwritingCase.processing?.completedAt
+      ? underwritingCase.processing.completedAt
+      : null;
   return [
     {
-      label: "Created",
+      label: "Case Created",
       timestamp: formatDateTime(underwritingCase.createdAt),
       state: "complete",
     },
@@ -78,21 +81,33 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
           },
         ]),
     {
-      label: "Submitted",
+      label: "Submitted to Bank",
       timestamp: submitted ? formatDateTime(submitted) : undefined,
+      description: submitted ? undefined : "Complete the case and submit it for underwriting.",
       state: submitted ? "complete" : "upcoming",
     },
-    { label: "Financial Analysis", state: analysisReady ? "complete" : "upcoming" },
     {
-      label: "Officer Review",
+      label: "Financial Analysis",
+      timestamp: analysisCompletedAt ? formatDateTime(analysisCompletedAt) : undefined,
+      description: analysisReady
+        ? undefined
+        : "Your financial statements are being verified and analysed.",
+      state: analysisReady ? "complete" : "upcoming",
+    },
+    {
+      label: "Bank Review",
       timestamp: underwritingCase.reviewStartedAt
         ? formatDateTime(underwritingCase.reviewStartedAt)
         : undefined,
+      description: underwritingCase.reviewStartedAt
+        ? undefined
+        : "The bank reviews your underwriting package.",
       state: underwritingCase.reviewStartedAt ? "complete" : "upcoming",
     },
     {
       label: decisionLabel,
       timestamp: terminal ? formatDateTime(terminal.createdAt) : undefined,
+      description: terminal ? undefined : "The Risk Officer records the final decision.",
       state: terminal ? "complete" : "upcoming",
     },
     {
@@ -100,7 +115,12 @@ function buildTimeline(underwritingCase: CaseWithRelations): TimelineEntry[] {
       timestamp: underwritingCase.guarantee
         ? formatDate(underwritingCase.guarantee.issueDate)
         : undefined,
-      state: underwritingCase.guarantee ? "complete" : "upcoming",
+      description: declined
+        ? "Not issued — the request was declined."
+        : underwritingCase.guarantee
+          ? undefined
+          : "Issued by the bank after approval.",
+      state: underwritingCase.guarantee ? "complete" : declined ? "skipped" : "upcoming",
     },
   ];
 }
@@ -155,6 +175,15 @@ export default async function CaseDetailsPage({
 
   return (
     <div className="space-y-6">
+      {/* Bank-side actions (RM routing, officer decisions) must appear here
+          without a manual reload — a draft only changes through this user's
+          own actions, so it needs no watcher. */}
+      {!isDraft && (
+        <WorkflowSync
+          caseId={id}
+          token={caseSyncToken(underwritingCase.status, underwritingCase.updatedAt)}
+        />
+      )}
       <div>
         <Link
           href="/dashboard"

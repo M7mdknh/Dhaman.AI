@@ -87,7 +87,8 @@ function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): 
   return lines;
 }
 
-const RATIO_CATEGORIES: { title: string; rows: { key: RatioKey; label: string; percent?: boolean }[] }[] = [
+/** Shared with the Underwriting Package PDF — one ratio vocabulary, two reports. */
+export const RATIO_CATEGORIES: { title: string; rows: { key: RatioKey; label: string; percent?: boolean }[] }[] = [
   {
     title: "Liquidity",
     rows: [

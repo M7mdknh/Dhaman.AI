@@ -9,6 +9,7 @@ import { AdminDeleteCaseDialog } from "@/components/review/admin-delete-case-dia
 import { AdminEditContractDialog } from "@/components/review/admin-edit-contract-dialog";
 import { CaseTimeline, type TimelineEntry } from "@/components/cases/case-timeline";
 import { StatusBadge } from "@/components/cases/status-badge";
+import { WorkflowSync } from "@/components/cases/workflow-sync";
 import {
   CompanySummary,
   ContractSummary,
@@ -48,6 +49,7 @@ import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { derivePriority } from "@/lib/review";
 import { cn } from "@/lib/utils";
 import { getCaseForReview, type ReviewCase } from "@/services/officer-case-service";
+import { caseSyncToken } from "@/services/workflow-sync-service";
 import { ensureDecisionIntelligence } from "@/services/decision/decision-intelligence-service";
 import { validateFinancialIntegrity } from "@/services/finance/financial-integrity-validator";
 import {
@@ -117,11 +119,16 @@ function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): Timel
   const terminalDecision = reviewCase.officerDecisions.find(
     (d) => d.decision !== "REQUEST_INFO",
   );
+  const declined = terminalDecision?.decision === "REJECT";
   const extractionDone = reviewCase.documents.some((d) => d.processingStatus === "COMPLETED");
+  // The RM stage never blocks: once the officer's review starts without an RM
+  // routing, the stage was legitimately bypassed — mark it so instead of
+  // leaving a stage that will never happen dangling as "upcoming".
+  const rmBypassed = !reviewCase.rmSubmittedAt && !!reviewCase.reviewStartedAt;
 
   return [
     {
-      label: "Created",
+      label: "Case Created",
       timestamp: formatDateTime(reviewCase.createdAt),
       state: "complete",
     },
@@ -130,11 +137,20 @@ function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): Timel
       timestamp: reviewCase.submittedAt ? formatDateTime(reviewCase.submittedAt) : undefined,
       state: reviewCase.submittedAt ? "complete" : "upcoming",
     },
-    { label: "Financial Extraction", state: extractionDone ? "complete" : "upcoming" },
-    { label: "Financial Analysis", state: analysisReady ? "complete" : "upcoming" },
     {
-      label: "Decision Intelligence",
+      label: "Financial Extraction",
+      description: extractionDone ? undefined : "Statements are being read and verified.",
+      state: extractionDone ? "complete" : "upcoming",
+    },
+    {
+      label: "Financial Analysis",
+      description: "Deterministic ratios, risk score, and capacity.",
+      state: analysisReady ? "complete" : "upcoming",
+    },
+    {
+      label: "AI Memo Drafted",
       timestamp: memo ? formatDateTime(memo.createdAt) : undefined,
+      description: memo ? undefined : "The AI drafts the credit memorandum.",
       state: memo ? "complete" : "upcoming",
     },
     {
@@ -142,13 +158,25 @@ function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): Timel
       timestamp: reviewCase.rmSubmittedAt
         ? formatDateTime(reviewCase.rmSubmittedAt)
         : undefined,
-      state: reviewCase.rmSubmittedAt ? "complete" : "upcoming",
+      description: reviewCase.rmSubmittedAt
+        ? reviewCase.rmReviewer
+          ? `Routed by ${reviewCase.rmReviewer.fullName}.`
+          : undefined
+        : rmBypassed
+          ? "Bypassed — the Risk Officer started directly."
+          : "The Relationship Manager refines the memo and routes the package.",
+      state: reviewCase.rmSubmittedAt ? "complete" : rmBypassed ? "skipped" : "upcoming",
     },
     {
-      label: "Officer Review Started",
+      label: "Risk Officer Review",
       timestamp: reviewCase.reviewStartedAt
         ? formatDateTime(reviewCase.reviewStartedAt)
         : undefined,
+      description: reviewCase.reviewStartedAt
+        ? reviewCase.assignedOfficer
+          ? `Started by ${reviewCase.assignedOfficer.fullName}.`
+          : undefined
+        : "The Risk Officer takes ownership of the case.",
       state: reviewCase.reviewStartedAt ? "complete" : "upcoming",
     },
     {
@@ -156,6 +184,9 @@ function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): Timel
         ? `Decision — ${officerDecisionLabel(terminalDecision.decision)}`
         : "Decision",
       timestamp: terminalDecision ? formatDateTime(terminalDecision.createdAt) : undefined,
+      description: terminalDecision
+        ? `By ${terminalDecision.officer.fullName}.`
+        : "The final decision always rests with the Risk Officer.",
       state: terminalDecision ? "complete" : "upcoming",
     },
     {
@@ -163,7 +194,12 @@ function buildTimeline(reviewCase: ReviewCase, analysisComplete: boolean): Timel
       timestamp: reviewCase.guarantee
         ? formatDateTime(reviewCase.guarantee.createdAt)
         : undefined,
-      state: reviewCase.guarantee ? "complete" : "upcoming",
+      description: declined
+        ? "Not issued — the case was declined."
+        : reviewCase.guarantee
+          ? reviewCase.guarantee.reference
+          : "Issued after approval.",
+      state: reviewCase.guarantee ? "complete" : declined ? "skipped" : "upcoming",
     },
   ];
 }
@@ -287,6 +323,9 @@ export default async function ReviewCasePage({
 
   return (
     <div className="space-y-6">
+      {/* An action by any OTHER role (contractor retry, RM routing, another
+          officer's decision) appears here without a manual reload. */}
+      <WorkflowSync caseId={id} token={caseSyncToken(status, reviewCase.updatedAt)} />
       {/* ---- Case header */}
       <div>
         <Link
@@ -304,18 +343,27 @@ export default async function ReviewCasePage({
             <StatusBadge status={status} />
             <PriorityBadge priority={priority} />
           </div>
-          {session.role === "ADMIN" && (
-            <div className="flex items-center gap-2">
-              {contract && (
-                <AdminEditContractDialog
-                  caseId={id}
-                  reference={reviewCase.reference}
-                  defaults={toContractInput(contract)}
-                />
-              )}
-              <AdminDeleteCaseDialog caseId={id} reference={reviewCase.reference} />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/cases/${id}/package-pdf`}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <Download className="size-3.5" aria-hidden />
+              Underwriting Package (PDF)
+            </a>
+            {session.role === "ADMIN" && (
+              <>
+                {contract && (
+                  <AdminEditContractDialog
+                    caseId={id}
+                    reference={reviewCase.reference}
+                    defaults={toContractInput(contract)}
+                  />
+                )}
+                <AdminDeleteCaseDialog caseId={id} reference={reviewCase.reference} />
+              </>
+            )}
+          </div>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
           {reviewCase.company.name}
